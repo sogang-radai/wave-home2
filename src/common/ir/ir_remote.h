@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
@@ -135,9 +136,11 @@ public:
 
 private:
     bool tryParseFrame(IRPayload& out_payload, size_t& consumed) const;
+    void appendLircPackets(const uint32_t* raw, size_t count);
     void recvThreadFunc();
 
     std::vector<uint32_t> m_buffer;
+    std::optional<uint32_t> m_pendingMark;
     std::shared_ptr<IRCommandList> m_commandList;
     int m_fd = -1;
 
