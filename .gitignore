@@ -1,3 +1,6 @@
+# Ignore the dataset folder(too large)
+bed_net/dataset
+
 build/
 bin/
 compile_commands.json
