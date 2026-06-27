@@ -1,12 +1,11 @@
-#include "lm_studio_client.h"
-#include "spinner.h"
-
-#include "util/arg_parser.h"
-
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+
+#include <llm/lm_studio_client.h>
+#include <util/spinner.h>
+#include <util/arg_parser.h>
 
 namespace
 {
