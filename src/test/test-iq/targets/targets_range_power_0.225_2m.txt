@@ -1,0 +1,9 @@
+# Range-power profile: az=0, el=0, chirp_mode=1 (Average over 64 chirps)
+# Distances on firmware range grid: bin * 0.071565 m (rangeRes from r4fn.elf.c FUN_0040d6f0)
+# format: azimuth_rad, elevation_rad, distance_m [, chirp_mode]
+0,0,0.825,1
+0,0,0.900,1
+0,0,0.975,1
+0,0,1.050,1
+0,0,1.125,1
+0,0,1.200,1

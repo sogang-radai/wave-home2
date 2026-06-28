@@ -1,8 +1,57 @@
-# Ignore the dataset folder(too large)
-bed_net/dataset
+# Dataset (too large)
+bed_net/dataset/
 
+# Plan files (may contain credentials)
+[pP]lan.md
+
+# Toolchain / build
+.toolchain/
 build/
 bin/
 compile_commands.json
 .cache/
+
+# R4SN binaries & build trees
+src/r4sn/deploy-aarch64/
+src/r4sn/iq-server/build-a64/
+src/r4sn/iq-server/build-native/
+
+# Local firmware disassembly dumps (large)
+src/r4sn/disassembly/
+
+# Python virtualenvs & caches
+.venv/
+venv/
+**/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# test-iq outputs
+src/test/test-iq/scripts/out/
+src/test/test-iq/logs/
+src/test/test-iq/**/*.csv
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+deploy.env
+**/deploy.env
+src/r4sn/scripts/deploy.env
+
+# IDE / editor
 .idea/
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Large local media
+docs/videos/
+*.webm

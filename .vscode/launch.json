@@ -95,6 +95,27 @@
             "preLaunchTask": "cmake: build test-llm"
         },
         {
+            "name": "Debug wave-server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/wave-server",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "cmake: build wave-server"
+        },
+        {
             "name": "Debug test-llm (interactive)",
             "type": "cppdbg",
             "request": "launch",

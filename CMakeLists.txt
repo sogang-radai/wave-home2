@@ -10,18 +10,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Generate compile_commands.json 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 
 include("${CMAKE_SOURCE_DIR}/cmake/deps.cmake")
-
-set(BUILD_CTL OFF CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_ORM OFF CACHE BOOL "" FORCE)
-set(BUILD_DOC OFF CACHE BOOL "" FORCE)
-set(BUILD_YAML_CONFIG OFF CACHE BOOL "" FORCE)
-set(COZ_PROFILING OFF CACHE BOOL "" FORCE)
-set(USE_SUBMODULE ON CACHE BOOL "" FORCE)
+include("${CMAKE_SOURCE_DIR}/cmake/drogon_minimal.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/ncnn_minimal.cmake")
 
 add_subdirectory(thirdparty/drogon)
+add_subdirectory(thirdparty/ncnn)
+add_subdirectory(src/wave-server)
 add_subdirectory(src/test/test-llm)
 add_subdirectory(src/test/test-ir)
+add_subdirectory(src/test/test-iq)
 
 if(CMAKE_EXPORT_COMPILE_COMMANDS)
     file(CREATE_LINK

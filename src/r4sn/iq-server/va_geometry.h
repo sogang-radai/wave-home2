@@ -1,0 +1,73 @@
+#pragma once
+
+#include <cstddef>
+
+namespace r4sn::embedded
+{
+    inline constexpr float kSpeedOfLight = 299792458.0f;
+    inline constexpr float kCarrierHz = 77.0e9f;
+    inline constexpr float kWavelength = kSpeedOfLight / kCarrierHz;
+
+    // Virtual-aperture positions from docs/안테나 배치.txt (Photoshop/camera coords, mm).
+    // Each VA = TX + RX; snapped to λ/4 grid at 77 GHz. Origin is the photo reference frame.
+    // Cube index: va = tile*16 + sub_ant
+    //   tile 0..11 → S{tile/3+1}-TX{tile%3+1}
+    //   sub_ant 0..15 → S{sub/4+1}-RX{sub%4+1} paired with that tile TX
+
+    inline constexpr float kVaX[192] =
+    {
+        // Tile 0 (S1-TX1)
+        (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +6.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +6.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength,
+        // Tile 1 (S1-TX2)
+        (   -4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength,
+        // Tile 2 (S1-TX3)
+        (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +6.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +6.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength,
+        // Tile 3 (S2-TX1)
+        (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +6.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +6.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength,
+        // Tile 4 (S2-TX2)
+        (   -4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength,
+        // Tile 5 (S2-TX3)
+        (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +6.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +6.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +11.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength, (  +70.0f / +4.0f) * kWavelength,
+        // Tile 6 (S3-TX1)
+        (   -4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength,
+        // Tile 7 (S3-TX2)
+        (   -4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (   +7.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength, (  +66.0f / +4.0f) * kWavelength,
+        // Tile 8 (S3-TX3)
+        (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   -2.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +4.0f / +4.0f) * kWavelength, (   +9.0f / +4.0f) * kWavelength, (   +9.0f / +4.0f) * kWavelength, (   +9.0f / +4.0f) * kWavelength, (   +9.0f / +4.0f) * kWavelength, (  +68.0f / +4.0f) * kWavelength, (  +68.0f / +4.0f) * kWavelength, (  +68.0f / +4.0f) * kWavelength, (  +68.0f / +4.0f) * kWavelength,
+        // Tile 9 (S4-TX1)
+        (  +81.0f / +4.0f) * kWavelength, (  +83.0f / +4.0f) * kWavelength, (  +85.0f / +4.0f) * kWavelength, (  +87.0f / +4.0f) * kWavelength, (  +81.0f / +4.0f) * kWavelength, (  +83.0f / +4.0f) * kWavelength, (  +85.0f / +4.0f) * kWavelength, (  +87.0f / +4.0f) * kWavelength, (  +92.0f / +4.0f) * kWavelength, (  +92.0f / +4.0f) * kWavelength, (  +92.0f / +4.0f) * kWavelength, (  +92.0f / +4.0f) * kWavelength, ( +151.0f / +4.0f) * kWavelength, ( +151.0f / +4.0f) * kWavelength, ( +151.0f / +4.0f) * kWavelength, ( +151.0f / +4.0f) * kWavelength,
+        // Tile 10 (S4-TX2)
+        (  +81.0f / +4.0f) * kWavelength, (  +83.0f / +4.0f) * kWavelength, (  +85.0f / +4.0f) * kWavelength, (  +87.0f / +4.0f) * kWavelength, (  +81.0f / +4.0f) * kWavelength, (  +83.0f / +4.0f) * kWavelength, (  +85.0f / +4.0f) * kWavelength, (  +87.0f / +4.0f) * kWavelength, (  +92.0f / +4.0f) * kWavelength, (  +92.0f / +4.0f) * kWavelength, (  +92.0f / +4.0f) * kWavelength, (  +92.0f / +4.0f) * kWavelength, ( +151.0f / +4.0f) * kWavelength, ( +151.0f / +4.0f) * kWavelength, ( +151.0f / +4.0f) * kWavelength, ( +151.0f / +4.0f) * kWavelength,
+        // Tile 11 (S4-TX3)
+        (  +83.0f / +4.0f) * kWavelength, (  +85.0f / +4.0f) * kWavelength, (  +87.0f / +4.0f) * kWavelength, (  +89.0f / +4.0f) * kWavelength, (  +83.0f / +4.0f) * kWavelength, (  +85.0f / +4.0f) * kWavelength, (  +87.0f / +4.0f) * kWavelength, (  +89.0f / +4.0f) * kWavelength, (  +94.0f / +4.0f) * kWavelength, (  +94.0f / +4.0f) * kWavelength, (  +94.0f / +4.0f) * kWavelength, (  +94.0f / +4.0f) * kWavelength, ( +153.0f / +4.0f) * kWavelength, ( +153.0f / +4.0f) * kWavelength, ( +153.0f / +4.0f) * kWavelength, ( +153.0f / +4.0f) * kWavelength
+    };
+
+    inline constexpr float kVaY[192] =
+    {
+        // Tile 0 (S1-TX1)
+        (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (  +25.0f / +4.0f) * kWavelength, (  +25.0f / +4.0f) * kWavelength, (  +25.0f / +4.0f) * kWavelength, (  +25.0f / +4.0f) * kWavelength, (  -43.0f / +4.0f) * kWavelength, (  -41.0f / +4.0f) * kWavelength, (  -39.0f / +4.0f) * kWavelength, (  -37.0f / +4.0f) * kWavelength, (  -43.0f / +4.0f) * kWavelength, (  -41.0f / +4.0f) * kWavelength, (  -39.0f / +4.0f) * kWavelength, (  -37.0f / +4.0f) * kWavelength,
+        // Tile 1 (S1-TX2)
+        (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (  +25.0f / +4.0f) * kWavelength, (  +25.0f / +4.0f) * kWavelength, (  +25.0f / +4.0f) * kWavelength, (  +25.0f / +4.0f) * kWavelength, (  -43.0f / +4.0f) * kWavelength, (  -41.0f / +4.0f) * kWavelength, (  -39.0f / +4.0f) * kWavelength, (  -37.0f / +4.0f) * kWavelength, (  -43.0f / +4.0f) * kWavelength, (  -41.0f / +4.0f) * kWavelength, (  -39.0f / +4.0f) * kWavelength, (  -37.0f / +4.0f) * kWavelength,
+        // Tile 2 (S1-TX3)
+        (   +2.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (   +2.0f / +4.0f) * kWavelength, (  +27.0f / +4.0f) * kWavelength, (  +27.0f / +4.0f) * kWavelength, (  +27.0f / +4.0f) * kWavelength, (  +27.0f / +4.0f) * kWavelength, (  -41.0f / +4.0f) * kWavelength, (  -39.0f / +4.0f) * kWavelength, (  -37.0f / +4.0f) * kWavelength, (  -35.0f / +4.0f) * kWavelength, (  -41.0f / +4.0f) * kWavelength, (  -39.0f / +4.0f) * kWavelength, (  -37.0f / +4.0f) * kWavelength, (  -35.0f / +4.0f) * kWavelength,
+        // Tile 3 (S2-TX1)
+        (  +53.0f / +4.0f) * kWavelength, (  +53.0f / +4.0f) * kWavelength, (  +53.0f / +4.0f) * kWavelength, (  +53.0f / +4.0f) * kWavelength, (  +78.0f / +4.0f) * kWavelength, (  +78.0f / +4.0f) * kWavelength, (  +78.0f / +4.0f) * kWavelength, (  +78.0f / +4.0f) * kWavelength, (  +10.0f / +4.0f) * kWavelength, (  +12.0f / +4.0f) * kWavelength, (  +14.0f / +4.0f) * kWavelength, (  +16.0f / +4.0f) * kWavelength, (  +10.0f / +4.0f) * kWavelength, (  +12.0f / +4.0f) * kWavelength, (  +14.0f / +4.0f) * kWavelength, (  +16.0f / +4.0f) * kWavelength,
+        // Tile 4 (S2-TX2)
+        (  +53.0f / +4.0f) * kWavelength, (  +53.0f / +4.0f) * kWavelength, (  +53.0f / +4.0f) * kWavelength, (  +53.0f / +4.0f) * kWavelength, (  +78.0f / +4.0f) * kWavelength, (  +78.0f / +4.0f) * kWavelength, (  +78.0f / +4.0f) * kWavelength, (  +78.0f / +4.0f) * kWavelength, (  +10.0f / +4.0f) * kWavelength, (  +12.0f / +4.0f) * kWavelength, (  +14.0f / +4.0f) * kWavelength, (  +16.0f / +4.0f) * kWavelength, (  +10.0f / +4.0f) * kWavelength, (  +12.0f / +4.0f) * kWavelength, (  +14.0f / +4.0f) * kWavelength, (  +16.0f / +4.0f) * kWavelength,
+        // Tile 5 (S2-TX3)
+        (  +55.0f / +4.0f) * kWavelength, (  +55.0f / +4.0f) * kWavelength, (  +55.0f / +4.0f) * kWavelength, (  +55.0f / +4.0f) * kWavelength, (  +80.0f / +4.0f) * kWavelength, (  +80.0f / +4.0f) * kWavelength, (  +80.0f / +4.0f) * kWavelength, (  +80.0f / +4.0f) * kWavelength, (  +12.0f / +4.0f) * kWavelength, (  +14.0f / +4.0f) * kWavelength, (  +16.0f / +4.0f) * kWavelength, (  +18.0f / +4.0f) * kWavelength, (  +12.0f / +4.0f) * kWavelength, (  +14.0f / +4.0f) * kWavelength, (  +16.0f / +4.0f) * kWavelength, (  +18.0f / +4.0f) * kWavelength,
+        // Tile 6 (S3-TX1)
+        (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (  -72.0f / +4.0f) * kWavelength, (  -70.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength, (  -72.0f / +4.0f) * kWavelength, (  -70.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength,
+        // Tile 7 (S3-TX2)
+        (  -25.0f / +4.0f) * kWavelength, (  -25.0f / +4.0f) * kWavelength, (  -25.0f / +4.0f) * kWavelength, (  -25.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength, (  -64.0f / +4.0f) * kWavelength, (  -62.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength, (  -64.0f / +4.0f) * kWavelength, (  -62.0f / +4.0f) * kWavelength,
+        // Tile 8 (S3-TX3)
+        (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (  -72.0f / +4.0f) * kWavelength, (  -70.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength, (  -72.0f / +4.0f) * kWavelength, (  -70.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength,
+        // Tile 9 (S4-TX1)
+        (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (  -72.0f / +4.0f) * kWavelength, (  -70.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength, (  -72.0f / +4.0f) * kWavelength, (  -70.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength,
+        // Tile 10 (S4-TX2)
+        (  -25.0f / +4.0f) * kWavelength, (  -25.0f / +4.0f) * kWavelength, (  -25.0f / +4.0f) * kWavelength, (  -25.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (   +0.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength, (  -64.0f / +4.0f) * kWavelength, (  -62.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength, (  -64.0f / +4.0f) * kWavelength, (  -62.0f / +4.0f) * kWavelength,
+        // Tile 11 (S4-TX3)
+        (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (  -29.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (   -4.0f / +4.0f) * kWavelength, (  -72.0f / +4.0f) * kWavelength, (  -70.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength, (  -72.0f / +4.0f) * kWavelength, (  -70.0f / +4.0f) * kWavelength, (  -68.0f / +4.0f) * kWavelength, (  -66.0f / +4.0f) * kWavelength
+    };
+
+}  // namespace r4sn::embedded

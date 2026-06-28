@@ -1,0 +1,2 @@
+# Vital signs test scripts (Python 3.10+)
+# Run: python3 main.py --host 192.168.0.33

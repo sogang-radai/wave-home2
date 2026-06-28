@@ -6,11 +6,18 @@
             "cStandard": "c17",
             "cppStandard": "c++23",
             "intelliSenseMode": "linux-gcc-x64",
+            "includePath": [
+                "${workspaceFolder}/src/wave-server",
+                "${workspaceFolder}/thirdparty/drogon/lib/inc",
+                "${workspaceFolder}/thirdparty/drogon/trantor",
+                "${workspaceFolder}/thirdparty/ncnn/src"
+            ],
             "browse": {
                 "path": [
                     "${workspaceFolder}",
                     "${workspaceFolder}/src",
-                    "${workspaceFolder}/thirdparty"
+                    "${workspaceFolder}/thirdparty/drogon",
+                    "${workspaceFolder}/thirdparty/ncnn"
                 ],
                 "limitSymbolsToIncludedHeaders": true
             }

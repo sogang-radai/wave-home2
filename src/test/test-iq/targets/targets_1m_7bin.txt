@@ -1,0 +1,9 @@
+# 1 m center, 7.5 cm range-bin spacing, 7 targets (az=0, el=0, Average)
+# format: azimuth_rad, elevation_rad, distance_m [, chirp_mode]
+0,0,0.775,1
+0,0,0.850,1
+0,0,0.925,1
+0,0,1.000,1
+0,0,1.075,1
+0,0,1.150,1
+0,0,1.225,1

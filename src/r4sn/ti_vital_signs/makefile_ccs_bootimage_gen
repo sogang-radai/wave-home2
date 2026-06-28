@@ -1,0 +1,83 @@
+#
+# Auto generated makefile
+#
+
+# Below variables need to be defined outside this file or via command line
+# - MCU_PLUS_SDK_PATH
+# - PROFILE
+# - CG_TOOL_ROOT
+# - OUTNAME
+# - CCS_INSTALL_DIR
+# - CCS_IDE_MODE
+
+CCS_PATH=$(CCS_INSTALL_DIR)
+include $(MCU_PLUS_SDK_PATH)/imports.mak
+
+STRIP=$(CG_TOOL_ROOT)/bin/tiarmstrip
+OBJCOPY=$(CG_TOOL_ROOT)/bin/tiarmobjcopy
+
+OUTFILE=$(PROFILE)/$(OUTNAME).out
+BOOTIMAGE_PATH=$(abspath ${PROFILE})
+BOOTIMAGE_BIN_NAME:=$(BOOTIMAGE_PATH)/vital_signs_xwrl64xx_demo.$(PROFILE).appimage
+BOOTIMAGE_BIN_TEMP:=vital_signs_xwrl64xx_demo.$(PROFILE)_temp.appimage
+BOOTIMAGE_RPRC_NAME_TMP:=vital_signs_xwrl64xx_demo.$(PROFILE)_rprc.bin
+AUTH_BOOTIMAGE_PATH=$(abspath .)
+AUTH_BOOTIMAGE_BIN_NAME:=$(BOOTIMAGE_PATH)/vital_signs_xwrl64xx_demo_auth.$(PROFILE).appimage
+BSS_RPRC_BIN:=$(MMW_DFP_PATH)/rfsfirmware/xWRL6432/mmwave_rfs_patch_rprc.bin
+
+#
+# Generation of boot image which can be loaded by ROM Boot Loader (RBL)
+#
+ifeq ($(OS),Windows_NT)
+EXE_EXT=.exe
+endif
+ifeq ($(OS),Windows_NT)
+  BOOTIMAGE_CERT_GEN_CMD=powershell -executionpolicy unrestricted -command $(MCU_PLUS_SDK_PATH)/tools/boot/signing/x509CertificateGen.ps1
+else
+  BOOTIMAGE_CERT_GEN_CMD=$(MCU_PLUS_SDK_PATH)/tools/boot/signing/x509CertificateGen.sh
+endif
+BOOTIMAGE_TEMP_OUT_FILE=$(PROFILE)/temp_stdout_$(PROFILE).txt
+AUTH_BOOTIMAGE_TEMP_OUT_FILE=temp_auth_stdout_$(PROFILE).txt
+
+INTEGRITY_GEN=$(MCU_PLUS_SDK_PATH)/tools/auth_tool/Integrity_generator.exe
+SALT_PATH=$(MCU_PLUS_SDK_PATH)/tools/auth_tool/encsalt.txt
+INFO_PATH=$(MCU_PLUS_SDK_PATH)/tools/auth_tool/encinfo.txt
+SYMM_KEY_PATH=$(MCU_PLUS_SDK_PATH)/tools/auth_tool/encsymm.txt
+INTEGRITY_BIN=motion_and_presence_detection_demo_integrity.bin
+
+OUTRPRC_PATH=$(MCU_PLUS_SDK_PATH)/tools/boot/out2rprc/out2rprc$(EXE_EXT)
+MULTI_CORE_IMAGE_GEN=$(MCU_PLUS_SDK_PATH)/tools/boot/multicoreImageGen/MulticoreImageGen$(EXE_EXT)
+CRC_MULTI_CORE_IMAGE_GEN=$(MCU_PLUS_SDK_PATH)/tools/boot/crcMulticoreImageGen/crcMulticoreimage$(EXE_EXT)
+APPEND_CRC=$(MCU_PLUS_SDK_PATH)/tools/boot/appendBinCrc/appendBinCrc$(EXE_EXT)
+
+
+BOOT_MODE=0
+BOOT_VECTOR_ADDRESS=0x400000
+SH_MEM_CONFIG=0
+APPS_FLAGS=0x35510000
+RFS_FLAGS=0xb5510000
+INTEGRITY_FLAGS=0xab130000
+all:
+ifeq ($(CCS_IDE_MODE),cloud)
+#	No post build steps
+else
+	@echo  Boot image: xwrL64xx:m4fss0-0:freertos:ti-arm-clang $(BOOTIMAGE_NAME) ...
+	@echo  Auth Boot image: xwrL64xx:m4fss0-0:freertos:ti-arm-clang $(AUTH_BOOTIMAGE_NAME) ...
+	$(OUTRPRC_PATH) $(OUTFILE) $(BOOTIMAGE_RPRC_NAME_TMP) >> $(BOOTIMAGE_TEMP_OUT_FILE)
+	$(INTEGRITY_GEN) $(SYMM_KEY_PATH) $(SALT_PATH) $(INFO_PATH) $(INTEGRITY_BIN) app $(BOOTIMAGE_RPRC_NAME_TMP) rfs $(BSS_RPRC_BIN)
+	$(MULTI_CORE_IMAGE_GEN) LE $(BOOT_MODE) $(BOOT_VECTOR_ADDRESS) $(SH_MEM_CONFIG) $(AUTH_BOOTIMAGE_BIN_NAME) $(INTEGRITY_FLAGS) $(INTEGRITY_BIN) $(APPS_FLAGS) $(BOOTIMAGE_RPRC_NAME_TMP) $(RFS_FLAGS) $(BSS_RPRC_BIN) >> $(AUTH_BOOTIMAGE_TEMP_OUT_FILE)
+	$(MULTI_CORE_IMAGE_GEN) LE $(BOOT_MODE) $(BOOT_VECTOR_ADDRESS) $(SH_MEM_CONFIG) $(BOOTIMAGE_BIN_NAME) $(APPS_FLAGS) $(BOOTIMAGE_RPRC_NAME_TMP) $(RFS_FLAGS) $(BSS_RPRC_BIN) >> $(BOOTIMAGE_TEMP_OUT_FILE)
+	$(CRC_MULTI_CORE_IMAGE_GEN) $(BOOTIMAGE_BIN_NAME) $(BOOTIMAGE_BIN_TEMP) >> $(BOOTIMAGE_TEMP_OUT_FILE)
+	$(APPEND_CRC) $(BOOTIMAGE_BIN_NAME) >> $(BOOTIMAGE_TEMP_OUT_FILE)
+	$(CRC_MULTI_CORE_IMAGE_GEN) $(AUTH_BOOTIMAGE_BIN_NAME) $(BOOTIMAGE_BIN_TEMP) >> $(AUTH_BOOTIMAGE_TEMP_OUT_FILE)
+	$(APPEND_CRC) $(AUTH_BOOTIMAGE_BIN_NAME) >> $(AUTH_BOOTIMAGE_TEMP_OUT_FILE)
+	$(RM) $(BOOTIMAGE_TEMP_OUT_FILE)
+	$(RM) $(BOOTIMAGE_BIN_TEMP)
+	$(RM) $(BOOTIMAGE_RPRC_NAME_TMP)
+	$(RM) $(INTEGRITY_BIN)
+	$(RM) $(AUTH_BOOTIMAGE_TEMP_OUT_FILE)
+	@echo  Boot image: xwrL64xx:m4fss0-0:freertos:ti-arm-clang $(BOOTIMAGE_NAME) Done !!!
+	@echo  .
+	@echo  Auth Boot image: xwrL64xx:m4fss0-0:freertos:ti-arm-clang $(AUTH_BOOTIMAGE_NAME) Done !!!
+	@echo  .
+endif
