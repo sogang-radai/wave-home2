@@ -1,3 +1,6 @@
 [submodule "thirdparty/drogon"]
 	path = thirdparty/drogon
 	url = https://github.com/drogonframework/drogon.git
+[submodule "thirdparty/ncnn"]
+	path = thirdparty/ncnn
+	url = https://github.com/Tencent/ncnn.git
