@@ -86,6 +86,31 @@ void WaveServer::run()
 
     drogon::app().loadConfigFile(m_configPath);
     drogon::app().setDocumentRoot(m_siteDir);
+    drogon::app().setImplicitPageEnable(true);
+    drogon::app().setImplicitPage("index.html");
+
+    const std::string siteDir = m_siteDir;
+    drogon::app().setCustomErrorHandler(
+        [siteDir](drogon::HttpStatusCode code, const drogon::HttpRequestPtr& req)
+            -> drogon::HttpResponsePtr
+        {
+            if (code != drogon::k404NotFound)
+                return drogon::HttpResponse::newNotFoundResponse(req);
+
+            if (req->method() != drogon::Get && req->method() != drogon::Head)
+                return drogon::HttpResponse::newNotFoundResponse(req);
+
+            const std::string& path = req->path();
+            if (path.rfind("/api/", 0) == 0)
+                return drogon::HttpResponse::newNotFoundResponse(req);
+
+            const auto indexPath = std::filesystem::path(siteDir) / "index.html";
+            std::error_code ec;
+            if (!std::filesystem::is_regular_file(indexPath, ec))
+                return drogon::HttpResponse::newNotFoundResponse(req);
+
+            return drogon::HttpResponse::newFileResponse(indexPath.string());
+        });
 
     std::cout << "Wave Home server starting\n";
     std::cout << "  site:   " << m_siteDir << "\n";

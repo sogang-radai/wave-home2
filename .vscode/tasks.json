@@ -54,6 +54,16 @@
             ]
         },
         {
+            "label": "npm: build frontend",
+            "type": "shell",
+            "command": "./scripts/build-front.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
             "label": "cmake: build wave-server",
             "type": "shell",
             "command": "cmake --build build --target wave-server",

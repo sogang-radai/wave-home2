@@ -8,6 +8,7 @@ bed_net/dataset/
 .toolchain/
 build/
 bin/
+site/
 compile_commands.json
 .cache/
 

@@ -9,3 +9,9 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/ncnn/CMakeLists.txt")
         "Missing thirdparty/ncnn. Run:\n"
         "  git submodule update --init thirdparty/ncnn")
 endif()
+
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/wave-home-front/.git")
+    message(STATUS
+        "wave-home-front submodule not initialized. "
+        "Run: git submodule update --init wave-home-front")
+endif()
