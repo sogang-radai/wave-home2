@@ -6,6 +6,12 @@
 #include <cctype>
 #include <cstring>
 #include <mutex>
+#include <poll.h>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <algorithm>
+#include <iomanip>
 
 #define PROPAGATE_ERROR(res) \
     do { \
@@ -16,28 +22,15 @@
 
 namespace
 {
-    constexpr uint32_t NEC_HEADER_MARK_US = 9000;
-    constexpr uint32_t NEC_HEADER_SPACE_US = 4500;
-    constexpr uint32_t NEC_REPEAT_SPACE_US = 2250;
-    constexpr uint32_t NEC_SHORT_US = 560;
-    constexpr uint32_t NEC_LONG_US = 1690;
-    constexpr uint32_t NEC_MARGIN = 200;
     constexpr size_t NEC_FRAME_PULSES = 67;
     constexpr size_t NEC_REPEAT_PULSES = 4;
 
-    constexpr uint32_t LIRC_PULSE_BIT = 0x01000000u;
-    constexpr uint32_t LIRC_MODE2_MASK = 0xFF000000u;
-    constexpr uint32_t LIRC_VALUE_MASK = 0x00FFFFFFu;
-    constexpr uint32_t LIRC_MODE2_FREQUENCY = 0x02000000u;
-    constexpr uint32_t LIRC_MODE2_TIMEOUT = 0x03000000u;
-    constexpr uint32_t LIRC_MODE2_OVERFLOW = 0x04000000u;
-    
     constexpr size_t kMaxBufferEntries = 512;
-    constexpr uint32_t kPayloadTypeShift = 30;
 
-    bool in_range(uint32_t val, uint32_t target)
+    bool in_range(uint32_t val, uint32_t target, uint32_t margin = 200)
     {
-        return target - NEC_MARGIN <= val && val <= target + NEC_MARGIN;
+        const uint32_t min_val = (target > margin) ? (target - margin) : 0;
+        return min_val <= val && val <= target + margin;
     }
 
     bool is_hex_digit(char c)
@@ -115,18 +108,65 @@ namespace
 
     IRResult in_bit_range(uint32_t val)
     {
-        if (in_range(val, NEC_SHORT_US) || in_range(val, NEC_LONG_US))
+        if (in_range(val, NEC_TIMINGS.bitMark) || in_range(val, NEC_TIMINGS.bitOneSpace))
             return IRResult::SUCCESS;
         return IRResult::ERROR_FAILED_TO_RECEIVE;
     }
 
-    uint32_t make_payload_value(IRPayload::Type type, uint8_t code, uint8_t data)
-    {
-        return (static_cast<uint32_t>(type) << kPayloadTypeShift)
-               | (static_cast<uint32_t>(data) << 8)
-               | static_cast<uint32_t>(code);
-    }
 }  // namespace
+
+const IRProtocolTimings NEC_TIMINGS = {
+    9000, // headerMark
+    4500, // headerSpace
+    2250, // repeatSpace
+    560,  // bitMark
+    1690, // bitOneSpace
+    560,  // bitZeroSpace
+    200,  // margin
+    200   // headerMargin
+};
+
+const IRProtocolTimings LG_AC_TIMINGS = {
+    9000, // headerMark
+    4500, // headerSpace
+    2250, // repeatSpace
+    560,  // bitMark
+    1690, // bitOneSpace
+    560,  // bitZeroSpace
+    200,  // margin
+    600   // headerMargin (relaxed)
+};
+
+const char* resultToString(IRResult result)
+{
+    switch (result) {
+    case IRResult::SUCCESS:
+        return "SUCCESS";
+    case IRResult::ERROR_INVALID_FORMAT:
+        return "ERROR_INVALID_FORMAT";
+    case IRResult::ERROR_INVALID_LENGTH:
+        return "ERROR_INVALID_LENGTH";
+    case IRResult::ERROR_FAILED_TO_OPEN_DEVICE:
+        return "ERROR_FAILED_TO_OPEN_DEVICE";
+    case IRResult::ERROR_NOT_INITIALIZED:
+        return "ERROR_NOT_INITIALIZED";
+    case IRResult::ERROR_CMD_ALREADY_EXISTS:
+        return "ERROR_CMD_ALREADY_EXISTS";
+    case IRResult::ERROR_CMD_NOT_FOUND:
+        return "ERROR_CMD_NOT_FOUND";
+    case IRResult::ERROR_CMD_EMPTY:
+        return "ERROR_CMD_EMPTY";
+    case IRResult::ERROR_CMD_DONT_MATCH:
+        return "ERROR_CMD_DONT_MATCH";
+    case IRResult::ERROR_INCOMPLETE_FRAME:
+        return "ERROR_INCOMPLETE_FRAME";
+    case IRResult::ERROR_FAILED_TO_RECEIVE:
+        return "ERROR_FAILED_TO_RECEIVE";
+    case IRResult::ERROR_FAILED_TO_TRANSMIT:
+        return "ERROR_FAILED_TO_TRANSMIT";
+    }
+    return "UNKNOWN";
+}
 
 // ============================================================================
 // IRPayload
@@ -135,24 +175,34 @@ namespace
 IRPayload IRPayload::repeatCode()
 {
     IRPayload payload;
-    payload.m_value = static_cast<uint32_t>(Type::REPEAT) << kTypeShift;
+    payload.m_type = Type::REPEAT;
+    payload.m_value = 0;
+    return payload;
+}
+
+IRPayload IRPayload::fromRaw28(uint32_t raw28)
+{
+    IRPayload payload;
+    payload.m_type = Type::LG_AC_DATA;
+    payload.m_value = raw28;
     return payload;
 }
 
 IRPayload::IRPayload() = default;
 
 IRPayload::IRPayload(uint8_t code)
-    : m_value(make_payload_value(Type::CODE_ONLY, code, 0)) {}
+    : m_type(Type::CODE_ONLY), m_value(code) {}
 
 IRPayload::IRPayload(uint8_t code, uint8_t data)
-    : m_value(make_payload_value(Type::CODE_DATA, code, data)) {}
+    : m_type(Type::CODE_DATA), m_value((static_cast<uint32_t>(data) << 8) | code) {}
 
 IRPayload::IRPayload(std::string_view code)
 {
     uint8_t parsed = 0;
     if (!parse_byte(code, parsed))
         return;
-    m_value = make_payload_value(Type::CODE_ONLY, parsed, 0);
+    m_type = Type::CODE_ONLY;
+    m_value = parsed;
 }
 
 IRPayload::IRPayload(std::string_view code, std::string_view data)
@@ -161,12 +211,23 @@ IRPayload::IRPayload(std::string_view code, std::string_view data)
     uint8_t parsedData = 0;
     if (!parse_byte(code, parsedCode) || !parse_byte(data, parsedData))
         return;
-    m_value = make_payload_value(Type::CODE_DATA, parsedCode, parsedData);
+    m_type = Type::CODE_DATA;
+    m_value = (static_cast<uint32_t>(parsedData) << 8) | parsedCode;
 }
 
 IRPayload::Type IRPayload::type() const
 {
-    return static_cast<Type>((m_value >> kTypeShift) & 0x3u);
+    return m_type;
+}
+
+IRPayload::DataType IRPayload::dataType() const
+{
+    return static_cast<DataType>(static_cast<uint8_t>(m_type) & 0x03);
+}
+
+IRPayload::Protocol IRPayload::protocol() const
+{
+    return static_cast<Protocol>((static_cast<uint8_t>(m_type) >> 2) & 0x3F);
 }
 
 uint8_t IRPayload::code() const
@@ -177,6 +238,11 @@ uint8_t IRPayload::code() const
 uint8_t IRPayload::data() const
 {
     return static_cast<uint8_t>((m_value >> 8) & 0xFFu);
+}
+
+uint32_t IRPayload::raw28() const
+{
+    return m_value;
 }
 
 uint32_t IRPayload::raw() const
@@ -191,12 +257,12 @@ uint32_t IRPayload::raw() const
 
 bool IRPayload::valid() const
 {
-    return type() != Type::EMPTY;
+    return m_type != Type::EMPTY;
 }
 
 bool IRPayload::operator==(const IRPayload& other) const
 {
-    return m_value == other.m_value;
+    return m_type == other.m_type && m_value == other.m_value;
 }
 
 bool IRPayload::operator!=(const IRPayload& other) const
@@ -212,12 +278,12 @@ IRCommandList::IRCommandList() = default;
 
 IRCommandList::~IRCommandList() = default;
 
-IRResult IRCommandList::addCommand(std::string_view name, const IRPayload& payload)
+IRResult IRCommandList::addCommand(std::string_view name, const IRPayload& payload, bool overwrite)
 {
     if (!payload.valid() || payload.type() == IRPayload::Type::EMPTY)
         return IRResult::ERROR_CMD_EMPTY;
 
-    if (m_commands.contains(std::string(name)))
+    if (!overwrite && m_commands.contains(std::string(name)))
         return IRResult::ERROR_CMD_ALREADY_EXISTS;
 
     m_commands[std::string(name)] = payload;
@@ -235,9 +301,106 @@ IRPayload& IRCommandList::operator[](std::string_view name)
     return m_commands[std::string(name)];
 }
 
+const IRPayload* IRCommandList::getPayload(std::string_view name) const
+{
+    auto it = m_commands.find(std::string(name));
+    if (it != m_commands.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
 void IRCommandList::clear()
 {
     m_commands.clear();
+}
+
+bool IRCommandList::loadFromFile(const std::string& filepath)
+{
+    std::ifstream in(filepath);
+    if (!in.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        size_t first = line.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos || line[first] == '#') {
+            continue;
+        }
+
+        std::stringstream ss(line);
+        std::string name, code_str, data_str;
+
+        if (!std::getline(ss, name, ',')) continue;
+        if (!std::getline(ss, code_str, ',')) continue;
+        std::getline(ss, data_str, ',');
+
+        auto trim = [](std::string& s) {
+            size_t start = s.find_first_not_of(" \t\r\n");
+            if (start == std::string::npos) {
+                s.clear();
+                return;
+            }
+            size_t end = s.find_last_not_of(" \t\r\n");
+            s = s.substr(start, end - start + 1);
+        };
+        trim(name);
+        trim(code_str);
+        trim(data_str);
+
+        if (name.empty() || code_str.empty()) continue;
+
+        IRPayload payload;
+        if (code_str.starts_with("raw28:")) {
+            uint32_t val = std::stoul(code_str.substr(6), nullptr, 16);
+            payload = IRPayload::fromRaw28(val);
+        } else if (!data_str.empty()) {
+            payload = IRPayload(code_str, data_str);
+        } else {
+            payload = IRPayload(code_str);
+        }
+
+        if (payload.valid()) {
+            removeCommand(name);
+            addCommand(name, payload);
+        }
+    }
+    return true;
+}
+
+bool IRCommandList::saveToFile(const std::string& filepath) const
+{
+    std::ofstream out(filepath);
+    if (!out.is_open()) {
+        return false;
+    }
+
+    auto sortedCommands = getSortedCommands();
+
+    out << "# Format: name,code[,data]\n";
+    for (const auto& [name, payload] : sortedCommands) {
+        if (payload.type() == IRPayload::Type::CODE_ONLY) {
+            out << name << ",0x" << std::hex << std::setw(2) << std::setfill('0')
+                << static_cast<int>(payload.code()) << "\n";
+        } else if (payload.type() == IRPayload::Type::CODE_DATA) {
+            out << name << ",0x" << std::hex << std::setw(2) << std::setfill('0')
+                << static_cast<int>(payload.code()) << ",0x" << std::setw(2) << std::setfill('0')
+                << static_cast<int>(payload.data()) << "\n";
+        } else if (payload.type() == IRPayload::Type::LG_AC_DATA) {
+            out << name << ",raw28:0x" << std::hex << payload.raw28() << "\n";
+        }
+    }
+    return true;
+}
+
+std::vector<std::pair<std::string, IRPayload>> IRCommandList::getSortedCommands() const
+{
+    std::vector<std::pair<std::string, IRPayload>> sorted(m_commands.begin(), m_commands.end());
+    std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
+    });
+    return sorted;
 }
 
 // ============================================================================
@@ -292,12 +455,32 @@ IRResult IRTransmitter::send(const IRPayload& payload) const
     if (!payload.valid() || payload.type() == IRPayload::Type::EMPTY)
         return IRResult::ERROR_INVALID_FORMAT;
 
+    if (payload.type() == IRPayload::Type::LG_AC_DATA) {
+        uint32_t rawBuf[2 + 28 * 2 + 1];
+        size_t idx = 0;
+        rawBuf[idx++] = LG_AC_TIMINGS.headerMark;
+        rawBuf[idx++] = LG_AC_TIMINGS.headerSpace;
+
+        uint32_t val28 = payload.raw28();
+        for (int bitIdx = 0; bitIdx < 28; ++bitIdx) {
+            if ((val28 >> bitIdx) & 1) {
+                rawBuf[idx++] = LG_AC_TIMINGS.bitMark;
+                rawBuf[idx++] = LG_AC_TIMINGS.bitOneSpace;
+            } else {
+                rawBuf[idx++] = LG_AC_TIMINGS.bitMark;
+                rawBuf[idx++] = LG_AC_TIMINGS.bitZeroSpace;
+            }
+        }
+        rawBuf[idx++] = LG_AC_TIMINGS.bitMark;
+        return transmitRaw(rawBuf, idx);
+    }
+
     if (payload.type() == IRPayload::Type::REPEAT) {
         const uint32_t rawBuf[NEC_REPEAT_PULSES] = {
-            NEC_HEADER_MARK_US,
-            NEC_REPEAT_SPACE_US,
-            NEC_SHORT_US,
-            NEC_SHORT_US,
+            NEC_TIMINGS.headerMark,
+            NEC_TIMINGS.repeatSpace,
+            NEC_TIMINGS.bitMark,
+            NEC_TIMINGS.bitMark,
         };
         return transmitRaw(const_cast<uint32_t*>(rawBuf), NEC_REPEAT_PULSES);
     }
@@ -305,8 +488,8 @@ IRResult IRTransmitter::send(const IRPayload& payload) const
     uint32_t rawBuf[NEC_FRAME_PULSES];
     size_t idx = 0;
 
-    rawBuf[idx++] = NEC_HEADER_MARK_US;
-    rawBuf[idx++] = NEC_HEADER_SPACE_US;
+    rawBuf[idx++] = NEC_TIMINGS.headerMark;
+    rawBuf[idx++] = NEC_TIMINGS.headerSpace;
 
     const uint8_t payloadBytes[4] = {
         payload.code(),
@@ -319,16 +502,16 @@ IRResult IRTransmitter::send(const IRPayload& payload) const
         const uint8_t currentByte = payloadBytes[byteIdx];
         for (int bitIdx = 0; bitIdx < 8; ++bitIdx) {
             if ((currentByte >> bitIdx) & 1) {
-                rawBuf[idx++] = NEC_SHORT_US;
-                rawBuf[idx++] = NEC_LONG_US;
+                rawBuf[idx++] = NEC_TIMINGS.bitMark;
+                rawBuf[idx++] = NEC_TIMINGS.bitOneSpace;
             } else {
-                rawBuf[idx++] = NEC_SHORT_US;
-                rawBuf[idx++] = NEC_SHORT_US;
+                rawBuf[idx++] = NEC_TIMINGS.bitMark;
+                rawBuf[idx++] = NEC_TIMINGS.bitZeroSpace;
             }
         }
     }
 
-    rawBuf[idx++] = NEC_SHORT_US;
+    rawBuf[idx++] = NEC_TIMINGS.bitMark;
     return transmitRaw(rawBuf, idx);
 }
 
@@ -337,18 +520,11 @@ IRResult IRTransmitter::send(std::string_view cmd_name) const
     if (!m_commandList)
         return IRResult::ERROR_CMD_NOT_FOUND;
 
-    const IRPayload* payload = nullptr;
-    for (const auto& [name, registered] : *m_commandList) {
-        if (name == cmd_name) {
-            payload = &registered;
-            break;
-        }
-    }
-
+    const IRPayload* payload = m_commandList->getPayload(cmd_name);
     if (!payload)
         return IRResult::ERROR_CMD_NOT_FOUND;
-    if (payload->type() != IRPayload::Type::CODE_ONLY
-        && payload->type() != IRPayload::Type::CODE_DATA) {
+
+    if (payload->type() == IRPayload::Type::EMPTY || payload->type() == IRPayload::Type::REPEAT) {
         return IRResult::ERROR_CMD_DONT_MATCH;
     }
 
@@ -360,23 +536,14 @@ IRResult IRTransmitter::send(std::string_view cmd_name, uint8_t data) const
     if (!m_commandList)
         return IRResult::ERROR_CMD_NOT_FOUND;
 
-    IRPayload registered;
-    bool found = false;
-    for (const auto& [name, payload] : *m_commandList) {
-        if (name == cmd_name) {
-            registered = payload;
-            found = true;
-            break;
-        }
-    }
-
-    if (!found)
+    const IRPayload* registered = m_commandList->getPayload(cmd_name);
+    if (!registered)
         return IRResult::ERROR_CMD_NOT_FOUND;
 
-    if (registered.type() != IRPayload::Type::CODE_ONLY)
+    if (registered->type() != IRPayload::Type::CODE_ONLY)
         return IRResult::ERROR_CMD_DONT_MATCH;
 
-    return send(IRPayload(registered.code(), data));
+    return send(IRPayload(registered->code(), data));
 }
 
 IRResult IRTransmitter::send(std::string_view cmd_name, std::string_view data_str) const
@@ -468,7 +635,11 @@ void IRReceiver::appendLircPackets(const uint32_t* raw, size_t count)
         const uint32_t mode = packet & LIRC_MODE2_MASK;
 
         if (mode == LIRC_MODE2_TIMEOUT) {
-            m_pendingMark.reset();
+            if (m_pendingMark.has_value()) {
+                m_buffer.push_back(*m_pendingMark);
+                m_buffer.push_back(packet & LIRC_VALUE_MASK);
+                m_pendingMark.reset();
+            }
             continue;
         }
 
@@ -499,10 +670,23 @@ void IRReceiver::appendLircPackets(const uint32_t* raw, size_t count)
 void IRReceiver::recvThreadFunc()
 {
     uint32_t readBuf[128];
+    struct pollfd pfd;
+    pfd.fd = m_fd;
+    pfd.events = POLLIN;
 
     while (m_running) {
         if (m_fd < 0)
             break;
+
+        int pollRes = poll(&pfd, 1, 100); // Wait up to 100ms
+        if (pollRes < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (pollRes == 0) {
+            // Timeout, check m_running and loop again
+            continue;
+        }
 
         const ssize_t bytesRead = read(m_fd, readBuf, sizeof(readBuf));
         if (bytesRead <= 0)
@@ -522,64 +706,73 @@ bool IRReceiver::tryParseFrame(IRPayload& out_payload, size_t& consumed) const
     consumed = 0;
 
     for (size_t start = 0; start + 3 <= m_buffer.size(); ++start) {
-        if (!in_range(m_buffer[start], NEC_HEADER_MARK_US)
-            || !in_range(m_buffer[start + 1], NEC_REPEAT_SPACE_US)
-            || !in_range(m_buffer[start + 2], NEC_SHORT_US)) {
+        if (!in_range(m_buffer[start], LG_AC_TIMINGS.headerMark, LG_AC_TIMINGS.headerMargin)
+            || !in_range(m_buffer[start + 1], NEC_TIMINGS.repeatSpace, 350)
+            || !in_range(m_buffer[start + 2], NEC_TIMINGS.bitMark)) {
             continue;
         }
 
         out_payload = IRPayload::repeatCode();
-        if (start + 4 <= m_buffer.size() && in_range(m_buffer[start + 3], NEC_SHORT_US))
+        if (start + 4 <= m_buffer.size() && in_range(m_buffer[start + 3], NEC_TIMINGS.bitMark))
             consumed = start + 4;
         else
             consumed = start + 3;
         return true;
     }
 
-    for (size_t start = 0; start + NEC_FRAME_PULSES <= m_buffer.size(); ++start) {
-        if (!in_range(m_buffer[start], NEC_HEADER_MARK_US)
-            || !in_range(m_buffer[start + 1], NEC_HEADER_SPACE_US)) {
+    for (size_t start = 0; start + 2 <= m_buffer.size(); ++start) {
+        if (!in_range(m_buffer[start], LG_AC_TIMINGS.headerMark, LG_AC_TIMINGS.headerMargin)
+            || !in_range(m_buffer[start + 1], LG_AC_TIMINGS.headerSpace, LG_AC_TIMINGS.headerMargin)) {
             continue;
         }
 
         uint32_t payloadBits = 0;
         size_t idx = start + 2;
-        bool valid = true;
+        int bitsParsed = 0;
 
-        for (int bit = 0; bit < 32; ++bit, idx += 2) {
+        while (idx + 1 < m_buffer.size() && bitsParsed < 32) {
             const uint32_t mark = m_buffer[idx];
             const uint32_t space = m_buffer[idx + 1];
 
             if (in_bit_range(mark) != IRResult::SUCCESS
                 || in_bit_range(space) != IRResult::SUCCESS) {
-                valid = false;
                 break;
             }
 
-            if (space > (NEC_SHORT_US + NEC_LONG_US) / 2)
-                payloadBits |= (1U << bit);
+            if (space > (NEC_TIMINGS.bitMark + NEC_TIMINGS.bitOneSpace) / 2)
+                payloadBits |= (1U << bitsParsed);
+
+            bitsParsed++;
+            idx += 2;
         }
 
-        if (!valid)
+        if (bitsParsed != 28 && bitsParsed != 32) {
             continue;
+        }
 
-        if (!in_range(m_buffer[idx], NEC_SHORT_US))
+        if (idx >= m_buffer.size() || !in_range(m_buffer[idx], NEC_TIMINGS.bitMark)) {
             continue;
+        }
 
-        const uint8_t code = static_cast<uint8_t>(payloadBits & 0xFFu);
-        const uint8_t codeInv = static_cast<uint8_t>((payloadBits >> 8) & 0xFFu);
-        const uint8_t data = static_cast<uint8_t>((payloadBits >> 16) & 0xFFu);
-        const uint8_t dataInv = static_cast<uint8_t>((payloadBits >> 24) & 0xFFu);
+        if (bitsParsed == 32) {
+            const uint8_t code = static_cast<uint8_t>(payloadBits & 0xFFu);
+            const uint8_t codeInv = static_cast<uint8_t>((payloadBits >> 8) & 0xFFu);
+            const uint8_t data = static_cast<uint8_t>((payloadBits >> 16) & 0xFFu);
+            const uint8_t dataInv = static_cast<uint8_t>((payloadBits >> 24) & 0xFFu);
 
-        if ((code ^ codeInv) != 0xFF || (data ^ dataInv) != 0xFF)
-            continue;
+            if ((code ^ codeInv) == 0xFF && (data ^ dataInv) == 0xFF) {
+                if (data == 0)
+                    out_payload = IRPayload(code);
+                else
+                    out_payload = IRPayload(code, data);
+            } else {
+                continue;
+            }
+        } else if (bitsParsed == 28) {
+            out_payload = IRPayload::fromRaw28(payloadBits);
+        }
 
-        if (data == 0)
-            out_payload = IRPayload(code);
-        else
-            out_payload = IRPayload(code, data);
-
-        consumed = start + NEC_FRAME_PULSES;
+        consumed = idx + 1;
         return true;
     }
 
@@ -615,6 +808,12 @@ IRResult IRReceiver::recv(IRPayload& out_payload, std::string& out_cmd_name)
         if (registered.type() == IRPayload::Type::CODE_DATA
             && registered.code() == out_payload.code()
             && registered.data() == out_payload.data()) {
+            out_cmd_name = name;
+            return IRResult::SUCCESS;
+        }
+
+        if (registered.type() == IRPayload::Type::LG_AC_DATA
+            && registered.raw28() == out_payload.raw28()) {
             out_cmd_name = name;
             return IRResult::SUCCESS;
         }

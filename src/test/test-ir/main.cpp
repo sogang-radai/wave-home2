@@ -2,12 +2,18 @@
 #include "util/arg_parser.h"
 
 #include <chrono>
+#include <fstream>
+#include <optional>
 #include <csignal>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cstring>
+#include <cerrno>
 
 namespace
 {
@@ -18,36 +24,7 @@ void onSignal(int)
     g_running = 0;
 }
 
-const char* resultToString(IRResult result)
-{
-    switch (result) {
-    case IRResult::SUCCESS:
-        return "SUCCESS";
-    case IRResult::ERROR_INVALID_FORMAT:
-        return "ERROR_INVALID_FORMAT";
-    case IRResult::ERROR_INVALID_LENGTH:
-        return "ERROR_INVALID_LENGTH";
-    case IRResult::ERROR_FAILED_TO_OPEN_DEVICE:
-        return "ERROR_FAILED_TO_OPEN_DEVICE";
-    case IRResult::ERROR_NOT_INITIALIZED:
-        return "ERROR_NOT_INITIALIZED";
-    case IRResult::ERROR_CMD_ALREADY_EXISTS:
-        return "ERROR_CMD_ALREADY_EXISTS";
-    case IRResult::ERROR_CMD_NOT_FOUND:
-        return "ERROR_CMD_NOT_FOUND";
-    case IRResult::ERROR_CMD_EMPTY:
-        return "ERROR_CMD_EMPTY";
-    case IRResult::ERROR_CMD_DONT_MATCH:
-        return "ERROR_CMD_DONT_MATCH";
-    case IRResult::ERROR_INCOMPLETE_FRAME:
-        return "ERROR_INCOMPLETE_FRAME";
-    case IRResult::ERROR_FAILED_TO_RECEIVE:
-        return "ERROR_FAILED_TO_RECEIVE";
-    case IRResult::ERROR_FAILED_TO_TRANSMIT:
-        return "ERROR_FAILED_TO_TRANSMIT";
-    }
-    return "UNKNOWN";
-}
+
 
 void printPayload(const IRPayload& payload)
 {
@@ -67,6 +44,9 @@ void printPayload(const IRPayload& payload)
     case IRPayload::Type::REPEAT:
         std::cout << "type=REPEAT";
         break;
+    case IRPayload::Type::LG_AC_DATA:
+        std::cout << "type=LG_AC_DATA raw28=0x" << std::hex << payload.raw28() << std::dec;
+        break;
     }
     std::cout << " raw=0x" << std::hex << std::setw(8) << std::setfill('0') << payload.raw()
               << std::dec;
@@ -76,24 +56,25 @@ void registerDefaultCommands(IRCommandList& list)
 {
     const struct {
         const char* name;
-        const char* code;
-        const char* data;
+        uint8_t code;
+        std::optional<uint8_t> data;
+        
     } defaults[] = {
-        {"power", "0x00", nullptr},
-        {"vol_up", "0x40", nullptr},
-        {"vol_down", "0x41", nullptr},
-        {"mute", "0x09", nullptr},
-        {"input_hdmi1", "0x10", "0x01"},
+        {"power", 0x00, std::nullopt},
+        {"vol_up", 0x00, 0x40},
+        {"vol_down", 0x00, 0x41},
+        {"mute", 0x00, 0x09},
+        {"input_hdmi1", 0x01, 0x10},
     };
 
     for (const auto& cmd : defaults) {
         IRResult res = IRResult::SUCCESS;
         if (cmd.data)
-            res = list.addCommand(cmd.name, IRPayload(cmd.code, cmd.data));
+            res = list.addCommand(cmd.name, IRPayload(cmd.code, *cmd.data));
         else
             res = list.addCommand(cmd.name, IRPayload(cmd.code));
 
-        if (res != IRResult::SUCCESS) {
+        if (res != IRResult::SUCCESS && res != IRResult::ERROR_CMD_ALREADY_EXISTS) {
             std::cerr << "warning: failed to register '" << cmd.name << "': "
                       << resultToString(res) << "\n";
         }
@@ -102,11 +83,70 @@ void registerDefaultCommands(IRCommandList& list)
 
 void printCommandList(const IRCommandList& list)
 {
-    for (const auto& [name, payload] : list) {
+    for (const auto& [name, payload] : list.getSortedCommands()) {
         std::cout << name << ": ";
         printPayload(payload);
         std::cout << "\n";
     }
+}
+
+
+
+int runLearn(ArgParser& parser, IRReceiver& rx, IRCommandList& list, const std::string& filepath)
+{
+    if (parser.has("learn")) {
+        const std::string name = parser.get<std::string>("learn");
+        if (name.empty()) {
+            std::cerr << "error: command name cannot be empty\n";
+            return 1;
+        }
+
+        const int timeoutSec = std::stoi(parser.get<std::string>("timeout"));
+        std::cout << "Learning mode: Press the remote button for '" << name << "' now (Timeout: " << timeoutSec << "s)...\n";
+
+        const int maxAttempts = timeoutSec * 10;
+        for (int i = 0; i < maxAttempts; ++i) {
+            if (rx.hasData()) {
+                IRPayload payload;
+                const IRResult res = rx.recv(payload);
+
+                if (res == IRResult::SUCCESS) {
+                    if (payload.type() == IRPayload::Type::REPEAT) {
+                        std::cout << "Received repeat code. Please try again...\n";
+                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                        continue;
+                    }
+
+                    IRResult addRes = list.addCommand(name, payload);
+                    if (addRes != IRResult::SUCCESS) {
+                        std::cerr << "Failed to register learned command: " << resultToString(addRes) << "\n";
+                        return 1;
+                    }
+
+                    if (!list.saveToFile(filepath)) {
+                        std::cerr << "warning: failed to save learned command to " << filepath << "\n";
+                    }
+
+                    std::cout << "Successfully learned and saved command '" << name << "': ";
+                    printPayload(payload);
+                    std::cout << "\n";
+                    return 0;
+                }
+
+                if (res != IRResult::ERROR_INCOMPLETE_FRAME) {
+                    std::cerr << "Failed to receive: " << resultToString(res) << "\n";
+                    return 1;
+                }
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        std::cerr << "Learning timed out.\n";
+        return 1;
+    }
+
+    return -1;
 }
 
 int runTransmit(ArgParser& parser, IRTransmitter& tx)
@@ -160,11 +200,69 @@ int runTransmit(ArgParser& parser, IRTransmitter& tx)
     return -1;
 }
 
+int runRemote(ArgParser& parser, IRTransmitter& tx, const IRCommandList& list)
+{
+    auto commands = list.getSortedCommands();
+
+    if (commands.empty()) {
+        std::cerr << "error: no commands registered. Please run learning mode first or check commands.txt\n";
+        return 1;
+    }
+
+    std::signal(SIGINT, onSignal);
+
+    while (g_running) {
+        std::cout << "\n=== Virtual IR Remote ===\n";
+        for (size_t i = 0; i < commands.size(); ++i) {
+            std::cout << (i + 1) << ". " << commands[i].first << "\n";
+        }
+        std::cout << "0. Exit\n";
+        std::cout << "Select command (0-" << commands.size() << "): ";
+
+        std::string input;
+        if (!std::getline(std::cin, input)) {
+            break;
+        }
+
+        size_t start = input.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos) {
+            continue;
+        }
+        size_t end = input.find_last_not_of(" \t\r\n");
+        input = input.substr(start, end - start + 1);
+
+        if (input == "0") {
+            std::cout << "Exiting remote control mode.\n";
+            break;
+        }
+
+        try {
+            size_t sel = std::stoul(input);
+            if (sel > 0 && sel <= commands.size()) {
+                const auto& [name, payload] = commands[sel - 1];
+                std::cout << "Sending command '" << name << "'...\n";
+                IRResult res = tx.send(payload);
+                if (res == IRResult::SUCCESS) {
+                    std::cout << "Sent successfully.\n";
+                } else {
+                    std::cerr << "Failed to send: " << resultToString(res) << "\n";
+                }
+            } else {
+                std::cout << "Invalid selection. Please choose between 0 and " << commands.size() << ".\n";
+            }
+        } catch (const std::exception&) {
+            std::cout << "Invalid input. Please enter a number.\n";
+        }
+    }
+
+    return 0;
+}
+
 int runReceive(ArgParser& parser, IRReceiver& rx)
 {
     if (parser.has("recv")) {
-        constexpr int kMaxAttempts = 50;
-        for (int i = 0; i < kMaxAttempts; ++i) {
+        const int maxAttempts = std::stoi(parser.get<std::string>("attempts"));
+        for (int i = 0; i < maxAttempts; ++i) {
             if (rx.hasData()) {
                 IRPayload payload;
                 std::string cmdName;
@@ -229,6 +327,44 @@ int runReceive(ArgParser& parser, IRReceiver& rx)
 
     return -1;
 }
+
+int runRawDump(ArgParser& parser)
+{
+    const std::string rxDev = parser.get<std::string>("rx-dev");
+    const int fd = open(rxDev.c_str(), O_RDONLY);
+    if (fd < 0) {
+        std::cerr << "Failed to open receiver device: " << rxDev << " (" << strerror(errno) << ")\n";
+        return 1;
+    }
+
+    std::signal(SIGINT, onSignal);
+    std::cout << "Dumping raw LIRC packets from " << rxDev << ". Press Ctrl+C to exit.\n";
+
+    uint32_t packet;
+    while (g_running) {
+        ssize_t bytesRead = read(fd, &packet, sizeof(packet));
+        if (bytesRead == sizeof(packet)) {
+            uint32_t mode = packet & LIRC_MODE2_MASK;
+            uint32_t val = packet & LIRC_VALUE_MASK;
+            if (mode == LIRC_PULSE_BIT) {
+                std::cout << "pulse " << val << "\n";
+            } else if (mode == LIRC_MODE2_SPACE) {
+                std::cout << "space " << val << "\n";
+            } else if (mode == LIRC_MODE2_TIMEOUT) {
+                std::cout << "timeout " << val << "\n";
+            } else {
+                std::cout << "other mode=0x" << std::hex << mode << std::dec << " val=" << val << "\n";
+            }
+        } else if (bytesRead < 0) {
+            if (errno == EINTR) continue;
+            std::cerr << "read error: " << strerror(errno) << "\n";
+            break;
+        }
+    }
+
+    close(fd);
+    return 0;
+}
 }  // namespace
 
 int main(int argc, const char* argv[])
@@ -248,7 +384,16 @@ int main(int argc, const char* argv[])
     parser.addArgument("--listen", "-l")
         .help("Continuously receive IR frames.")
         .actionFlag();
+    parser.addArgument("--learn").help("Learn a new IR command and save it to file by name.");
+    parser.addArgument("--raw").help("Dump raw LIRC packets from the receiver device.").actionFlag();
+    parser.addArgument("--remote").help("Enter interactive remote control mode.").actionFlag();
     parser.addArgument("--list").help("List registered commands and exit.").actionFlag();
+    parser.addArgument("--timeout")
+        .help("Timeout in seconds for learning mode (default: 10).")
+        .defaultValue("10");
+    parser.addArgument("--attempts")
+        .help("Maximum attempts (100ms intervals) to wait in single receive mode (default: 50).")
+        .defaultValue("50");
 
     try {
         parser.parseArgs(argc, argv);
@@ -257,19 +402,28 @@ int main(int argc, const char* argv[])
         return 1;
     }
 
+    if (parser.has("raw")) {
+        return runRawDump(parser);
+    }
+
     auto cmdList = std::make_shared<IRCommandList>();
-    registerDefaultCommands(*cmdList);
+    const std::string filepath = "/home/radai/wave-home2/src/common/ir/commands.txt";
+
+    if (!cmdList->loadFromFile(filepath)) {
+        registerDefaultCommands(*cmdList);
+        cmdList->saveToFile(filepath);
+    }
 
     if (parser.has("list")) {
         printCommandList(*cmdList);
         return 0;
     }
 
-    const bool wantsTx = parser.has("send") || parser.has("raw-code");
-    const bool wantsRx = parser.has("recv") || parser.has("listen");
+    const bool wantsTx = parser.has("send") || parser.has("raw-code") || parser.has("remote");
+    const bool wantsRx = parser.has("recv") || parser.has("listen") || parser.has("learn");
 
     if (!wantsTx && !wantsRx) {
-        std::cerr << "error: specify --send, --raw-code, --recv, --listen, or --list\n";
+        std::cerr << "error: specify --send, --raw-code, --recv, --listen, --learn, --remote, or --list\n";
         parser.printHelp();
         return 1;
     }
@@ -294,15 +448,27 @@ int main(int argc, const char* argv[])
     }
 
     if (wantsTx) {
-        const int code = runTransmit(parser, tx);
-        if (code >= 0)
-            return code;
+        if (parser.has("remote")) {
+            const int code = runRemote(parser, tx, *cmdList);
+            if (code >= 0)
+                return code;
+        } else {
+            const int code = runTransmit(parser, tx);
+            if (code >= 0)
+                return code;
+        }
     }
 
     if (wantsRx) {
-        const int code = runReceive(parser, rx);
-        if (code >= 0)
-            return code;
+        if (parser.has("learn")) {
+            const int code = runLearn(parser, rx, *cmdList, filepath);
+            if (code >= 0)
+                return code;
+        } else {
+            const int code = runReceive(parser, rx);
+            if (code >= 0)
+                return code;
+        }
     }
 
     return 0;
