@@ -36,9 +36,11 @@ public:
         CODE_ONLY = 1,
         CODE_DATA = 2,
         REPEAT = 3,
+        CUSTOM_28 = 4,
     };
 
     static IRPayload repeatCode();
+    static IRPayload fromRaw28(uint32_t raw28);
 
     IRPayload();
     IRPayload(uint8_t code);
@@ -50,6 +52,7 @@ public:
 
     uint8_t code() const;
     uint8_t data() const;
+    uint32_t raw28() const;
 
     uint32_t raw() const;
 
@@ -59,7 +62,7 @@ public:
     bool operator!=(const IRPayload& other) const;
 
 private:
-    static constexpr uint32_t kTypeShift = 30;
+    static constexpr uint32_t kTypeShift = 29;
 
     uint32_t m_value = 0;
 };

@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstring>
 #include <mutex>
+#include <poll.h>
 
 #define PROPAGATE_ERROR(res) \
     do { \
@@ -33,11 +34,11 @@ namespace
     constexpr uint32_t LIRC_MODE2_OVERFLOW = 0x04000000u;
     
     constexpr size_t kMaxBufferEntries = 512;
-    constexpr uint32_t kPayloadTypeShift = 30;
+    constexpr uint32_t kPayloadTypeShift = 29;
 
-    bool in_range(uint32_t val, uint32_t target)
+    bool in_range(uint32_t val, uint32_t target, uint32_t margin = NEC_MARGIN)
     {
-        return target - NEC_MARGIN <= val && val <= target + NEC_MARGIN;
+        return target - margin <= val && val <= target + margin;
     }
 
     bool is_hex_digit(char c)
@@ -139,6 +140,13 @@ IRPayload IRPayload::repeatCode()
     return payload;
 }
 
+IRPayload IRPayload::fromRaw28(uint32_t raw28)
+{
+    IRPayload payload;
+    payload.m_value = (static_cast<uint32_t>(Type::CUSTOM_28) << kTypeShift) | (raw28 & 0x0FFFFFFFu);
+    return payload;
+}
+
 IRPayload::IRPayload() = default;
 
 IRPayload::IRPayload(uint8_t code)
@@ -166,7 +174,7 @@ IRPayload::IRPayload(std::string_view code, std::string_view data)
 
 IRPayload::Type IRPayload::type() const
 {
-    return static_cast<Type>((m_value >> kTypeShift) & 0x3u);
+    return static_cast<Type>((m_value >> kTypeShift) & 0x7u);
 }
 
 uint8_t IRPayload::code() const
@@ -177,6 +185,11 @@ uint8_t IRPayload::code() const
 uint8_t IRPayload::data() const
 {
     return static_cast<uint8_t>((m_value >> 8) & 0xFFu);
+}
+
+uint32_t IRPayload::raw28() const
+{
+    return m_value & 0x0FFFFFFFu;
 }
 
 uint32_t IRPayload::raw() const
@@ -291,6 +304,26 @@ IRResult IRTransmitter::send(const IRPayload& payload) const
 
     if (!payload.valid() || payload.type() == IRPayload::Type::EMPTY)
         return IRResult::ERROR_INVALID_FORMAT;
+
+    if (payload.type() == IRPayload::Type::CUSTOM_28) {
+        uint32_t rawBuf[2 + 28 * 2 + 1];
+        size_t idx = 0;
+        rawBuf[idx++] = NEC_HEADER_MARK_US;
+        rawBuf[idx++] = NEC_HEADER_SPACE_US;
+
+        uint32_t val28 = payload.raw28();
+        for (int bitIdx = 0; bitIdx < 28; ++bitIdx) {
+            if ((val28 >> bitIdx) & 1) {
+                rawBuf[idx++] = NEC_SHORT_US;
+                rawBuf[idx++] = NEC_LONG_US;
+            } else {
+                rawBuf[idx++] = NEC_SHORT_US;
+                rawBuf[idx++] = NEC_SHORT_US;
+            }
+        }
+        rawBuf[idx++] = NEC_SHORT_US;
+        return transmitRaw(rawBuf, idx);
+    }
 
     if (payload.type() == IRPayload::Type::REPEAT) {
         const uint32_t rawBuf[NEC_REPEAT_PULSES] = {
@@ -468,7 +501,11 @@ void IRReceiver::appendLircPackets(const uint32_t* raw, size_t count)
         const uint32_t mode = packet & LIRC_MODE2_MASK;
 
         if (mode == LIRC_MODE2_TIMEOUT) {
-            m_pendingMark.reset();
+            if (m_pendingMark.has_value()) {
+                m_buffer.push_back(*m_pendingMark);
+                m_buffer.push_back(packet & LIRC_VALUE_MASK);
+                m_pendingMark.reset();
+            }
             continue;
         }
 
@@ -499,10 +536,23 @@ void IRReceiver::appendLircPackets(const uint32_t* raw, size_t count)
 void IRReceiver::recvThreadFunc()
 {
     uint32_t readBuf[128];
+    struct pollfd pfd;
+    pfd.fd = m_fd;
+    pfd.events = POLLIN;
 
     while (m_running) {
         if (m_fd < 0)
             break;
+
+        int pollRes = poll(&pfd, 1, 100); // Wait up to 100ms
+        if (pollRes < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (pollRes == 0) {
+            // Timeout, check m_running and loop again
+            continue;
+        }
 
         const ssize_t bytesRead = read(m_fd, readBuf, sizeof(readBuf));
         if (bytesRead <= 0)
@@ -522,8 +572,8 @@ bool IRReceiver::tryParseFrame(IRPayload& out_payload, size_t& consumed) const
     consumed = 0;
 
     for (size_t start = 0; start + 3 <= m_buffer.size(); ++start) {
-        if (!in_range(m_buffer[start], NEC_HEADER_MARK_US)
-            || !in_range(m_buffer[start + 1], NEC_REPEAT_SPACE_US)
+        if (!in_range(m_buffer[start], NEC_HEADER_MARK_US, 600)
+            || !in_range(m_buffer[start + 1], NEC_REPEAT_SPACE_US, 350)
             || !in_range(m_buffer[start + 2], NEC_SHORT_US)) {
             continue;
         }
@@ -536,50 +586,59 @@ bool IRReceiver::tryParseFrame(IRPayload& out_payload, size_t& consumed) const
         return true;
     }
 
-    for (size_t start = 0; start + NEC_FRAME_PULSES <= m_buffer.size(); ++start) {
-        if (!in_range(m_buffer[start], NEC_HEADER_MARK_US)
-            || !in_range(m_buffer[start + 1], NEC_HEADER_SPACE_US)) {
+    for (size_t start = 0; start + 2 <= m_buffer.size(); ++start) {
+        if (!in_range(m_buffer[start], NEC_HEADER_MARK_US, 600)
+            || !in_range(m_buffer[start + 1], NEC_HEADER_SPACE_US, 600)) {
             continue;
         }
 
         uint32_t payloadBits = 0;
         size_t idx = start + 2;
-        bool valid = true;
+        int bitsParsed = 0;
 
-        for (int bit = 0; bit < 32; ++bit, idx += 2) {
+        while (idx + 1 < m_buffer.size() && bitsParsed < 32) {
             const uint32_t mark = m_buffer[idx];
             const uint32_t space = m_buffer[idx + 1];
 
             if (in_bit_range(mark) != IRResult::SUCCESS
                 || in_bit_range(space) != IRResult::SUCCESS) {
-                valid = false;
                 break;
             }
 
             if (space > (NEC_SHORT_US + NEC_LONG_US) / 2)
-                payloadBits |= (1U << bit);
+                payloadBits |= (1U << bitsParsed);
+
+            bitsParsed++;
+            idx += 2;
         }
 
-        if (!valid)
+        if (bitsParsed != 28 && bitsParsed != 32) {
             continue;
+        }
 
-        if (!in_range(m_buffer[idx], NEC_SHORT_US))
+        if (idx >= m_buffer.size() || !in_range(m_buffer[idx], NEC_SHORT_US)) {
             continue;
+        }
 
-        const uint8_t code = static_cast<uint8_t>(payloadBits & 0xFFu);
-        const uint8_t codeInv = static_cast<uint8_t>((payloadBits >> 8) & 0xFFu);
-        const uint8_t data = static_cast<uint8_t>((payloadBits >> 16) & 0xFFu);
-        const uint8_t dataInv = static_cast<uint8_t>((payloadBits >> 24) & 0xFFu);
+        if (bitsParsed == 32) {
+            const uint8_t code = static_cast<uint8_t>(payloadBits & 0xFFu);
+            const uint8_t codeInv = static_cast<uint8_t>((payloadBits >> 8) & 0xFFu);
+            const uint8_t data = static_cast<uint8_t>((payloadBits >> 16) & 0xFFu);
+            const uint8_t dataInv = static_cast<uint8_t>((payloadBits >> 24) & 0xFFu);
 
-        if ((code ^ codeInv) != 0xFF || (data ^ dataInv) != 0xFF)
-            continue;
+            if ((code ^ codeInv) == 0xFF && (data ^ dataInv) == 0xFF) {
+                if (data == 0)
+                    out_payload = IRPayload(code);
+                else
+                    out_payload = IRPayload(code, data);
+            } else {
+                continue;
+            }
+        } else if (bitsParsed == 28) {
+            out_payload = IRPayload::fromRaw28(payloadBits);
+        }
 
-        if (data == 0)
-            out_payload = IRPayload(code);
-        else
-            out_payload = IRPayload(code, data);
-
-        consumed = start + NEC_FRAME_PULSES;
+        consumed = idx + 1;
         return true;
     }
 
@@ -615,6 +674,12 @@ IRResult IRReceiver::recv(IRPayload& out_payload, std::string& out_cmd_name)
         if (registered.type() == IRPayload::Type::CODE_DATA
             && registered.code() == out_payload.code()
             && registered.data() == out_payload.data()) {
+            out_cmd_name = name;
+            return IRResult::SUCCESS;
+        }
+
+        if (registered.type() == IRPayload::Type::CUSTOM_28
+            && registered.raw28() == out_payload.raw28()) {
             out_cmd_name = name;
             return IRResult::SUCCESS;
         }
