@@ -17,7 +17,6 @@ add_executable(iq-server
     signal_processor.cpp
     frame_sync.cpp
     tcp_server.cpp
-    "${WAVE_HOME2_ROOT}/src/common/r4sn/iq_protocol.cpp"
     "${WAVE_HOME2_ROOT}/src/common/util/arg_parser.cpp"
 )
 

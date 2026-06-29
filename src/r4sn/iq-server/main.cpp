@@ -8,15 +8,15 @@
 
 namespace
 {
-    r4sn::SyncMode parseSyncMode(const std::string& value)
+    SyncMode parseSyncMode(const std::string& value)
     {
         if (value == "r4sn")
-            return r4sn::SyncMode::R4sn;
+            return SyncMode::R4sn;
         if (value != "none")
             throw std::runtime_error("unsupported --sync value: " + value);
-        return r4sn::SyncMode::None;
+        return SyncMode::None;
     }
-}  // namespace
+}
 
 int main(int argc, char* argv[])
 {
@@ -45,7 +45,7 @@ int main(int argc, char* argv[])
         const uint16_t sync_port = static_cast<uint16_t>(parser.get<int>("sync-port"));
         const auto sync_mode = parseSyncMode(parser.get<std::string>("sync"));
 
-        r4sn::TcpServer server(port, sync_mode, sync_port);
+        TcpServer server(port, sync_mode, sync_port);
         server.run();
     }
     catch (const std::exception& ex)

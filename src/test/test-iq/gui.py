@@ -8,6 +8,7 @@ import sys
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -96,14 +97,28 @@ from iq_client import (
     RdmSpec,
     Target,
     build_range_profile_targets,
+    merge_profile_with_vital_targets,
     parse_targets_text,
+    resolve_vital_response_indices,
+    snap_vital_pick_distance,
     va_label,
+)
+
+_VITAL_DIR = Path(__file__).resolve().parent.parent / "test-vital"
+if str(_VITAL_DIR) not in sys.path:
+    sys.path.insert(0, str(_VITAL_DIR))
+from vital_signs import (  # noqa: E402
+    DEFAULT_BUFFER_FRAMES,
+    DEFAULT_FFT_SIZE,
+    VitalSignsProcessor,
+    analysis_bins,
+    spectrum_scale,
 )
 
 DEFAULT_TARGET_TEXT = "\n".join(
     [
         "# azimuth_rad, elevation_rad, distance_m [, chirp_mode]",
-        "# 0=PerChirp 1=Average 2=MaxAbs 3=FirstChirp",
+        "# 0=Array 1=Average 2=MaxAbs",
         "0,0,1.000,1",
         "0,0,1.075,1",
         "0,0,1.150,1",
@@ -112,6 +127,12 @@ DEFAULT_TARGET_TEXT = "\n".join(
 
 PROFILE_PAD_BINS = 2
 PROFILE_Y_DEFAULT = (0.0, 7000.0)
+PHASE_DIAL_DIAMETER_DEFAULT = 36
+PHASE_DIAL_ROW_HEIGHT = PHASE_DIAL_DIAMETER_DEFAULT + 20
+VITAL_CHIRP_MODE = 1  # Average — coherent integration preserves phase (research.md §4)
+VITAL_RANGE_HALF_WIDTH = 2
+VITAL_DIAL_DIAMETER = 30
+VITAL_DIAL_ROW_HEIGHT = VITAL_DIAL_DIAMETER + 18
 COLORMAPS = ["viridis", "inferno", "plasma", "magma", "cividis", "turbo"]
 PHASE_COLORMAPS = ["coolwarm", "twilight", "hsv", "PiYG", "RdBu", "seismic", "turbo"]
 # Peak |IQ| below this value is normalized against the floor (noise stays dark).
@@ -132,6 +153,47 @@ RDM_DEFAULT_CMAPS: dict[str, str] = {
     RDM_VIEW_PHASE: "coolwarm",
     RDM_VIEW_BLEND: "coolwarm",
 }
+
+
+class VitalSpectrumViewBox(pg.ViewBox):
+    """Wheel on plot: X zoom only (BPM ≥ 0). Wheel on left axis: Y zoom with floor at 0."""
+
+    def wheelEvent(self, ev, axis=None) -> None:  # noqa: N802
+        delta = ev.angleDelta().y()
+        if delta == 0:
+            ev.ignore()
+            return
+        factor = 0.9 if delta > 0 else 1.0 / 0.9
+        x0, x1 = self.viewRange()[0]
+        y0, y1 = self.viewRange()[1]
+
+        if axis == 1:
+            y1 = max(y1 * factor, 1e-12)
+            self.setYRange(0.0, y1, padding=0)
+            ev.accept()
+            return
+
+        mouse = self.mapSceneToView(ev.scenePos())
+        mx = float(mouse.x())
+        span = max((x1 - x0) * factor, 0.5)
+        rel = (mx - x0) / (x1 - x0 + 1e-12)
+        nx0 = mx - rel * span
+        nx1 = nx0 + span
+        if nx0 < 0.0:
+            nx1 -= nx0
+            nx0 = 0.0
+        self.setXRange(nx0, nx1, padding=0)
+        ev.accept()
+
+
+class VitalSpectrumPlotWidget(pg.PlotWidget):
+    """Slow-time spectrum: positive BPM / magnitude axes only."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(viewBox=VitalSpectrumViewBox(), **kwargs)
+        vb = self.getViewBox()
+        vb.setLimits(xMin=0, yMin=0)
+        vb.setMouseEnabled(x=True, y=True)
 
 
 class YZoomPlotWidget(pg.PlotWidget):
@@ -169,6 +231,7 @@ class ViewMode(Enum):
     TARGET_LIST = auto()
     DISTANCE_PROFILE = auto()
     RDM = auto()
+    VITAL_SIGNS = auto()
 
 
 @dataclass
@@ -191,15 +254,29 @@ class PollPayload:
     tile: int = 0
     sub_ant: int = 0
     rdm_pick_range_m: float | None = None
+    vital_pick_range_m: float | None = None
+    vital_rb_indices: list[tuple[int, int]] | None = None
+    profile_target_count: int = 0
 
 
 class PhaseDial(QWidget):
     """Circular phase indicator (hand angle only, not amplitude)."""
 
-    def __init__(self, diameter: int = 40, parent: QWidget | None = None) -> None:
+    def __init__(self, diameter: int = PHASE_DIAL_DIAMETER_DEFAULT, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._diameter = diameter
         self._phase_rad = 0.0
         self._distance_m = 0.0
+        self._apply_diameter(diameter)
+
+    def set_diameter(self, diameter: int) -> None:
+        if diameter == self._diameter:
+            return
+        self._diameter = diameter
+        self._apply_diameter(diameter)
+        self.update()
+
+    def _apply_diameter(self, diameter: int) -> None:
         self.setFixedSize(diameter + 4, diameter + 18)
 
     def set_sample(self, distance_m: float, phase_rad: float) -> None:
@@ -357,16 +434,29 @@ class PollWorker(QThread):
                         )
                         pick_iq = self._session.request_iq(
                             [pick_target],
-                            use_v2=True,
                             va_combine_mode=spec.va_combine_mode,
                             tile=spec.tile,
                             sub_ant=spec.sub_ant,
                         )
                     packet = ("rdm", response, pick_iq)
+                elif payload.view_mode == ViewMode.VITAL_SIGNS and payload.targets:
+                    response = self._session.request_iq(
+                        payload.targets,
+                        va_combine_mode=payload.va_combine_mode,
+                        tile=payload.tile,
+                        sub_ant=payload.sub_ant,
+                    )
+                    packet = (
+                        "vital",
+                        payload.targets,
+                        response,
+                        payload.profile,
+                        payload.vital_rb_indices,
+                        payload.profile_target_count,
+                    )
                 elif payload.targets:
                     response = self._session.request_iq(
                         payload.targets,
-                        use_v2=True,
                         va_combine_mode=payload.va_combine_mode,
                         tile=payload.tile,
                         sub_ant=payload.sub_ant,
@@ -403,12 +493,23 @@ class MainWindow(QMainWindow):
 
         self._connected = False
         self._profile_plot_bounds = (0.0, 2.0)
+        self._vital_profile_bounds = (0.0, 2.0)
         self._profile_y_bounds = list(PROFILE_Y_DEFAULT)
         self._phase_dials: list[PhaseDial] = []
         self._rdm_vmax = 1.0
         self._rdm_rect: tuple[float, float, float, float] | None = None
         self._last_rdm_response: RdmResponse | None = None
         self._rdm_pick_range_m: float | None = None
+        self._vital_pick_range_m: float | None = None
+        self._vital_phase_dials: list[PhaseDial] = []
+        self._vital_processor = VitalSignsProcessor(
+            frame_rate_hz=1.0 / DEFAULT_POLL_INTERVAL_S,
+            buffer_frames=DEFAULT_BUFFER_FRAMES,
+        )
+        self._vital_last_pick: float | None = None
+        self._vital_frame_times: list[float] = []
+        self._vital_repush_bin: int | None = None
+        self._vital_disp_y_half: float | None = None
 
         self._worker = PollWorker(self)
         self._worker.frame_ready.connect(self._on_frame)
@@ -430,6 +531,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_target_list_tab(), "Target List")
         self.tabs.addTab(self._build_distance_profile_tab(), "Distance Profile")
         self.tabs.addTab(self._build_rdm_tab(), "Range-Doppler Map")
+        self.tabs.addTab(self._build_vital_tab(), "HR / BR")
         layout.addWidget(self.tabs, stretch=1)
 
         self.setStatusBar(QStatusBar())
@@ -614,8 +716,11 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.phase_dial_host)
-        scroll.setFixedHeight(64)
+        scroll.setFixedHeight(PHASE_DIAL_ROW_HEIGHT)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         layout.addWidget(scroll)
+        self._profile_phase_scroll = scroll
         self._sync_profile_antenna_controls()
         return page
 
@@ -722,10 +827,6 @@ class MainWindow(QMainWindow):
         pick_layout.setSpacing(2)
         self.rdm_pick_dial = PhaseDial(diameter=52)
         pick_layout.addWidget(self.rdm_pick_dial, alignment=Qt.AlignmentFlag.AlignHCenter)
-        self.rdm_pick_info = QLabel("L-click: range line\nR-click: clear")
-        self.rdm_pick_info.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.rdm_pick_info.setWordWrap(True)
-        pick_layout.addWidget(self.rdm_pick_info)
         controls.addWidget(pick_box)
 
         controls.addStretch(1)
@@ -761,6 +862,186 @@ class MainWindow(QMainWindow):
         self._apply_rdm_colormap()
         self._sync_rdm_antenna_controls()
         self.rdm_mag_floor.setEnabled(True)
+        return page
+
+    def _build_vital_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+
+        beam_box = QGroupBox("Beamforming")
+        beam_form = QFormLayout(beam_box)
+        beam_form.setContentsMargins(6, 4, 6, 4)
+        self.vital_az = QDoubleSpinBox()
+        self.vital_az.setRange(-90.0, 90.0)
+        self.vital_az.setDecimals(2)
+        self.vital_az.setSuffix(" deg")
+        beam_form.addRow("Azimuth", self.vital_az)
+        self.vital_el = QDoubleSpinBox()
+        self.vital_el.setRange(-90.0, 90.0)
+        self.vital_el.setDecimals(2)
+        self.vital_el.setSuffix(" deg")
+        beam_form.addRow("Elevation", self.vital_el)
+        controls.addWidget(beam_box)
+
+        range_box = QGroupBox("Range")
+        range_form = QFormLayout(range_box)
+        range_form.setContentsMargins(6, 4, 6, 4)
+        self.vital_dist_min = QDoubleSpinBox()
+        self.vital_dist_min.setRange(0.0, 30.0)
+        self.vital_dist_min.setDecimals(3)
+        self.vital_dist_min.setSuffix(" m")
+        self.vital_dist_min.setValue(0.5)
+        range_form.addRow("Min", self.vital_dist_min)
+        self.vital_dist_max = QDoubleSpinBox()
+        self.vital_dist_max.setRange(0.0, 30.0)
+        self.vital_dist_max.setDecimals(3)
+        self.vital_dist_max.setSuffix(" m")
+        self.vital_dist_max.setValue(2.0)
+        range_form.addRow("Max", self.vital_dist_max)
+        self.vital_step = QDoubleSpinBox()
+        self.vital_step.setRange(0.001, 1.0)
+        self.vital_step.setDecimals(4)
+        self.vital_step.setSuffix(" m")
+        self.vital_step.setValue(RANGE_BIN_SIZE_M)
+        range_form.addRow("Step", self.vital_step)
+        controls.addWidget(range_box)
+
+        proc_box = QGroupBox("Profile IQ")
+        proc_form = QFormLayout(proc_box)
+        proc_form.setContentsMargins(6, 4, 6, 4)
+        self.vital_profile_mode = QComboBox()
+        for mode_id, (label, _) in CHIRP_MODES.items():
+            self.vital_profile_mode.addItem(f"{label} ({mode_id})", mode_id)
+        self.vital_profile_mode.setCurrentIndex(1)
+        proc_form.addRow("Chirp mode", self.vital_profile_mode)
+        self.vital_buffer_frames = QSpinBox()
+        self.vital_buffer_frames.setRange(64, 2048)
+        self.vital_buffer_frames.setSingleStep(32)
+        self.vital_buffer_frames.setValue(DEFAULT_BUFFER_FRAMES)
+        proc_form.addRow("Buffer frames", self.vital_buffer_frames)
+        controls.addWidget(proc_box)
+
+        ant_box = QGroupBox("Antenna")
+        ant_form = QFormLayout(ant_box)
+        ant_form.setContentsMargins(6, 4, 6, 4)
+        self.vital_va_mode = QComboBox()
+        for mode_id, label in VA_COMBINE_MODES.items():
+            self.vital_va_mode.addItem(label, mode_id)
+        self.vital_va_mode.setCurrentIndex(VA_COMBINE_BEAMFORM)
+        ant_form.addRow("Combine", self.vital_va_mode)
+        self.vital_tile = QSpinBox()
+        self.vital_tile.setRange(0, 11)
+        ant_form.addRow("TX tile", self.vital_tile)
+        self.vital_sub_ant = QSpinBox()
+        self.vital_sub_ant.setRange(0, 15)
+        ant_form.addRow("RX sub", self.vital_sub_ant)
+        self.vital_va_label = QLabel()
+        ant_form.addRow("VA", self.vital_va_label)
+        controls.addWidget(ant_box)
+
+        readout_box = QGroupBox("Vital signs")
+        readout_form = QFormLayout(readout_box)
+        readout_form.setContentsMargins(6, 4, 6, 4)
+        self.vital_hr_label = QLabel("— bpm")
+        self.vital_hr_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        readout_form.addRow("Heart rate", self.vital_hr_label)
+        self.vital_br_label = QLabel("— brpm")
+        self.vital_br_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        readout_form.addRow("Breathing", self.vital_br_label)
+        self.vital_dev_label = QLabel("—")
+        readout_form.addRow("Breath dev", self.vital_dev_label)
+        self.vital_buffer_label = QLabel("Pick a range on the plot")
+        self.vital_buffer_label.setWordWrap(True)
+        readout_form.addRow("Buffer", self.vital_buffer_label)
+        controls.addWidget(readout_box)
+
+        layout.addLayout(controls)
+
+        self.vital_parse_label = QLabel()
+        self.vital_parse_label.setMaximumHeight(20)
+        layout.addWidget(self.vital_parse_label)
+
+        self.vital_profile_plot = YZoomPlotWidget(
+            y_bounds=self._profile_y_bounds,
+            title="Range profile — L-click to pick vital-signs range",
+        )
+        self.vital_profile_curve = self.vital_profile_plot.plot(
+            pen=pg.mkPen("#4fc3f7", width=2), symbol="o", symbolSize=5
+        )
+        self.vital_pick_line = pg.InfiniteLine(
+            angle=90,
+            movable=False,
+            pen=pg.mkPen("#ffeb3b", width=2, style=Qt.PenStyle.SolidLine),
+        )
+        self.vital_pick_line.setVisible(False)
+        self.vital_profile_plot.addItem(self.vital_pick_line)
+        layout.addWidget(self.vital_profile_plot, stretch=2)
+
+        self.vital_phase_dial_host = QWidget()
+        self.vital_phase_dial_row = QHBoxLayout(self.vital_phase_dial_host)
+        self.vital_phase_dial_row.setContentsMargins(4, 0, 4, 0)
+        self.vital_phase_dial_row.setSpacing(4)
+        vital_dial_scroll = QScrollArea()
+        vital_dial_scroll.setWidgetResizable(True)
+        vital_dial_scroll.setWidget(self.vital_phase_dial_host)
+        vital_dial_scroll.setFixedHeight(VITAL_DIAL_ROW_HEIGHT)
+        vital_dial_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        vital_dial_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        layout.addWidget(vital_dial_scroll)
+
+        plots = QSplitter(Qt.Orientation.Vertical)
+        self.vital_disp_plot = pg.PlotWidget(title="Chest displacement (centre range bin, live)")
+        self.vital_disp_plot.setLabel("left", "Δx (mm)")
+        self.vital_disp_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.vital_disp_plot.enableAutoRange(x=False, y=False)
+        self.vital_disp_plot.getViewBox().setAutoVisible(y=False)
+        self.vital_disp_curve = self.vital_disp_plot.plot(pen=pg.mkPen("#81c784", width=1.5))
+        self._compact_vital_plot_chrome(self.vital_disp_plot)
+
+        self.vital_spec_plot = VitalSpectrumPlotWidget(title="Slow-time spectrum (BPM, live)")
+        self.vital_spec_plot.setLabel("bottom", "BPM")
+        self.vital_spec_plot.setLabel("left", "|FFT|²")
+        self.vital_spec_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.vital_spec_plot.setXRange(0, 60, padding=0)
+        self.vital_spec_plot.setYRange(0, 1.0, padding=0)
+        self.vital_breath_spec_curve = self.vital_spec_plot.plot(pen=pg.mkPen("#64b5f6", width=1.2))
+        self.vital_heart_spec_curve = self.vital_spec_plot.plot(pen=pg.mkPen("#ef5350", width=1.2))
+        self._compact_vital_plot_chrome(self.vital_spec_plot)
+        _init_bins = analysis_bins(20.0, DEFAULT_FFT_SIZE, DEFAULT_BUFFER_FRAMES)
+        _init_scale = spectrum_scale(20.0, DEFAULT_FFT_SIZE)
+        self.vital_breath_region = pg.LinearRegionItem(
+            values=(_init_bins.breath_start * _init_scale, _init_bins.breath_end * _init_scale),
+            brush=pg.mkBrush(100, 181, 246, 40),
+            movable=False,
+        )
+        self.vital_heart_region = pg.LinearRegionItem(
+            values=(_init_bins.heart_search_start * _init_scale, _init_bins.heart_search_end * _init_scale),
+            brush=pg.mkBrush(239, 83, 80, 40),
+            movable=False,
+        )
+        self.vital_spec_plot.addItem(self.vital_breath_region)
+        self.vital_spec_plot.addItem(self.vital_heart_region)
+        self.vital_breath_peak_line = pg.InfiniteLine(
+            angle=90, movable=False, pen=pg.mkPen("#42a5f5", width=1, style=Qt.PenStyle.DashLine)
+        )
+        self.vital_heart_peak_line = pg.InfiniteLine(
+            angle=90, movable=False, pen=pg.mkPen("#e53935", width=1, style=Qt.PenStyle.DashLine)
+        )
+        self.vital_spec_plot.addItem(self.vital_breath_peak_line)
+        self.vital_spec_plot.addItem(self.vital_heart_peak_line)
+
+        plots.addWidget(self.vital_disp_plot)
+        plots.addWidget(self.vital_spec_plot)
+        plots.setSizes([3, 2])
+        layout.addWidget(plots, stretch=3)
+
+        self._sync_vital_antenna_controls()
+        self._refresh_vital_targets()
         return page
 
     def _wire_signals(self) -> None:
@@ -799,12 +1080,29 @@ class MainWindow(QMainWindow):
         self.rdm_cmap.currentIndexChanged.connect(self._on_rdm_display_changed)
         self.rdm_plot.scene().sigMouseClicked.connect(self._on_rdm_plot_clicked)
 
+        for widget in (
+            self.vital_az,
+            self.vital_el,
+            self.vital_dist_min,
+            self.vital_dist_max,
+            self.vital_step,
+        ):
+            widget.valueChanged.connect(self._on_vital_params_changed)
+        self.vital_profile_mode.currentIndexChanged.connect(self._on_vital_params_changed)
+        self.vital_buffer_frames.valueChanged.connect(self._on_vital_buffer_changed)
+        self.vital_va_mode.currentIndexChanged.connect(self._on_vital_va_mode_changed)
+        self.vital_tile.valueChanged.connect(self._on_vital_va_index_changed)
+        self.vital_sub_ant.valueChanged.connect(self._on_vital_va_index_changed)
+        self.vital_profile_plot.scene().sigMouseClicked.connect(self._on_vital_plot_clicked)
+
     def _active_view_mode(self) -> ViewMode:
         idx = self.tabs.currentIndex()
         if idx == 1:
             return ViewMode.DISTANCE_PROFILE
         if idx == 2:
             return ViewMode.RDM
+        if idx == 3:
+            return ViewMode.VITAL_SIGNS
         return ViewMode.TARGET_LIST
 
     def _apply_profile_x_axis(self) -> None:
@@ -911,6 +1209,138 @@ class MainWindow(QMainWindow):
             self.rdm_va_label.setText(va_label(self.rdm_tile.value(), self.rdm_sub_ant.value()))
         self._on_rdm_params_changed()
 
+    def _compact_vital_plot_chrome(self, plot: pg.PlotWidget) -> None:
+        """Shrink bottom axis / legend area so plots use more vertical space."""
+        item = plot.getPlotItem()
+        item.showGrid(x=True, y=True, alpha=0.3)
+        item.setMenuEnabled(False)
+        bottom = item.getAxis("bottom")
+        bottom.setStyle(tickTextOffset=2)
+        bottom.setHeight(18)
+        if item.legend is not None:
+            item.legend.hide()
+        item.layout.setRowPreferredHeight(3, 22)
+
+    def _vital_pick_bin(self) -> int | None:
+        if self._vital_pick_range_m is None:
+            return None
+        return round(self._vital_pick_range_m / RANGE_BIN_SIZE_M)
+
+    def _resolve_vital_rb_indices(
+        self,
+        merged_targets: list[Target],
+        response: IqResponse,
+        profile_target_count: int,
+    ) -> list[tuple[int, int]]:
+        if self._vital_pick_range_m is None or not merged_targets:
+            return []
+        profile_count = profile_target_count or len(merged_targets)
+        profile_targets = merged_targets[:profile_count]
+        indices = resolve_vital_response_indices(
+            merged_targets,
+            profile_targets,
+            self._vital_pick_range_m,
+            VITAL_RANGE_HALF_WIDTH,
+            VITAL_CHIRP_MODE,
+        )
+        return [(rb, idx) for rb, idx in indices if 0 <= idx < len(response.targets)]
+
+    def _vital_disp_window(self) -> int:
+        return min(self.vital_buffer_frames.value(), 512)
+
+    def _ensure_vital_phase_dials(self, count: int) -> None:
+        diameter = VITAL_DIAL_DIAMETER if count <= 12 else max(24, VITAL_DIAL_DIAMETER - 4)
+        while len(self._vital_phase_dials) < count:
+            dial = PhaseDial(diameter=diameter)
+            self._vital_phase_dials.append(dial)
+            self.vital_phase_dial_row.addWidget(dial)
+        while len(self._vital_phase_dials) > count:
+            dial = self._vital_phase_dials.pop()
+            self.vital_phase_dial_row.removeWidget(dial)
+            dial.deleteLater()
+        for dial in self._vital_phase_dials:
+            dial.set_diameter(diameter)
+
+    def _on_vital_buffer_changed(self) -> None:
+        if self._vital_pick_range_m is not None or self._vital_processor.min_buffer_fill > 0:
+            fps = 1.0 / max(self.interval_spin.value() / 1000.0, 1e-3)
+            self._reset_vital_processor(fps)
+        else:
+            self._vital_processor.set_buffer_frames(self.vital_buffer_frames.value())
+        if self._connected and self._active_view_mode() == ViewMode.VITAL_SIGNS:
+            self._push_worker_payload()
+
+    def _update_vital_spectrum_regions(self) -> None:
+        bins = self._vital_processor.bins
+        scale = self._vital_processor.scale
+        self.vital_breath_region.setRegion((bins.breath_start * scale, bins.breath_end * scale))
+        self.vital_heart_region.setRegion((bins.heart_search_start * scale, bins.heart_search_end * scale))
+
+    def _vital_targets(self) -> tuple[ProfileState | None, list[str]]:
+        try:
+            targets, plot_min, plot_max = build_range_profile_targets(
+                self.vital_az.value(),
+                self.vital_el.value(),
+                self.vital_dist_min.value(),
+                self.vital_dist_max.value(),
+                self.vital_step.value(),
+                self.vital_profile_mode.currentData(),
+                pad_bins=PROFILE_PAD_BINS,
+            )
+            msg_extra = ""
+            if len(targets) > 64:
+                msg_extra = " — large request"
+            _ = msg_extra
+            return ProfileState(
+                targets,
+                plot_min,
+                plot_max,
+                va_combine_mode=self.vital_va_mode.currentData(),
+                tile=self.vital_tile.value(),
+                sub_ant=self.vital_sub_ant.value(),
+            ), [] if targets else ["no range bins"]
+        except ValueError as exc:
+            return None, [str(exc)]
+
+    def _sync_vital_antenna_controls(self) -> None:
+        mode = self.vital_va_mode.currentData()
+        single = mode == VA_COMBINE_SINGLE
+        beamform = mode == VA_COMBINE_BEAMFORM
+        self.vital_tile.setEnabled(single)
+        self.vital_sub_ant.setEnabled(single)
+        self.vital_va_label.setEnabled(single)
+        self.vital_az.setEnabled(beamform)
+        self.vital_el.setEnabled(beamform)
+        if single:
+            self.vital_va_label.setText(va_label(self.vital_tile.value(), self.vital_sub_ant.value()))
+        else:
+            self.vital_va_label.setText("—")
+
+    def _on_vital_va_mode_changed(self) -> None:
+        self._sync_vital_antenna_controls()
+        self._on_vital_params_changed()
+
+    def _on_vital_va_index_changed(self) -> None:
+        if self.vital_va_mode.currentData() == VA_COMBINE_SINGLE:
+            self.vital_va_label.setText(va_label(self.vital_tile.value(), self.vital_sub_ant.value()))
+        self._on_vital_params_changed()
+
+    def _on_vital_params_changed(self) -> None:
+        self._refresh_vital_targets()
+        if self._vital_profile_bounds:
+            x0, x1 = self._vital_profile_bounds
+            self.vital_profile_plot.setXRange(x0, x1, padding=0)
+
+    def _refresh_vital_targets(self) -> None:
+        profile, errors = self._vital_targets()
+        if profile:
+            self._vital_profile_bounds = (profile.plot_x_min, profile.plot_x_max)
+            self._set_parse_label(self.vital_parse_label, len(profile.targets), errors, profile)
+        else:
+            self._set_parse_label(self.vital_parse_label, 0, errors)
+        if self._connected and self._active_view_mode() == ViewMode.VITAL_SIGNS:
+            self._push_worker_payload()
+
     def _current_payload(self) -> tuple[PollPayload | None, list[str]]:
         mode = self._active_view_mode()
         if mode == ViewMode.TARGET_LIST:
@@ -929,6 +1359,30 @@ class MainWindow(QMainWindow):
                 va_combine_mode=profile.va_combine_mode,
                 tile=profile.tile,
                 sub_ant=profile.sub_ant,
+            ), []
+        if mode == ViewMode.VITAL_SIGNS:
+            profile, errors = self._vital_targets()
+            if errors or profile is None:
+                return None, errors or ["no profile"]
+            targets = profile.targets
+            vital_rb_indices: list[tuple[int, int]] | None = None
+            if self._vital_pick_range_m is not None:
+                targets, vital_rb_indices = merge_profile_with_vital_targets(
+                    profile.targets,
+                    self._vital_pick_range_m,
+                    VITAL_RANGE_HALF_WIDTH,
+                    VITAL_CHIRP_MODE,
+                )
+            return PollPayload(
+                mode,
+                targets=targets,
+                profile=profile,
+                va_combine_mode=profile.va_combine_mode,
+                tile=profile.tile,
+                sub_ant=profile.sub_ant,
+                vital_pick_range_m=self._vital_pick_range_m,
+                vital_rb_indices=vital_rb_indices,
+                profile_target_count=len(profile.targets),
             ), []
         spec, errors = self._rdm_spec()
         if errors or spec is None:
@@ -998,15 +1452,26 @@ class MainWindow(QMainWindow):
             else:
                 label.setText(f"OK — {count} target(s)")
 
+    def _phase_dial_diameter(self, count: int) -> int:
+        if count <= 1:
+            return PHASE_DIAL_DIAMETER_DEFAULT
+        avail = max(320, self.width() - 120)
+        per = avail // max(count, 1)
+        return max(22, min(PHASE_DIAL_DIAMETER_DEFAULT, per - 4))
+
     def _ensure_phase_dials(self, count: int) -> None:
+        diameter = self._phase_dial_diameter(count)
         while len(self._phase_dials) < count:
-            dial = PhaseDial()
+            dial = PhaseDial(diameter=diameter)
             self._phase_dials.append(dial)
             self.phase_dial_row.addWidget(dial)
         while len(self._phase_dials) > count:
             dial = self._phase_dials.pop()
             self.phase_dial_row.removeWidget(dial)
             dial.deleteLater()
+        for dial in self._phase_dials:
+            dial.set_diameter(diameter)
+        self._profile_phase_scroll.setFixedHeight(diameter + 20)
 
     def _set_table_row(
         self,
@@ -1036,8 +1501,11 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self) -> None:
         if self._connected:
             self._push_worker_payload()
-        if self.tabs.currentIndex() == 2:
+        idx = self.tabs.currentIndex()
+        if idx == 2:
             self._on_rdm_params_changed()
+        elif idx == 3:
+            self._refresh_vital_targets()
 
     def _push_worker_payload(self) -> None:
         payload, errors = self._current_payload()
@@ -1074,7 +1542,7 @@ class MainWindow(QMainWindow):
             if payload.view_mode == ViewMode.RDM and payload.rdm_spec:
                 probe.request_rdm(payload.rdm_spec)
             elif payload.targets:
-                probe.request_iq(payload.targets[:1], use_v2=True)
+                probe.request_iq(payload.targets[:1])
         except OSError as exc:
             QMessageBox.critical(self, "Connection failed", str(exc))
             return
@@ -1120,6 +1588,44 @@ class MainWindow(QMainWindow):
                 self._refresh_rdm_pick_from_iq(pick_iq)
             self._status_label.setText(
                 f"frame {frame} t={elapsed:.2f}s RDM {response.range_count}x{response.doppler_count} OK"
+            )
+            return
+
+        if kind == "vital":
+            _kind, targets, response, profile, vital_rb_indices, profile_target_count = packet
+            iq: IqResponse = response
+            if iq.status != 0:
+                self._status_label.setText(f"frame {frame}: iq-server status={iq.status}")
+                return
+            profile_targets = (
+                targets[:profile_target_count]
+                if profile_target_count
+                else (profile.targets if profile else targets)
+            )
+            profile_iq = IqResponse(
+                iq.version,
+                profile_target_count or len(profile_targets),
+                iq.status,
+                iq.targets[:profile_target_count] if profile_target_count else iq.targets,
+            )
+            self._update_vital_profile_plot(profile_targets, profile_iq, profile)
+            vital_rb_indices = self._resolve_vital_rb_indices(
+                targets,
+                iq,
+                profile_target_count,
+            )
+            if self._vital_pick_range_m is not None:
+                if vital_rb_indices:
+                    self._vital_repush_bin = None
+                    self._process_vital_samples(vital_rb_indices, iq, frame, elapsed)
+                else:
+                    self.vital_buffer_label.setText("Pick active — waiting for vital IQ bins…")
+                    pick_bin = self._vital_pick_bin()
+                    if pick_bin is not None and self._vital_repush_bin != pick_bin:
+                        self._push_worker_payload()
+                        self._vital_repush_bin = pick_bin
+            self._status_label.setText(
+                f"frame {frame} t={elapsed:.2f}s vital profile={profile_target_count or len(profile_targets)} OK"
             )
             return
 
@@ -1294,7 +1800,6 @@ class MainWindow(QMainWindow):
         self._rdm_pick_range_m = None
         self.rdm_pick_line.setVisible(False)
         self.rdm_pick_dial.set_sample(0.0, 0.0)
-        self.rdm_pick_info.setText("L-click: range line\nR-click: clear")
         if self._connected and self._active_view_mode() == ViewMode.RDM:
             self._push_worker_payload()
 
@@ -1306,10 +1811,6 @@ class MainWindow(QMainWindow):
         self.rdm_pick_line.setValue(dist_m)
         self.rdm_pick_line.setVisible(True)
         self.rdm_pick_dial.set_sample(dist_m, sample.phase_rad)
-        self.rdm_pick_info.setText(
-            f"R={dist_m:.3f} m (range cube)\n"
-            f"|IQ|={sample.magnitude:.0f}  φ={sample.phase_deg:.1f}°"
-        )
 
     @Slot(object)
     def _on_rdm_plot_clicked(self, event) -> None:
@@ -1329,7 +1830,235 @@ class MainWindow(QMainWindow):
             self._push_worker_payload()
         self.rdm_pick_line.setValue(self._rdm_pick_range_m)
         self.rdm_pick_line.setVisible(True)
-        self.rdm_pick_info.setText(f"R={self._rdm_pick_range_m:.3f} m\n(awaiting IQ…)")
+
+    def _snap_profile_range_m(self, targets: list[Target], dist_m: float) -> float:
+        if not targets:
+            return dist_m
+        return min(targets, key=lambda t: abs(t.distance_m - dist_m)).distance_m
+
+    def _update_vital_profile_plot(
+        self,
+        targets: list[Target],
+        response: IqResponse,
+        profile: ProfileState | None,
+    ) -> None:
+        distances: list[float] = []
+        mags: list[float] = []
+        for target, samples in zip(targets, response.targets):
+            s = samples[0]
+            distances.append(target.distance_m)
+            mags.append(s.magnitude)
+
+        self.vital_profile_curve.setData(distances, mags)
+        if profile:
+            self._vital_profile_bounds = (profile.plot_x_min, profile.plot_x_max)
+            x0, x1 = profile.plot_x_min, profile.plot_x_max
+            self.vital_profile_plot.setXRange(x0, x1, padding=0)
+            vb = self.vital_profile_plot.getViewBox()
+            span = max(x1 - x0, 1e-3)
+            vb.setLimits(xMin=x0, xMax=x1, minXRange=span, maxXRange=span)
+
+        title = "Range profile — L-click to pick vital-signs range"
+        if mags:
+            peak_idx = max(range(len(mags)), key=lambda i: mags[i])
+            title = f"Range profile — peak {distances[peak_idx]:.3f} m  |IQ|={mags[peak_idx]:.0f}"
+        if self._vital_pick_range_m is not None:
+            title += f"  |  pick {self._vital_pick_range_m:.3f} m"
+        self.vital_profile_plot.setTitle(title)
+
+        if self._vital_pick_range_m is not None:
+            self.vital_pick_line.setValue(self._vital_pick_range_m)
+            self.vital_pick_line.setVisible(True)
+
+        self._ensure_vital_phase_dials(len(targets))
+        for dial, target, samples in zip(self._vital_phase_dials, targets, response.targets):
+            dial.set_sample(target.distance_m, samples[0].phase_rad)
+
+    def _reset_vital_processor(self, frame_rate_hz: float) -> None:
+        self._vital_processor = VitalSignsProcessor(
+            frame_rate_hz=frame_rate_hz,
+            buffer_frames=self.vital_buffer_frames.value(),
+        )
+        self._update_vital_spectrum_regions()
+        self._vital_frame_times.clear()
+        self._vital_last_pick = self._vital_pick_range_m
+        self._vital_repush_bin = None
+        need = self.vital_buffer_frames.value()
+        self.vital_hr_label.setText("— bpm")
+        self.vital_br_label.setText("— brpm")
+        self.vital_dev_label.setText("—")
+        self.vital_buffer_label.setText(f"Buffering… (0/{need})")
+        self.vital_disp_curve.setData([], [])
+        self.vital_breath_spec_curve.setData([], [])
+        self.vital_heart_spec_curve.setData([], [])
+        self._vital_disp_y_half = None
+
+    def _update_vital_frame_rate(self, fps: float) -> None:
+        if fps <= 0:
+            return
+        if abs(self._vital_processor.frame_rate_hz - fps) > 0.5:
+            fill = self._vital_processor.min_buffer_fill
+            self._vital_processor.frame_rate_hz = fps
+            self._vital_processor.scale = spectrum_scale(fps, self._vital_processor.fft_size)
+            self._vital_processor.bins = analysis_bins(
+                fps, self._vital_processor.fft_size, self._vital_processor.buffer_frames
+            )
+            self._update_vital_spectrum_regions()
+            need = self._vital_processor.buffer_frames
+            self.vital_buffer_label.setText(f"Frame rate ≈ {fps:.1f} Hz (buffer {fill}/{need})")
+
+    def _update_vital_displacement_plot(self, displacement_m: np.ndarray) -> None:
+        if displacement_m.size < 2:
+            return
+        window_len = self._vital_disp_window()
+        window = displacement_m[-window_len:]
+        x0 = displacement_m.size - window.size
+        x = np.arange(x0, x0 + window.size)
+        y_mm = window * 1e3
+        self.vital_disp_curve.setData(x, y_mm)
+        if window.size >= 32:
+            self.vital_disp_plot.setXRange(x0, x0 + window.size, padding=0.02)
+        target_half = max(float(np.percentile(np.abs(y_mm), 99)) * 1.25, 0.08)
+        if self._vital_disp_y_half is None:
+            self._vital_disp_y_half = target_half
+        elif target_half > self._vital_disp_y_half:
+            self._vital_disp_y_half = 0.9 * self._vital_disp_y_half + 0.1 * target_half
+        else:
+            self._vital_disp_y_half = 0.96 * self._vital_disp_y_half + 0.04 * target_half
+        half = self._vital_disp_y_half
+        self.vital_disp_plot.setYRange(-half, half, padding=0)
+
+    def _update_vital_spectrum_plot(
+        self,
+        breath_spectrum: np.ndarray,
+        heart_product: np.ndarray,
+        breath_peak_bin: int,
+        heart_peak_bin: int,
+    ) -> None:
+        fft_half = DEFAULT_FFT_SIZE // 2
+        half = min(fft_half, breath_spectrum.size)
+        bpm_scale = self._vital_processor.scale
+        bpm_axis = np.arange(half, dtype=np.float64) * bpm_scale
+        self.vital_breath_spec_curve.setData(bpm_axis, breath_spectrum[:half])
+        heart_half = min(fft_half, heart_product.size)
+        heart_bpm = np.arange(heart_half, dtype=np.float64) * bpm_scale
+        self.vital_heart_spec_curve.setData(heart_bpm, heart_product[:heart_half])
+        self.vital_breath_peak_line.setValue(breath_peak_bin * bpm_scale)
+        self.vital_heart_peak_line.setValue(heart_peak_bin * bpm_scale)
+        br_bpm = breath_peak_bin * bpm_scale
+        hr_bpm = heart_peak_bin * bpm_scale
+        self.vital_spec_plot.setTitle(
+            f"Slow-time spectrum (BPM) — breath {br_bpm:.1f} brpm, heart {hr_bpm:.1f} bpm"
+        )
+
+    def _process_vital_samples(
+        self,
+        vital_rb_indices: list[tuple[int, int]],
+        iq: IqResponse,
+        frame: int,
+        elapsed: float,
+    ) -> None:
+        if self._vital_pick_bin() != (
+            round(self._vital_last_pick / RANGE_BIN_SIZE_M) if self._vital_last_pick is not None else None
+        ):
+            fps = 1.0 / max(self.interval_spin.value() / 1000.0, 1e-3)
+            self._reset_vital_processor(fps)
+
+        now = time.monotonic()
+        self._vital_frame_times.append(now)
+        if len(self._vital_frame_times) > 40:
+            self._vital_frame_times.pop(0)
+        if len(self._vital_frame_times) >= 2:
+            dt = self._vital_frame_times[-1] - self._vital_frame_times[0]
+            if dt > 0:
+                self._update_vital_frame_rate((len(self._vital_frame_times) - 1) / dt)
+
+        for rb, resp_idx in vital_rb_indices:
+            sample = iq.targets[resp_idx][0]
+            self._vital_processor.add_sample(rb, complex(sample.i, sample.q))
+
+        preview = self._vital_processor.last_preview
+        if preview is not None and preview.displacement_m.size:
+            self._update_vital_displacement_plot(preview.displacement_m)
+        if (
+            preview is not None
+            and preview.breath_spectrum is not None
+            and preview.heart_product is not None
+        ):
+            self._update_vital_spectrum_plot(
+                preview.breath_spectrum,
+                preview.heart_product,
+                preview.breath_peak_bin,
+                preview.heart_peak_bin,
+            )
+
+        center_pos = len(vital_rb_indices) // 2
+        _center_rb, center_idx = vital_rb_indices[center_pos]
+
+        fill = self._vital_processor.min_buffer_fill
+        need = self._vital_processor.buffer_frames
+        self.vital_buffer_label.setText(f"{fill}/{need} frames @ {self._vital_processor.frame_rate_hz:.1f} Hz")
+
+        result = self._vital_processor.process(indicate_no_target=False)
+        if result is None:
+            return
+
+        if result.heart_rate_bpm > 0 or result.breathing_rate_bpm > 0:
+            self.vital_hr_label.setText(f"{result.heart_rate_bpm:.1f} bpm")
+            self.vital_br_label.setText(f"{result.breathing_rate_bpm:.1f} brpm")
+        else:
+            self.vital_hr_label.setText("… bpm (warmup)")
+            self.vital_br_label.setText("… brpm (warmup)")
+        self.vital_dev_label.setText(f"{result.breathing_deviation:.5f}")
+
+        detail = result.detail
+        if detail is not None and detail.breath_spectrum.size and detail.heart_product.size:
+            self._update_vital_spectrum_plot(
+                detail.breath_spectrum,
+                detail.heart_product,
+                detail.breath_peak_bin,
+                detail.heart_peak_bin,
+            )
+
+    def _clear_vital_pick(self) -> None:
+        self._vital_pick_range_m = None
+        self._vital_last_pick = None
+        self._vital_repush_bin = None
+        self.vital_pick_line.setVisible(False)
+        self._ensure_vital_phase_dials(0)
+        self._vital_processor.reset()
+        self.vital_hr_label.setText("— bpm")
+        self.vital_br_label.setText("— brpm")
+        self.vital_dev_label.setText("—")
+        self.vital_buffer_label.setText("Pick a range on the plot")
+        self.vital_disp_curve.setData([], [])
+        self.vital_breath_spec_curve.setData([], [])
+        self.vital_heart_spec_curve.setData([], [])
+        self._vital_disp_y_half = None
+        if self._connected and self._active_view_mode() == ViewMode.VITAL_SIGNS:
+            self._push_worker_payload()
+
+    @Slot(object)
+    def _on_vital_plot_clicked(self, event) -> None:
+        profile, _errors = self._vital_targets()
+        if profile is None or not profile.targets:
+            return
+        vb = self.vital_profile_plot.getPlotItem().vb
+        if not vb.sceneBoundingRect().contains(event.scenePos()):
+            return
+        if event.button() == Qt.MouseButton.RightButton:
+            self._clear_vital_pick()
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        pos = vb.mapSceneToView(event.scenePos())
+        self._vital_pick_range_m = snap_vital_pick_distance(profile.targets, pos.x())
+        fps = 1.0 / max(self.interval_spin.value() / 1000.0, 1e-3)
+        self._reset_vital_processor(fps)
+        self.vital_pick_line.setValue(self._vital_pick_range_m)
+        self.vital_pick_line.setVisible(True)
+        if self._connected:
+            self._push_worker_payload()
 
     @Slot(str)
     def _on_poll_error(self, message: str) -> None:

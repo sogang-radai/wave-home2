@@ -44,6 +44,10 @@ deploy.env
 **/deploy.env
 src/r4sn/scripts/deploy.env
 
+# Measured antenna layout (device-specific; keep local copies)
+src/r4sn/docs/physical-antenna.txt
+src/r4sn/docs/virtual-antenna.txt
+
 # IDE / editor
 .idea/
 .vscode/
@@ -54,4 +58,5 @@ Thumbs.db
 
 # Large local media
 docs/videos/
+docs/papers/
 *.webm

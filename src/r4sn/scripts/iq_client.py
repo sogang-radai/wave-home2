@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal IQ server client for E2E verification."""
+"""Minimal IQ server client for E2E verification (protocol v1)."""
 
 from __future__ import annotations
 
@@ -12,32 +12,73 @@ REQUEST_MAGIC = 0x51495249
 RESPONSE_MAGIC = 0x51535249
 PROTOCOL_VERSION = 1
 
+REQUEST_TYPE_IQ = 0
+CHIRP_MODE_ARRAY = 0
+CHIRP_MODE_AVERAGE = 1
+CHIRP_MODE_MAX_ABS = 2
 
-def build_request(targets: list[tuple[float, float, float, int]]) -> bytes:
-    header = struct.pack("<IHH", REQUEST_MAGIC, PROTOCOL_VERSION, len(targets))
-    body = b"".join(
-        struct.pack("<fffB3x", az, el, dist, mode) for az, el, dist, mode in targets
+VA_COMBINE_BEAMFORM = 2
+VA_SELECT_SINGLE = 0
+
+CHIRP_SAMPLES = {
+    CHIRP_MODE_ARRAY: 64,
+    CHIRP_MODE_AVERAGE: 1,
+    CHIRP_MODE_MAX_ABS: 1,
+}
+
+
+def build_request(
+    azimuth_rad: float,
+    elevation_rad: float,
+    distance_m: float,
+    chirp_mode: int,
+) -> bytes:
+    body = struct.pack(
+        "<B3xIIHHBBHff",
+        REQUEST_TYPE_IQ,
+        chirp_mode,
+        0,
+        VA_SELECT_SINGLE,
+        VA_COMBINE_BEAMFORM,
+        0,
+        0,
+        1,
+        azimuth_rad,
+        elevation_rad,
     )
+    body += struct.pack("<f", distance_m)
+    header = struct.pack("<III", REQUEST_MAGIC, PROTOCOL_VERSION, len(body))
     return header + body
 
 
-def parse_response(data: bytes) -> tuple[int, int, int, list[tuple[float, float]]]:
-    if len(data) < 12:
+def recv_all(sock: socket.socket, size: int) -> bytes:
+    chunks: list[bytes] = []
+    received = 0
+    while received < size:
+        chunk = sock.recv(size - received)
+        if not chunk:
+            raise ConnectionError("connection closed")
+        chunks.append(chunk)
+        received += len(chunk)
+    return b"".join(chunks)
+
+
+def parse_response(data: bytes, chirp_mode: int) -> tuple[int, int, int, list[tuple[float, float]]]:
+    if len(data) < 20:
         raise ValueError("response too short")
-    magic, version, target_count, status = struct.unpack_from("<I H H I", data, 0)
+    magic, version, _payload_size, status = struct.unpack_from("<IIII", data, 0)
     if magic != RESPONSE_MAGIC:
         raise ValueError(f"bad response magic: {magic:#010x}")
-    offset = 12
+    target_count, _reserved = struct.unpack_from("<HH", data, 16)
     samples: list[tuple[float, float]] = []
-    for _ in range(target_count):
-        if status != 0:
-            break
-        # caller must know mode sizes; here we just read remaining floats
-        while offset + 8 <= len(data):
-            i, q = struct.unpack_from("<ff", data, offset)
-            samples.append((i, q))
-            offset += 8
-        break
+    if status == 0:
+        sample_count = CHIRP_SAMPLES[chirp_mode]
+        offset = 20
+        for _ in range(target_count):
+            for _ in range(sample_count):
+                i_val, q_val = struct.unpack_from("<ff", data, offset)
+                samples.append((i_val, q_val))
+                offset += 8
     return version, target_count, status, samples
 
 
@@ -48,15 +89,25 @@ def main() -> int:
     parser.add_argument("--azimuth", type=float, default=0.0)
     parser.add_argument("--elevation", type=float, default=0.0)
     parser.add_argument("--distance", type=float, default=2.5)
-    parser.add_argument("--mode", type=int, default=1, help="0=PerChirp,1=Average,2=MaxAbs")
+    parser.add_argument("--mode", type=int, default=1, help="0=Array,1=Average,2=MaxAbs")
     args = parser.parse_args()
 
-    payload = build_request([(args.azimuth, args.elevation, args.distance, args.mode)])
+    if args.mode not in CHIRP_SAMPLES:
+        print(f"invalid mode {args.mode}", file=sys.stderr)
+        return 2
+
+    payload = build_request(args.azimuth, args.elevation, args.distance, args.mode)
     with socket.create_connection((args.host, args.port), timeout=5) as sock:
         sock.sendall(payload)
-        response = sock.recv(65536)
+        prefix = recv_all(sock, 20)
+        version, target_count, status, _ = parse_response(prefix, args.mode)
+        if status == 0:
+            body_size = target_count * CHIRP_SAMPLES[args.mode] * 8
+            body = recv_all(sock, body_size) if body_size else b""
+            version, target_count, status, samples = parse_response(prefix + body, args.mode)
+        else:
+            samples = []
 
-    version, target_count, status, samples = parse_response(response)
     print(f"version={version} targets={target_count} status={status} samples={len(samples)}")
     for idx, (i, q) in enumerate(samples[:5]):
         print(f"  [{idx}] I={i:.6f} Q={q:.6f}")

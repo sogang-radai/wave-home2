@@ -18,7 +18,8 @@ SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 
 if [[ -z "${SENSOR_PASS}" ]]; then
     echo "error: R4SN_SSH_PASS is not set"
-    echo "  export R4SN_SSH_PASS='...'  or  cp deploy.env.example deploy.env"
+    echo "  cp ${R4SN_ROOT}/scripts/deploy.env.example ${DEPLOY_ENV}"
+    echo "  # edit deploy.env and set R4SN_SSH_PASS"
     exit 1
 fi
 

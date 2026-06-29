@@ -72,6 +72,8 @@ Naming aligns with live cube: **256 range**, **64 Doppler** (`N256`, `C64` in st
 
 ## 4. Firmware mapping (r4fn)
 
+**Applicator walkthrough:** [EEPROM_CALIBRATION_APPLICATOR.md](EEPROM_CALIBRATION_APPLICATOR.md) (`FUN_0041d598` loops, SPT LUT layout, iq-server notes).
+
 | EEPROM part | `FUN_0044bba8` part id | Buffer in `FUN_0041d598` | Application |
 |-------------|------------------------|---------------------------|-------------|
 | 2 Amplitude | 2 | `local_300` (768 B) | IQ scale `dVar16` per channel |

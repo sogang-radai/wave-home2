@@ -236,12 +236,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         choices=sorted(CHIRP_MODES),
-        help="Default chirp mode: 0=PerChirp, 1=Average, 2=MaxAbs",
+        help="Default chirp mode: 0=Array, 1=Average, 2=MaxAbs",
     )
     parser.add_argument(
         "--compact",
         action="store_true",
-        help="For PerChirp, print first 3 and last chirp only",
+        help="For Array mode, print first 3 and last chirp only",
     )
     parser.add_argument(
         "--log",
