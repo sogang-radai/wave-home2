@@ -9,22 +9,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Generate compile_commands.json 
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 
-include("${CMAKE_SOURCE_DIR}/cmake/deps.cmake")
-include("${CMAKE_SOURCE_DIR}/cmake/asio.cmake")
-include("${CMAKE_SOURCE_DIR}/cmake/tuyapp.cmake")
-include("${CMAKE_SOURCE_DIR}/cmake/macos.cmake")
-include("${CMAKE_SOURCE_DIR}/cmake/drogon_minimal.cmake")
-include("${CMAKE_SOURCE_DIR}/cmake/sherpa_onnx_minimal.cmake")
-
-add_subdirectory(thirdparty/drogon)
-
-set(WAVE_SAVED_CXX_STANDARD ${CMAKE_CXX_STANDARD})
-set(CMAKE_CXX_STANDARD 17)
-add_subdirectory(thirdparty/sherpa-onnx "${CMAKE_BINARY_DIR}/thirdparty/sherpa-onnx")
-set(CMAKE_CXX_STANDARD ${WAVE_SAVED_CXX_STANDARD})
+include("${CMAKE_SOURCE_DIR}/cmake/wave.cmake")
 
 add_subdirectory(src/wave-server)
-include("${CMAKE_SOURCE_DIR}/cmake/site.cmake")
 add_subdirectory(src/test/test-tuya)
 add_subdirectory(src/test/test-srs)
 add_subdirectory(src/test/test-llm)

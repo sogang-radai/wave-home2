@@ -4,7 +4,7 @@
     "server": {
         "port": 8500,
         "threads_num": 2,
-        "document_root": "./site",
+        "document_root": "../../site",
         "home_page": "index.html",
         "database_path": "data/database.db"
     },

@@ -5,19 +5,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 if ! command -v cloc >/dev/null 2>&1; then
     echo "error: cloc is not installed" >&2
-    echo "  macOS: brew install cloc" >&2
     exit 1
 fi
 
 # Backend source roots (frontend, thirdparty, and resource assets are excluded).
 BACKEND_PATHS=(
-    "$ROOT/src/wave-server"
-    "$ROOT/src/common"
-    "$ROOT/src/r4sn"
-    "$ROOT/src/test"
-    "$ROOT/bed_net"
-    "$ROOT/cmake"
-    "$ROOT/scripts"
+    src/wave-server
+    src/common
+    src/r4sn
+    src/test
+    bed_net
+    cmake
+    scripts
 )
 
 EXCLUDE_DIR=(
@@ -40,9 +39,10 @@ EXCLUDE_DIR=(
 exclude_arg="$(IFS=,; echo "${EXCLUDE_DIR[*]}")"
 
 echo "Backend code statistics (excluding frontend, thirdparty, and resource assets)"
-echo "  roots: ${BACKEND_PATHS[*]#$ROOT/}"
+echo "  roots: ${BACKEND_PATHS[*]}"
 echo
 
+cd "$ROOT"
 cloc \
     --vcs=git \
     --exclude-dir="$exclude_arg" \

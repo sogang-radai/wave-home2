@@ -1,4 +1,4 @@
-# Minimal NCNN build for 1D CNN, LSTM, and PointNet inference.
+# Minimal NCNN for 1D CNN, LSTM, and PointNet inference.
 
 set(NCNN_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(NCNN_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -18,42 +18,18 @@ set(NCNN_PIXEL_DRAWING OFF CACHE BOOL "" FORCE)
 set(NCNN_INT8 OFF CACHE BOOL "" FORCE)
 set(NCNN_BF16 OFF CACHE BOOL "" FORCE)
 set(NCNN_PYTHON OFF CACHE BOOL "" FORCE)
-# Runtime CPU dispatch is required for correct multi-arch execution; layer
-# trimming above provides the main compile-time savings.
 set(NCNN_RUNTIME_CPU ON CACHE BOOL "" FORCE)
-
-# Keep OpenMP for CPU inference throughput.
 set(NCNN_OPENMP ON CACHE BOOL "" FORCE)
 
-# Layers required for PointNet (Conv1D + BatchNorm + ReLU + max pool),
-# TemporalCNN (Conv1D + Dropout + AdaptiveMaxPool1D + Linear), and LSTM.
+if(WAVE_ARCH_AARCH64)
+    set(NCNN_VFPV4 ON CACHE BOOL "" FORCE)
+    set(NCNN_ARM82 ON CACHE BOOL "" FORCE)
+endif()
+
 set(NCNN_ENABLED_LAYERS
-    input
-    convolution1d
-    batchnorm
-    relu
-    pooling1d
-    pooling
-    reduction
-    dropout
-    innerproduct
-    permute
-    reshape
-    flatten
-    lstm
-    bias
-    scale
-    padding
-    concat
-    split
-    slice
-    softmax
-    binaryop
-    unaryop
-    noop
-    memorydata
-    clip
-    cast
+    input convolution1d batchnorm relu pooling1d pooling reduction
+    dropout innerproduct permute reshape flatten lstm bias scale padding
+    concat split slice softmax binaryop unaryop noop memorydata clip cast
 )
 
 set(NCNN_ALL_LAYERS
@@ -81,5 +57,6 @@ foreach(layer IN LISTS NCNN_ALL_LAYERS)
     endif()
 endforeach()
 
-# SPP is disabled upstream by default; keep it off explicitly.
 set(WITH_LAYER_spp OFF CACHE BOOL "" FORCE)
+
+add_subdirectory("${CMAKE_SOURCE_DIR}/thirdparty/ncnn" "${CMAKE_BINARY_DIR}/thirdparty/ncnn")

@@ -1,3 +1,9 @@
+if(NOT WAVE_BUILD_TTS)
+    message(FATAL_ERROR "test-tts requires -DWAVE_BUILD_TTS=ON")
+endif()
+
+include("${CMAKE_SOURCE_DIR}/cmake/sherpa_onnx.cmake")
+
 set(TEST_TTS_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/test")
 
 add_executable(test-tts
@@ -18,6 +24,10 @@ target_link_libraries(test-tts PRIVATE
     nlohmann_json::nlohmann_json
     sherpa-onnx-cxx-api
 )
+
+if(WAVE_ARCH_AARCH64)
+    target_compile_definitions(test-tts PRIVATE WAVE_ONNX_NEON=1)
+endif()
 
 set_target_properties(test-tts PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${TEST_TTS_OUTPUT_DIR}"

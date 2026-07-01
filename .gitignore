@@ -63,7 +63,7 @@ src/r4sn/docs/
 
 # IDE / editor
 .idea/
-.vscode/
+.vscode
 .cursor/
 
 # OS junk
@@ -74,3 +74,5 @@ docs/videos/
 docs/papers/
 docs/vapid.txt
 *.webm
+
+.deps

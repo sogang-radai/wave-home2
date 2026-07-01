@@ -1,4 +1,4 @@
-# Minimal Drogon/Trantor options for wave-server (HTTP API + static files only).
+# Minimal Drogon/Trantor for HTTP API + SQLite only.
 
 set(BUILD_CTL OFF CACHE BOOL "" FORCE)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -14,6 +14,9 @@ set(COZ_PROFILING OFF CACHE BOOL "" FORCE)
 set(USE_SUBMODULE ON CACHE BOOL "" FORCE)
 set(USE_COROUTINE OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-
-# Trantor (pulled in by Drogon)
 set(BUILD_C-ARES OFF CACHE BOOL "" FORCE)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+set(CMAKE_DISABLE_FIND_PACKAGE_jsoncpp TRUE)
+
+add_subdirectory(thirdparty/drogon)
