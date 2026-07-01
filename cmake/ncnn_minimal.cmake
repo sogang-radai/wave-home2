@@ -18,7 +18,7 @@ set(NCNN_PIXEL_DRAWING OFF CACHE BOOL "" FORCE)
 set(NCNN_INT8 OFF CACHE BOOL "" FORCE)
 set(NCNN_BF16 OFF CACHE BOOL "" FORCE)
 set(NCNN_PYTHON OFF CACHE BOOL "" FORCE)
-# Runtime CPU dispatch is required for correct x86 execution; layer
+# Runtime CPU dispatch is required for correct multi-arch execution; layer
 # trimming above provides the main compile-time savings.
 set(NCNN_RUNTIME_CPU ON CACHE BOOL "" FORCE)
 

@@ -1,0 +1,152 @@
+{
+    "name": "데스크 제스처 세트",
+    "description": "레이더 센서 기반 상시 모니터링 데스크 제스처 세트입니다.",
+    "model_path": "model/model.json",
+    "exclude": [],
+    "classes": [
+        {
+            "class_id": 0,
+            "name": "부재중",
+            "thumbnail": "thumbnails/7-0.png",
+            "trigger": {
+                "high_threshold": 0.85,
+                "low_threshold": 0.15,
+                "high_hold_ms": 600,
+                "low_hold_ms": 500,
+                "cooldown_ms": 3000
+            }
+        },
+        {
+            "class_id": 1,
+            "name": "앉음",
+            "thumbnail": "thumbnails/7-1.png",
+            "trigger": {
+                "high_threshold": 0.80,
+                "low_threshold": 0.20,
+                "high_hold_ms": 500,
+                "low_hold_ms": 500,
+                "cooldown_ms": 3000
+            }
+        },
+        {
+            "class_id": 2,
+            "name": "엎드림",
+            "thumbnail": "thumbnails/7-2.png",
+            "trigger": {
+                "high_threshold": 0.80,
+                "low_threshold": 0.20,
+                "high_hold_ms": 500,
+                "low_hold_ms": 500,
+                "cooldown_ms": 3000
+            }
+        },
+        {
+            "class_id": 3,
+            "name": "손 앞으로 구르기",
+            "thumbnail": "thumbnails/7-3.png",
+            "trigger": {
+                "high_threshold": 0.70,
+                "low_threshold": 0.35,
+                "high_hold_ms": 200,
+                "low_hold_ms": 150,
+                "cooldown_ms": 1000
+            }
+        },
+        {
+            "class_id": 4,
+            "name": "손 뒤로 구르기",
+            "thumbnail": "thumbnails/7-4.png",
+            "trigger": {
+                "high_threshold": 0.70,
+                "low_threshold": 0.35,
+                "high_hold_ms": 200,
+                "low_hold_ms": 150,
+                "cooldown_ms": 1000
+            }
+        },
+        {
+            "class_id": 5,
+            "name": "왼쪽 스와이프",
+            "thumbnail": "thumbnails/7-5.png",
+            "trigger": {
+                "high_threshold": 0.92,
+                "low_threshold": 0.25,
+                "high_hold_ms": 50,
+                "low_hold_ms": 50,
+                "cooldown_ms": 800
+            }
+        },
+        {
+            "class_id": 6,
+            "name": "오른쪽 스와이프",
+            "thumbnail": "thumbnails/7-6.png",
+            "trigger": {
+                "high_threshold": 0.92,
+                "low_threshold": 0.25,
+                "high_hold_ms": 50,
+                "low_hold_ms": 50,
+                "cooldown_ms": 800
+            }
+        },
+        {
+            "class_id": 7,
+            "name": "오른손 반짝",
+            "thumbnail": "thumbnails/7-7.png",
+            "trigger": {
+                "high_threshold": 0.65,
+                "low_threshold": 0.40,
+                "high_hold_ms": 150,
+                "low_hold_ms": 120,
+                "cooldown_ms": 1200
+            }
+        },
+        {
+            "class_id": 8,
+            "name": "왼손 반짝",
+            "thumbnail": "thumbnails/7-8.png",
+            "trigger": {
+                "high_threshold": 0.65,
+                "low_threshold": 0.40,
+                "high_hold_ms": 150,
+                "low_hold_ms": 120,
+                "cooldown_ms": 1200
+            }
+        },
+        {
+            "class_id": 9,
+            "name": "양손 반짝",
+            "thumbnail": "thumbnails/7-9.png",
+            "trigger": {
+                "high_threshold": 0.70,
+                "low_threshold": 0.40,
+                "high_hold_ms": 150,
+                "low_hold_ms": 120,
+                "cooldown_ms": 1200
+            }
+        },
+        {
+            "class_id": 10,
+            "name": "오른손 시계방향",
+            "thumbnail": "thumbnails/7-10.png",
+            "trigger": {
+                "high_threshold": 0.9,
+                "low_threshold": 0.35,
+                "high_hold_ms": 300,
+                "low_hold_ms": 100,
+                "cooldown_ms": 500
+            }
+        },
+        {
+            "class_id": 11,
+            "name": "왼손 반시계방향",
+            "thumbnail": "thumbnails/7-11.png",
+            "trigger": {
+                "high_threshold": 0.9,
+                "low_threshold": 0.35,
+                "high_hold_ms": 300,
+                "low_hold_ms": 100,
+                "cooldown_ms": 500
+            }
+        }
+    ]
+}

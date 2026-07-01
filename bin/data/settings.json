@@ -1,0 +1,35 @@
+{
+    "agent": {
+        "parent_model": {
+            "protocol": "openai-ollama",
+            "host": "http://192.168.0.47:11434",
+            "model": "gemma4:12b-mlx",
+            "api-key": ""
+        },
+        "child_model": {
+            "protocol": "openai-ollama",
+            "host": "http://192.168.0.47:11434",
+            "model": "gemma2:2b",
+            "api-key": ""
+        }
+    },
+    "account_list": [
+        {
+            "id": "kim",
+            "name": "김건강"
+        },
+        {
+            "id": "park",
+            "name": "박웰빙"
+        }
+    ],
+    "room_list": {
+        "path": "room_list.json"
+    },
+    "device_list": {
+        "path": "device_list.json"
+    },
+    "ir_command_list": {
+        "path": "ir_command_list.json"
+    }
+}

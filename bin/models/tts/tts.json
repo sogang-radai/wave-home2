@@ -1,0 +1,84 @@
+{
+    "languages": [
+        {
+            "locale": "ko-KR",
+            "name": "Supertonic 3",
+            "language": "Korean",
+            "country": "Korea",
+            "enabled": true,
+            "path": "ko-kr",
+            "speakers": [
+                {
+                    "sid": 0,
+                    "name": "미선",
+                    "description": "차분하고 안정적인 중저음. 흔들림 없이 또렷하게 말하는 목소리",
+                    "character": "침착하고 신뢰감 있는 성격으로, 안내와 설명에 어울림",
+                    "gender": "female"
+                },
+                {
+                    "sid": 1,
+                    "name": "하은",
+                    "description": "밝고 경쾌한 고음. 활기차고 발랄한 어조",
+                    "character": "명랑하고 친근한 성격으로, 캐주얼한 안내와 홍보에 어울림",
+                    "gender": "female"
+                },
+                {
+                    "sid": 2,
+                    "name": "서윤",
+                    "description": "맑고 전문적인 아나운서 톤. 발음이 분명하고 전달력이 좋음",
+                    "character": "단정하고 프로페셔널한 성격으로, 공지와 나레이션에 어울림",
+                    "gender": "female"
+                },
+                {
+                    "sid": 3,
+                    "name": "유진",
+                    "description": "또렷하고 자신감 있는 중음. 표현력 있고 힘 있는 말투",
+                    "character": "당당하고 추진력 있는 성격으로, 발표와 안내 멘트에 어울림",
+                    "gender": "female"
+                },
+                {
+                    "sid": 4,
+                    "name": "수아",
+                    "description": "부드럽고 온화한 톤. 낮고 편안하게 다가오는 목소리",
+                    "character": "다정하고 포근한 성격으로, 위로와 독백, 감성 콘텐츠에 어울림",
+                    "gender": "female"
+                },
+                {
+                    "sid": 5,
+                    "name": "준호",
+                    "description": "활기차고 긍정적인 중고음. 밝은 에너지가 느껴지는 목소리",
+                    "character": "쾌활하고 자신감 있는 성격으로, 홍보와 일상 안내에 어울림",
+                    "gender": "male"
+                },
+                {
+                    "sid": 6,
+                    "name": "민준",
+                    "description": "깊고 묵직한 저음. 차분하고 진중한 어조",
+                    "character": "신중하고 믿음직한 성격으로, 공식 안내와 다큐멘터리에 어울림",
+                    "gender": "male"
+                },
+                {
+                    "sid": 7,
+                    "name": "성민",
+                    "description": "권위 있고 단정한 톤. 또렷하고 신뢰감 있는 발화",
+                    "character": "리더십 있고 책임감 있는 성격으로, 비즈니스 메시지에 어울림",
+                    "gender": "male"
+                },
+                {
+                    "sid": 8,
+                    "name": "도현",
+                    "description": "부드럽고 중성적인 중음. 친근하고 온화한 말투",
+                    "character": "온순하고 다가가기 쉬운 성격으로, 교육 콘텐츠와 온보딩에 어울림",
+                    "gender": "male"
+                },
+                {
+                    "sid": 9,
+                    "name": "현우",
+                    "description": "따뜻하고 포근한 저중음. 이야기하듯 편안한 목소리",
+                    "character": "차분하고 공감 능력이 있는 성격으로, 오디오북과 휴식 콘텐츠에 어울림",
+                    "gender": "male"
+                }
+            ]
+        }
+    ]
+}

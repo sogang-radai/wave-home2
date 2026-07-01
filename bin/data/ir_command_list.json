@@ -1,0 +1,124 @@
+{
+    "devices": [
+        {
+            "name": "LG AirConditioner",
+            "description": "LG 에어컨",
+            "commands": [
+                {
+                    "name": "ON",
+                    "description": "에어컨 켜기",
+                    "protocol": "lgac",
+                    "value": 254279697  
+                },
+                {
+                    "name": "OFF",
+                    "description": "에어컨 끄기",
+                    "protocol": "lgac",
+                    "value": 144703249
+                },
+                {
+                    "name": "MODE",
+                    "description": "에어컨 모드 변경",
+                    "protocol": "lgac",
+                    "value": 134348817
+                },
+                {
+                    "name": "TEMP_UP",
+                    "description": "에어컨 온도 올리기",
+                    "protocol": "lgac",
+                    "value": 19084049
+                },
+                {
+                    "name": "TEMP_DOWN",
+                    "description": "에어컨 온도 내리기",
+                    "protocol": "lgac",
+                    "value": 237645841
+                }
+            ]
+        },
+        {
+            "name": "Samsung TV",
+            "description": "삼성 TV",
+            "commands": [
+                {
+                    "name": "ON",
+                    "description": "TV 켜기",
+                    "protocol": "samsung",
+                    "value": 254279697
+                },
+                {
+                    "name": "OFF",
+                    "description": "TV 끄기",
+                    "protocol": "samsung",
+                    "value": 144703249
+                },
+                {
+                    "name": "MODE",
+                    "description": "TV 모드 변경",
+                    "protocol": "samsung",
+                    "value": 134348817
+                },
+                {
+                    "name": "TEMP_UP",
+                    "description": "TV 온도 올리기",
+                    "protocol": "samsung",
+                    "value": 19084049
+                },
+                {
+                    "name": "TEMP_DOWN",
+                    "description": "TV 온도 내리기",
+                    "protocol": "samsung",
+                    "value": 237645841
+                }
+            ]
+        },
+        {
+            "name": "IR Remote",
+            "description": "IR 리모컨",
+            "commands": [
+                {
+                    "name": "POWER",
+                    "description": "전원 버튼",
+                    "protocol": "nec",
+                    "code": 0,
+                    "data": 0
+                },
+                {
+                    "name": "VOL_UP",
+                    "description": "볼륨 올리기",
+                    "protocol": "nec",
+                    "code": 0,
+                    "data": 64
+                },
+                {
+                    "name": "VOL_DOWN",
+                    "description": "볼륨 내리기",
+                    "protocol": "nec",
+                    "code": 0,
+                    "data": 65
+                },
+                {
+                    "name": "MUTE",
+                    "description": "뮤트 버튼",
+                    "protocol": "nec",
+                    "code": 0,
+                    "data": 9
+                },
+                {
+                    "name": "CH_UP",
+                    "description": "채널 올리기",
+                    "protocol": "nec",
+                    "code": 0,
+                    "data": 71
+                },
+                {
+                    "name": "CH_DOWN",
+                    "description": "채널 내리기",
+                    "protocol": "nec",
+                    "code": 0,
+                    "data": 69
+                }
+            ]
+        }
+    ]
+}

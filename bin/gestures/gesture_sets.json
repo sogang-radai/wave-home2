@@ -1,0 +1,14 @@
+{
+    "gesture_sets": [
+        {
+            "name": "Desk Set",
+            "path": "gestures/desk_set/set.json",
+            "enabled": true
+        },
+        {
+            "name": "Bed Set",
+            "path": "gestures/bed_set/set.json",
+            "enabled": false
+        }
+    ]
+}

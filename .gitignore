@@ -1,3 +1,10 @@
+# bin/ — ignore built binaries and downloadable TTS weights only
+#   TTS: scripts/download-tts-model.sh
+bin/wave-server
+bin/test/
+bin/models/tts/ko-kr/
+bin/uploads/
+
 # Dataset (too large)
 bed_net/dataset/
 
@@ -7,10 +14,13 @@ bed_net/dataset/
 # Toolchain / build
 .toolchain/
 build/
-bin/
+build-*/
 site/
 compile_commands.json
 .cache/
+
+# Stray compile artifacts (local ad-hoc builds)
+*.o
 
 # R4SN binaries & build trees
 src/r4sn/deploy-aarch64/
@@ -32,6 +42,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# Node (wave-home-front has its own .gitignore; catch root-level installs)
+node_modules/
+
 # test-iq outputs
 src/test/test-iq/scripts/out/
 src/test/test-iq/logs/
@@ -45,19 +58,19 @@ deploy.env
 **/deploy.env
 src/r4sn/scripts/deploy.env
 
-# Measured antenna layout (device-specific; keep local copies)
-src/r4sn/docs/physical-antenna.txt
-src/r4sn/docs/virtual-antenna.txt
+# R4SN local docs & device-specific notes (not versioned)
+src/r4sn/docs/
 
 # IDE / editor
 .idea/
 .vscode/
+.cursor/
 
 # OS junk
 .DS_Store
 Thumbs.db
 
-# Large local media
 docs/videos/
 docs/papers/
+docs/vapid.txt
 *.webm

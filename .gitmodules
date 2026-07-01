@@ -13,3 +13,9 @@
 [submodule "thirdparty/tuyapp"]
 	path = thirdparty/tuyapp
 	url = https://github.com/gordonb3/tuyapp.git
+[submodule "thirdparty/stb"]
+	path = thirdparty/stb
+	url = https://github.com/nothings/stb.git
+[submodule "thirdparty/sherpa-onnx"]
+	path = thirdparty/sherpa-onnx
+	url = https://github.com/k2-fsa/sherpa-onnx.git

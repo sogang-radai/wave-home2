@@ -1,0 +1,41 @@
+{
+    "model_name": "GestureNet Desk Set",
+    "model_version": "1.0",
+    "frame_encoder": {
+        "name": "PointNetV1",
+        "type": "pointnet",
+        "sequence_length": 36,
+        "normalization": {
+            "coordinate_mode": "cartesian",
+            "power_mode": "db",
+            "ranges": {
+                "x": [-0.8, 0.8],
+                "y": [0.0, 1.5],
+                "z": [-0.75, 0],
+                "doppler": [-2.5, 2.5],
+                "power": [30.0, 55.0]
+            }
+        },
+        "param_path": "pointnet.param",
+        "bin_path": "pointnet.bin",
+        "input_name": "in0",
+        "output_name": "out0",
+        "output_size": 256
+    },  
+    "temporal_aggregator": {
+        "name": "CNNV1",
+        "type": "1dcnn",
+        "sequence_length": 36,
+        "embedding_size": 256,
+        "param_path": "1dcnn.param",
+        "bin_path": "1dcnn.bin",
+        "input_name": "in0",
+        "output_name": "out0",
+        "output_size": 12
+    },
+    "dataset": {
+        "name": "set7",
+        "description": "",
+        "comment": "only guarenteed keys are name and description"
+    }
+}

@@ -43,8 +43,20 @@ else
 함수
 - 다른 소스에서 참조될 수 있는 함수는 소문자로 시작하는 camel case를 사용.
 - 익명 네임스페이스나 static 함수의 경우 소문자로 시작하는 snake case를 사용.
-- 클래스 멤버는 static이 아닌 경우 항상 소문자로 시작하는 camel case를 사용.
-- 클래스 멤버는 static인 경우 항상 소문자로 시작하는 snake case를 사용.
+- 구조체/클래스 멤버는 static이 아닌 경우 항상 소문자로 시작하는 camel case를 사용.
+- 구조체/클래스 멤버는 static인 경우 항상 소문자로 시작하는 snake case를 사용.
+
+### 클래스
+상속
+접근제어자를 무조건 붙이고 아래 스타일 준수
+``` cpp
+class MyClass :
+    public SomeBaseClass,
+    public ISomeInterface
+```
+
+메서드
+- 소스파일에서 메서드 순서는 항상 헤더파일과 일치해야함
 
 생성자
 - 생성자에서 멤버 초기화는 멤버 초기화 리스트를 사용.
