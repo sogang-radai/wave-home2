@@ -3,8 +3,8 @@
     "io_threads_num": 8,
     "server": {
         "port": 8500,
-        "threads_num": 2,
-        "document_root": "../../site",
+        "threads_num": 4,
+        "document_root": "../site",
         "home_page": "index.html",
         "database_path": "data/database.db"
     },

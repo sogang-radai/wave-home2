@@ -16,7 +16,9 @@ set(USE_COROUTINE OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(BUILD_C-ARES OFF CACHE BOOL "" FORCE)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 set(CMAKE_DISABLE_FIND_PACKAGE_jsoncpp TRUE)
+
+include("${CMAKE_SOURCE_DIR}/cmake/fetch/sqlite3.cmake")
 
 add_subdirectory(thirdparty/drogon)

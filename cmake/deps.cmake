@@ -20,9 +20,11 @@ wave_require_path(
 wave_require_path(
     "thirdparty/ncnn/CMakeLists.txt"
     "thirdparty/ncnn")
-wave_require_path(
-    "thirdparty/sherpa-onnx/CMakeLists.txt"
-    "thirdparty/sherpa-onnx")
+if(WAVE_BUILD_TTS)
+    wave_require_path(
+        "thirdparty/sherpa-onnx/CMakeLists.txt"
+        "thirdparty/sherpa-onnx")
+endif()
 
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/wave-home-front/.git")
     message(STATUS

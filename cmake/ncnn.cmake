@@ -1,4 +1,4 @@
-# Minimal NCNN for 1D CNN, LSTM, and PointNet inference.
+# Minimal NCNN for gesture models (pointnet.param, 1dcnn.param).
 
 set(NCNN_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(NCNN_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -26,10 +26,9 @@ if(WAVE_ARCH_AARCH64)
     set(NCNN_ARM82 ON CACHE BOOL "" FORCE)
 endif()
 
+# Layers used by bin/gestures/desk_set/model/{pointnet,1dcnn}.param
 set(NCNN_ENABLED_LAYERS
-    input convolution1d batchnorm relu pooling1d pooling reduction
-    dropout innerproduct permute reshape flatten lstm bias scale padding
-    concat split slice softmax binaryop unaryop noop memorydata clip cast
+    input convolution1d relu reduction permute pooling1d innerproduct squeeze noop
 )
 
 set(NCNN_ALL_LAYERS
@@ -56,7 +55,5 @@ foreach(layer IN LISTS NCNN_ALL_LAYERS)
         set(WITH_LAYER_${layer} OFF CACHE BOOL "" FORCE)
     endif()
 endforeach()
-
-set(WITH_LAYER_spp OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${CMAKE_SOURCE_DIR}/thirdparty/ncnn" "${CMAKE_BINARY_DIR}/thirdparty/ncnn")

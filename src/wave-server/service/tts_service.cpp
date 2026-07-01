@@ -187,7 +187,7 @@ namespace
         SherpaGenerationConfig gen_config;
         gen_config.sid = static_cast<int32_t>(input.speakerID);
         gen_config.speed = input.speed;
-        gen_config.num_steps = input.numSteps > 0 ? input.numSteps : 8;
+        gen_config.num_steps = input.numSteps > 0 ? input.numSteps : 6;
         gen_config.extra["lang"] = runtime.lang;
         return gen_config;
     }
