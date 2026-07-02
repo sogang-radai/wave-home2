@@ -4,7 +4,6 @@
     "frame_encoder": {
         "name": "PointNetV1",
         "type": "pointnet",
-        "sequence_length": 36,
         "normalization": {
             "coordinate_mode": "cartesian",
             "power_mode": "db",

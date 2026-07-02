@@ -10,6 +10,6 @@
     },
     "setting_path": "data/settings.json",
     "gesture_sets_path": "gestures/gesture_sets.json",
-    "sleep_model_path": "models/sleep/sleep.json",
+    "sleep_model_path": "models/sleep/model.json",
     "tts_model_path": "models/tts/tts.json"
 }

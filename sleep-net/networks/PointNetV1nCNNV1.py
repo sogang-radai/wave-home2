@@ -2,16 +2,11 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
-# Class explanations:
-# PointNetV1: Processes point cloud data to extract features.
-# TemporalCNNV1: Processes sequences of features to classify them into categories.
-# Status: 0: None, 1: Awake, 2: Asleep
-# Toss: 0: Calm, 1: Slight, 2: Moderate, 3: Severe
-
-SEQUENCE_LENGTH: int = 36
 EMBEDDING_DIM: int = 256
-CLASS_COUNT_STATUS: int = 3 # 0: None, 1: Awake, 2: Asleep
-CLASS_COUNT_TOSS: int = 4   # 0: Calm, 1: Slight, 2: Moderate, 3: Severe
+SEQUENCE_LENGTH_BED: int = 160
+SEQUENCE_LENGTH_TOSS: int = 40
+CLASS_COUNT_BED: int = 3 # 0: None, 1: Awake, 2: Asleep
+CLASS_COUNT_TOSS: int = 3   # 0: Calm, 1: Slight, 2: Moderate
 
 class PointNetV1(nn.Module):
     def __init__(self):
@@ -78,11 +73,14 @@ class TemporalCNNV1(nn.Module):
         return logits
 
 
-class BedNet(nn.Module):
+class SleepNet(nn.Module):
+    # Overall sleep-net: shared PointNet encoder + two sub-nets.
+    #   head_status -> bed-net  (occupancy/status)
+    #   head_toss   -> toss-net (tossing)
     def __init__(self) -> None:
         super().__init__()
         self.frame_encoder = PointNetV1()
-        self.head_status = TemporalCNNV1(num_classes=CLASS_COUNT_STATUS)
+        self.head_status = TemporalCNNV1(num_classes=CLASS_COUNT_BED)
         self.head_toss = TemporalCNNV1(num_classes=CLASS_COUNT_TOSS)
 
     def encode_frames(self, points: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:

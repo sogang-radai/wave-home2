@@ -1,0 +1,54 @@
+{
+    "model_name": "SleepNet",
+    "model_version": "1.0",
+    "toss_active_status": 2,
+    "frame_encoder": {
+        "name": "sleep_pointnet",
+        "type": "pointnet",
+        "output_size": 256,
+        "input_name": "in0",
+        "output_name": "out0",
+        "param_path": "pointnet.ncnn.param",
+        "bin_path": "pointnet.ncnn.bin",
+        "normalization": {
+            "coordinate_mode": "cartesian",
+            "power_mode": "db",
+            "ranges": {
+                "x": [-0.8, 0.8],
+                "y": [-1.0, 1.0],
+                "z": [-2.1, 0.0],
+                "doppler": [-2.5, 2.5],
+                "power": [25.0, 60.0]
+            }
+        }
+    },
+    "bed_model": {
+        "labels": ["absent", "awake", "asleep"],
+        "temporal_aggregator": {
+            "name": "bed_cnn",
+            "type": "1dcnn",
+            "sequence_length": 160,
+            "embedding_size": 256,
+            "output_size": 3,
+            "input_name": "in0",
+            "output_name": "out0",
+            "param_path": "bed_cnn.ncnn.param",
+            "bin_path": "bed_cnn.ncnn.bin"
+        }
+    },
+    "toss_model": {
+        "toss_weight_vector": [0.0, 0.5, 1.0],
+        "labels": ["calm", "slight", "moderate"],
+        "temporal_aggregator": {
+            "name": "toss_cnn",
+            "type": "1dcnn",
+            "sequence_length": 40,
+            "embedding_size": 256,
+            "output_size": 3,
+            "input_name": "in0",
+            "output_name": "out0",
+            "param_path": "toss_cnn.ncnn.param",
+            "bin_path": "toss_cnn.ncnn.bin"
+        }
+    }
+}

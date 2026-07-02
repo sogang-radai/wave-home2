@@ -7,7 +7,10 @@ bin/models/stt/ko-kr/
 bin/uploads/
 
 # Dataset (too large)
-bed_net/dataset/
+sleep-net/dataset/
+sleep-net/training/
+sleep-net/samples/
+sleep-net/models/
 
 # Plan files (may contain credentials)
 [pP]lan.md
