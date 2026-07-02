@@ -1,0 +1,28 @@
+{
+    "num_threads": 4,
+    "sample_rate": 16000,
+    "languages": [
+        {
+            "locale": "ko-KR",
+            "name": "Streaming Zipformer Korean",
+            "language": "Korean",
+            "country": "Korea",
+            "enabled": true,
+            "path": "ko-kr",
+            "model_id": "sherpa-onnx-streaming-zipformer-korean-2024-06-16",
+            "model_type": "streaming_zipformer_transducer",
+            "streaming": true,
+            "tokens": "tokens.txt",
+            "encoder": "encoder-epoch-99-avg-1.onnx",
+            "decoder": "decoder-epoch-99-avg-1.onnx",
+            "joiner": "joiner-epoch-99-avg-1.onnx",
+            "bpe_vocab": "bpe.model",
+            "decoding_method": "greedy_search",
+            "endpoint": {
+                "rule1_min_trailing_silence": 2.4,
+                "rule2_min_trailing_silence": 1.2,
+                "rule3_min_utterance_length": 20.0
+            }
+        }
+    ]
+}

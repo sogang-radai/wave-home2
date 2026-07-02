@@ -3,6 +3,7 @@
 bin/wave-server
 bin/test/
 bin/models/tts/ko-kr/
+bin/models/stt/ko-kr/
 bin/uploads/
 
 # Dataset (too large)
