@@ -383,6 +383,7 @@ void IRDevice::registerActionsAndQueries()
     {
         m_actions.push_back({
             Action::Json,
+            Action::Repeat,
             "send",
             "Send a registered IR command",
             json{

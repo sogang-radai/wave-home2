@@ -1,6 +1,5 @@
 #pragma once
 
-#include <deque>
 #include <memory>
 #include <string>
 #include <vector>
@@ -73,15 +72,15 @@ public:
     FrameEncoder();
     ~FrameEncoder();
 
-    bool init(std::string_view base_dir, const json& config, std::string& out_error);
+    bool init(std::string_view base_dir, const json& config, size_t queue_size, std::string& out_error);
     void shutdown();
 
     uint32_t getEmbeddingSize() const;
-    uint32_t getSequenceLength() const;
     const FrameEncoderNormalizeSettings& getNormalizeSettings() const;
 
     void setQueueSize(size_t size);
     size_t getQueueSize() const;
+    size_t getFrameCount() const;
 
     void pushFrame(const dev::RadarPointCloud& frame);
     void pushFrame(dev::RadarPointCloud&& frame);
@@ -90,7 +89,7 @@ public:
     bool isFrameAvailable(uint64_t frame_idx) const;
     bool getFrameEmbedding(uint64_t frame_idx, std::vector<float>& out_embedding) const;
 
-    bool getEmbeddingMatrix(std::vector<float>& out_mat); // float[sequence_length][embedding_size], oldest row first
+    bool getEmbeddingMatrix(uint32_t sequence_length, std::vector<float>& out_mat); // float[sequence_length][embedding_size], oldest row first
 
 private:
     struct Impl;

@@ -5,6 +5,7 @@ set(_wave_server_sources
     core/logger.cpp
     core/task_queue.cpp
     service/llm_client.cpp
+    service/go2rtc_service.cpp
     web/server.cpp
     web/http/api_controller.cpp
     web/http/push_notification.cpp
@@ -12,12 +13,15 @@ set(_wave_server_sources
     device/device_manager.cpp
     device/platform/srs_r4sn.cpp
     device/platform/tuya_ep2h.cpp
+    device/platform/reolink_e1pro.cpp
+    device/platform/philips_wiz_e29.cpp
     device/platform/ir_device.cpp
     device/protocol/ir_remote.cpp
     nn/frame_encoder.cpp
     nn/frame_aggregator.cpp
     auxiliary/stb_image.cpp
     "${CMAKE_SOURCE_DIR}/src/common/util/exe_path.cpp"
+    "${CMAKE_SOURCE_DIR}/src/common/network/net_util.cpp"
 )
 
 if(WAVE_BUILD_TTS)

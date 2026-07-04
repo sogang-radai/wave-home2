@@ -71,7 +71,6 @@ struct FrameEncoder::Impl
     std::string outputName = "out0";
 
     uint32_t embeddingSize = 0;
-    uint32_t sequenceLength = 0;
     FrameEncoderNormalizeSettings normalizeSettings {};
     bool loaded = false;
 
@@ -91,6 +90,7 @@ struct FrameEncoder::Impl
 
     std::vector<float> embeddingMatrixCache;
     bool matrixCacheValid = false;
+    uint32_t cacheLength = 0;
     uint64_t cacheWindowBegin = 0;
     uint64_t cacheWindowEnd = 0;
 
@@ -110,8 +110,8 @@ struct FrameEncoder::Impl
 
     const CachedFrame* findFrame(uint64_t frame_idx) const;
     void invalidateMatrixCache();
-    bool findLatestConsecutiveWindow(uint64_t& out_begin, uint64_t& out_end) const;
-    bool getEmbeddingMatrix(std::vector<float>& out_mat);
+    bool findLatestConsecutiveWindow(uint32_t sequence_length, uint64_t& out_begin, uint64_t& out_end) const;
+    bool getEmbeddingMatrix(uint32_t sequence_length, std::vector<float>& out_mat);
 };
 
 bool FrameEncoder::Impl::parseConfig(
@@ -127,7 +127,7 @@ bool FrameEncoder::Impl::parseConfig(
             return false;
         }
 
-        for (const char* key : {"name", "type", "sequence_length", "normalization", "param_path", "bin_path", "output_size"})
+        for (const char* key : {"name", "type", "normalization", "param_path", "bin_path", "output_size"})
         {
             if (!config.contains(key))
             {
@@ -141,13 +141,6 @@ bool FrameEncoder::Impl::parseConfig(
         if (networkType != "pointnet")
         {
             out_error = "frame_encoder type must be 'pointnet'";
-            return false;
-        }
-
-        sequenceLength = config["sequence_length"].get<uint32_t>();
-        if (sequenceLength == 0)
-        {
-            out_error = "sequence_length must be greater than 0";
             return false;
         }
 
@@ -234,7 +227,6 @@ bool FrameEncoder::Impl::parseConfig(
             return false;
         }
 
-        maxQueueSize = sequenceLength;
         return true;
     }
     catch (const json::exception& e)
@@ -426,11 +418,15 @@ void FrameEncoder::Impl::upsertFrame(const dev::RadarPointCloud& frame)
 void FrameEncoder::Impl::invalidateMatrixCache()
 {
     matrixCacheValid = false;
+    cacheLength = 0;
     cacheWindowBegin = 0;
     cacheWindowEnd = 0;
 }
 
-bool FrameEncoder::Impl::findLatestConsecutiveWindow(uint64_t& out_begin, uint64_t& out_end) const
+bool FrameEncoder::Impl::findLatestConsecutiveWindow(
+    uint32_t sequence_length,
+    uint64_t& out_begin,
+    uint64_t& out_end) const
 {
     if (frameMap.empty())
         return false;
@@ -442,10 +438,10 @@ bool FrameEncoder::Impl::findLatestConsecutiveWindow(uint64_t& out_begin, uint64
         out_end = std::max(out_end, frame_idx);
     }
 
-    if (out_end + 1 < sequenceLength)
+    if (out_end + 1 < sequence_length)
         return false;
 
-    out_begin = out_end - (sequenceLength - 1);
+    out_begin = out_end - (sequence_length - 1);
     for (uint64_t frame_idx = out_begin; frame_idx <= out_end; ++frame_idx)
     {
         if (frameMap.find(frame_idx) == frameMap.end())
@@ -455,23 +451,27 @@ bool FrameEncoder::Impl::findLatestConsecutiveWindow(uint64_t& out_begin, uint64
     return true;
 }
 
-bool FrameEncoder::Impl::getEmbeddingMatrix(std::vector<float>& out_mat)
+bool FrameEncoder::Impl::getEmbeddingMatrix(uint32_t sequence_length, std::vector<float>& out_mat)
 {
-    uint64_t begin = 0;
-    uint64_t end = 0;
-    if (!findLatestConsecutiveWindow(begin, end))
+    if (sequence_length == 0)
         return false;
 
-    const size_t matrix_size = static_cast<size_t>(sequenceLength) * embeddingSize;
+    uint64_t begin = 0;
+    uint64_t end = 0;
+    if (!findLatestConsecutiveWindow(sequence_length, begin, end))
+        return false;
+
+    const size_t matrix_size = static_cast<size_t>(sequence_length) * embeddingSize;
     if (embeddingMatrixCache.size() != matrix_size)
         embeddingMatrixCache.assign(matrix_size, 0.f);
 
     if (matrixCacheValid &&
+        cacheLength == sequence_length &&
         cacheWindowBegin + 1 == begin &&
         cacheWindowEnd + 1 == end)
     {
         const size_t row_bytes = static_cast<size_t>(embeddingSize) * sizeof(float);
-        const size_t shift_bytes = static_cast<size_t>(sequenceLength - 1) * row_bytes;
+        const size_t shift_bytes = static_cast<size_t>(sequence_length - 1) * row_bytes;
         std::memmove(
             embeddingMatrixCache.data(),
             embeddingMatrixCache.data() + embeddingSize,
@@ -492,13 +492,16 @@ bool FrameEncoder::Impl::getEmbeddingMatrix(std::vector<float>& out_mat)
         return true;
     }
 
-    if (matrixCacheValid && cacheWindowBegin == begin && cacheWindowEnd == end)
+    if (matrixCacheValid &&
+        cacheLength == sequence_length &&
+        cacheWindowBegin == begin &&
+        cacheWindowEnd == end)
     {
         out_mat = embeddingMatrixCache;
         return true;
     }
 
-    for (uint64_t row = 0; row < sequenceLength; ++row)
+    for (uint64_t row = 0; row < sequence_length; ++row)
     {
         const CachedFrame* frame = findFrame(begin + row);
         if (!frame)
@@ -510,6 +513,7 @@ bool FrameEncoder::Impl::getEmbeddingMatrix(std::vector<float>& out_mat)
             static_cast<size_t>(embeddingSize) * sizeof(float));
     }
 
+    cacheLength = sequence_length;
     cacheWindowBegin = begin;
     cacheWindowEnd = end;
     matrixCacheValid = true;
@@ -519,8 +523,7 @@ bool FrameEncoder::Impl::getEmbeddingMatrix(std::vector<float>& out_mat)
 
 void FrameEncoder::Impl::trimQueueIfNeeded()
 {
-    const size_t min_size = std::max(maxQueueSize, static_cast<size_t>(sequenceLength));
-    while (frameMap.size() > min_size)
+    while (maxQueueSize > 0 && frameMap.size() > maxQueueSize)
     {
         const uint64_t oldest = frameQueue.front()->frameIndex;
         if (matrixCacheValid && oldest >= cacheWindowBegin && oldest <= cacheWindowEnd)
@@ -547,7 +550,7 @@ FrameEncoder::~FrameEncoder()
     shutdown();
 }
 
-bool FrameEncoder::init(std::string_view base_dir, const json& config, std::string& out_error)
+bool FrameEncoder::init(std::string_view base_dir, const json& config, size_t queue_size, std::string& out_error)
 {
     shutdown();
 
@@ -557,6 +560,8 @@ bool FrameEncoder::init(std::string_view base_dir, const json& config, std::stri
 
     if (!impl->loadModel(out_error))
         return false;
+
+    impl->maxQueueSize = std::max<size_t>(queue_size, 1);
 
     m_impl = std::move(impl);
     return true;
@@ -573,12 +578,6 @@ uint32_t FrameEncoder::getEmbeddingSize() const
     return m_impl->embeddingSize;
 }
 
-uint32_t FrameEncoder::getSequenceLength() const
-{
-    assert(m_impl);
-    return m_impl->sequenceLength;
-}
-
 const FrameEncoderNormalizeSettings& FrameEncoder::getNormalizeSettings() const
 {
     assert(m_impl);
@@ -588,7 +587,7 @@ const FrameEncoderNormalizeSettings& FrameEncoder::getNormalizeSettings() const
 void FrameEncoder::setQueueSize(size_t size)
 {
     assert(m_impl);
-    m_impl->maxQueueSize = std::max(size, static_cast<size_t>(m_impl->sequenceLength));
+    m_impl->maxQueueSize = std::max<size_t>(size, 1);
     m_impl->trimQueueIfNeeded();
 }
 
@@ -596,6 +595,12 @@ size_t FrameEncoder::getQueueSize() const
 {
     assert(m_impl);
     return m_impl->maxQueueSize;
+}
+
+size_t FrameEncoder::getFrameCount() const
+{
+    assert(m_impl);
+    return m_impl->frameQueue.size();
 }
 
 void FrameEncoder::pushFrame(const dev::RadarPointCloud& frame)
@@ -636,10 +641,10 @@ bool FrameEncoder::getFrameEmbedding(uint64_t frame_idx, std::vector<float>& out
     return true;
 }
 
-bool FrameEncoder::getEmbeddingMatrix(std::vector<float>& out_mat)
+bool FrameEncoder::getEmbeddingMatrix(uint32_t sequence_length, std::vector<float>& out_mat)
 {
     assert(m_impl);
-    return m_impl->getEmbeddingMatrix(out_mat);
+    return m_impl->getEmbeddingMatrix(sequence_length, out_mat);
 }
 
 NN_NAMESPACE_END

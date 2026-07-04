@@ -8,7 +8,7 @@
                     "name": "ON",
                     "description": "에어컨 켜기",
                     "protocol": "lgac",
-                    "value": 254279697  
+                    "value": 254279697
                 },
                 {
                     "name": "OFF",

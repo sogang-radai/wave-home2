@@ -26,9 +26,16 @@ if(WAVE_ARCH_AARCH64)
     set(NCNN_ARM82 ON CACHE BOOL "" FORCE)
 endif()
 
-# Layers used by bin/gestures/desk_set/model/{pointnet,1dcnn}.param
+# Layers used by bin/gestures/desk_set/model/{pointnet,1dcnn}.param and
+# bin/models/sleep/*.ncnn.param, plus layers instantiated internally at runtime:
+#   'cast'    - fp16 weight load (Mat::from_float16 -> cast_float16_to_float32)
+#   'flatten' - InnerProduct::create_pipeline flattens its input
+#   'packing' - SIMD layout conversion between layers (convert_packing)
+#   'padding' - Convolution1D::make_padding (copy_make_border)
+#   'crop'    - border cut helper (copy_cut_border)
 set(NCNN_ENABLED_LAYERS
     input convolution1d relu reduction permute pooling1d innerproduct squeeze noop
+    cast flatten packing padding crop
 )
 
 set(NCNN_ALL_LAYERS

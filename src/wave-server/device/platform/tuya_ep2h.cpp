@@ -7,6 +7,7 @@
 #include "tuyaAPI.hpp"
 
 #include "../../core/logger.h"
+#include "network/net_util.h"
 
 WAVE_NAMESPACE_BEGIN
 DEVICE_NAMESPACE_BEGIN
@@ -67,6 +68,29 @@ namespace
 
         if (iface.contains("version") && !iface["version"].is_string())
             throw std::invalid_argument("tuya_ep2h interface field 'version' must be a string");
+    }
+
+    // Verifies the host still maps to the MAC pinned in the config. Returns -7
+    // on mismatch, 0 when it matches or when no MAC is pinned / not resolvable.
+    int verifyMac(const json& config, const std::string& host)
+    {
+        const std::string expected = config.at("interface").value("mac", "");
+        if (expected.empty())
+            return 0;
+
+        std::string actual;
+        if (!net::resolveMacForIp(host, actual))
+        {
+            LOG_WARN("tuya_ep2h: could not resolve MAC for {} (skipping check)", host);
+            return 0;
+        }
+        if (!net::macEquals(expected, actual))
+        {
+            LOG_ERROR("tuya_ep2h: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            return -7;
+        }
+        LOG_INFO("tuya_ep2h: MAC verified for {} ({})", host, actual);
+        return 0;
     }
 
     json parseTuyaResponse(const std::string& response)
@@ -264,6 +288,14 @@ int TuyaEP2H::init(const json& config)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         (void)m_impl->queryDatapoints();
+
+        const int macRc = verifyMac(config, m_config.host);
+        if (macRc != 0)
+        {
+            m_state = DeviceState::Stopped;
+            return macRc;
+        }
+
         m_state = DeviceState::Running;
         LOG_INFO("TuyaEP2H connected: {}", m_config.host);
         return 0;
@@ -409,9 +441,9 @@ std::future<int> TuyaEP2H::invokeAsync(std::string_view name, const json& params
 void TuyaEP2H::registerActionsAndQueries()
 {
     m_actions = {
-        {Action::Json, "on", "Turn the plug on", json::object()},
-        {Action::Json, "off", "Turn the plug off", json::object()},
-        {Action::Json, "toggle", "Toggle plug power state", json::object()},
+        {Action::Json, Action::Stateful, "on", "Turn the plug on", json::object()},
+        {Action::Json, Action::Stateful, "off", "Turn the plug off", json::object()},
+        {Action::Json, Action::Toggle | Action::Stateful, "toggle", "Toggle plug power state", json::object()},
     };
 
     m_queries = {

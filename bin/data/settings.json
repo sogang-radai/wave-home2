@@ -13,16 +13,13 @@
             "api-key": ""
         }
     },
-    "account_list": [
-        {
-            "id": "kim",
-            "name": "김건강"
-        },
-        {
-            "id": "park",
-            "name": "박웰빙"
-        }
-    ],
+    "embedding_model": {
+        "protocol": "openai-ollama",
+        "host": "http://192.168.0.47:11434",
+        "model": "nomic-embed-text",
+        "dimension": 768,
+        "api-key": ""
+    },
     "room_list": {
         "path": "room_list.json"
     },

@@ -14,6 +14,7 @@
 
 #include "r4sn/iq_protocol.h"
 #include "../../core/logger.h"
+#include "network/net_util.h"
 
 WAVE_NAMESPACE_BEGIN
 DEVICE_NAMESPACE_BEGIN
@@ -367,6 +368,29 @@ namespace
             settings.maxZ = src.at("max_z").get<float>();
 
         return settings;
+    }
+
+    // Verifies the host still maps to the MAC pinned in the config. Returns -7
+    // on mismatch, 0 when it matches or when no MAC is pinned / not resolvable.
+    int verifyMac(const json& config, const std::string& host)
+    {
+        const std::string expected = config.at("interface").value("mac", "");
+        if (expected.empty())
+            return 0;
+
+        std::string actual;
+        if (!net::resolveMacForIp(host, actual))
+        {
+            LOG_WARN("srs_r4sn: could not resolve MAC for {} (skipping check)", host);
+            return 0;
+        }
+        if (!net::macEquals(expected, actual))
+        {
+            LOG_ERROR("srs_r4sn: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            return -7;
+        }
+        LOG_INFO("srs_r4sn: MAC verified for {} ({})", host, actual);
+        return 0;
     }
 
     void validateSrsR4snConfig(const json& config)
@@ -865,6 +889,16 @@ int SRSR4SN::init(const json& config)
             m_config.pointCloudPort,
             m_pointCloudQueueSize);
         m_impl->start();
+
+        const int macRc = verifyMac(config, m_config.host);
+        if (macRc != 0)
+        {
+            m_impl->stop();
+            m_impl.reset();
+            m_state = DeviceState::Stopped;
+            return macRc;
+        }
+
         m_state = DeviceState::Running;
         return 0;
     }

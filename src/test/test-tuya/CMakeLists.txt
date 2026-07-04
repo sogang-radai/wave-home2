@@ -5,6 +5,7 @@ set(TEST_TUYA_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/test")
 add_executable(test-tuya-ep2h
     main.cpp
     "${CMAKE_SOURCE_DIR}/src/wave-server/core/logger.cpp"
+    "${CMAKE_SOURCE_DIR}/src/common/network/net_util.cpp"
     "${CMAKE_SOURCE_DIR}/src/wave-server/device/device.cpp"
     "${CMAKE_SOURCE_DIR}/src/wave-server/device/platform/tuya_ep2h.cpp"
 )

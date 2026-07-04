@@ -8,7 +8,6 @@
 #include <string_view>
 #include <vector>
 
-#include "../core/coredefs.h"
 #include "../core/json.h"
 
 #define LLM_NAMESPACE_BEGIN namespace llm {

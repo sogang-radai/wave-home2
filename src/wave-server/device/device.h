@@ -108,11 +108,21 @@ struct Action
 {
     enum Type
     {
-        Interface, // for extendability, not used yet
+        Interface,
         Json
+    };
+    
+    enum Attribute
+    {
+        None = 0,
+        Toggle = 1 << 0,    // flips a binary state (on/off)
+        Repeat = 1 << 1,    // safe to re-run while held/pressed
+        Momentary = 1 << 2, // active only while the trigger is held, auto-reverts on release
+        Stateful = 1 << 3,  // changes persistent state (observable via query)
     };
 
     Type type;
+    uint32_t attributes = None;
     std::string name;
     std::string description;
     json paramsSchema;
