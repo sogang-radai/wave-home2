@@ -4,6 +4,8 @@
             "id": "3a7f2c9d10b4e85f",
             "name": "침실 하방 레이더",
             "description": "SRS R4SN mmWave 레이더",
+            "vendor": "SRS",
+            "model": "Retina-4SN",
             "enabled": true,
             "class": "srs_r4sn",
             "interface": {
@@ -33,6 +35,8 @@
             "id": "5c1e8b6402fda973",
             "name": "Wave Station",
             "description": "침실 Wave Station",
+            "vendor": "RADAI",
+            "model": "Wave Station",
             "enabled": true,
             "class": "wave_station",
             "interface": {
@@ -47,8 +51,10 @@
         },
         {
             "id": "27d9a4f3c85b016e",
-            "name": "Reolink E1 Pro",
+            "name": "거실 카메라",
             "description": "거실 IoT 카메라",
+            "vendor": "Reolink",
+            "model": "E1 Pro",
             "enabled": true,
             "class": "reolink_e1_pro",
             "interface": {
@@ -62,8 +68,10 @@
         },
         {
             "id": "6b0f3e8a92c47d15",
-            "name": "Tenpl Tuya EP2H",
+            "name": "플러그1",
             "description": "거실 스마트 플러그1 - 에어컨",
+            "vendor": "Tenpl",
+            "model": "EP2-H",
             "enabled": true,
             "class": "tuya_ep2h",
             "interface": {
@@ -76,8 +84,10 @@
         },
         {
             "id": "1f8c5a2e7b93064d",
-            "name": "Tenpl Tuya EP2H",
+            "name": "플러그2",
             "description": "거실 스마트 플러그2 - 선풍기",
+            "vendor": "Tenpl",
+            "model": "EP2-H",
             "enabled": true,
             "class": "tuya_ep2h",
             "interface": {
@@ -90,8 +100,10 @@
         },
         {
             "id": "4a2d9c7f1e60b358",
-            "name": "Tenpl Tuya EP2H",
+            "name": "플러그3",
             "description": "침실 스마트 플러그 - 컴퓨터",
+            "vendor": "Tenpl",
+            "model": "EP2-H",
             "enabled": true,
             "class": "tuya_ep2h",
             "interface": {
@@ -104,8 +116,10 @@
         },
         {
             "id": "7e3b1d8a5f02c964",
-            "name": "Tenpl Tuya EP2H",
+            "name": "플러그4",
             "description": "부엌 스마트 플러그 - 선풍기",
+            "vendor": "Tenpl",
+            "model": "EP2-H",
             "enabled": true,
             "class": "tuya_ep2h",
             "interface": {
@@ -118,8 +132,10 @@
         },
         {
             "id": "2c9f6a1b4d78e350",
-            "name": "Tizen TV",
+            "name": "TV",
             "description": "침실 책상 - 삼성 32인치 TV",
+            "vendor": "Samsung",
+            "model": "G7 G70D S32DG700",
             "enabled": true,
             "class": "tizen_tv",
             "interface": {
@@ -131,8 +147,10 @@
         },
         {
             "id": "5d0a3f8c26b91e74",
-            "name": "Philips WiZ Color E29",
+            "name": "거실 조명",
             "description": "거실 조명 - 컬러",
+            "vendor": "Philips",
+            "model": "WiZ Color E29",
             "enabled": true,
             "class": "philips_wiz_e29",
             "interface": {
@@ -143,8 +161,10 @@
         },
         {
             "id": "3f7c2a9e14d8065b",
-            "name": "Philips WiZ White E29",
+            "name": "침실 조명",
             "description": "침실 조명 - 화이트",
+            "vendor": "Philips",
+            "model": "WiZ White E29",
             "enabled": true,
             "class": "philips_wiz_e29",
             "interface": {
@@ -155,8 +175,10 @@
         },
         {
             "id": "6a1e4b8d3f05c927",
-            "name": "Philips WiZ White E29",
+            "name": "부엌 조명",
             "description": "부엌 조명 - 화이트",
+            "vendor": "Philips",
+            "model": "WiZ White E29",
             "enabled": true,
             "class": "philips_wiz_e29",
             "interface": {
