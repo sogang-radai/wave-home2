@@ -23,12 +23,14 @@ namespace
     }
 }
 
-Json::Value makeError(const std::string& code, const std::string& message, int /*status*/)
+Json::Value makeError(const std::string& code, const std::string& message, int /*status*/, const std::string& field)
 {
     Json::Value root;
     Json::Value err;
     err["code"] = code;
     err["message"] = message;
+    if (!field.empty())
+        err["field"] = field;
     root["error"] = err;
     return root;
 }
@@ -37,9 +39,10 @@ void respondError(
     const std::function<void(const drogon::HttpResponsePtr&)>& callback,
     int status,
     const std::string& code,
-    const std::string& message)
+    const std::string& message,
+    const std::string& field)
 {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(makeError(code, message, status));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(makeError(code, message, status, field));
     resp->setStatusCode(static_cast<drogon::HttpStatusCode>(status));
     callback(resp);
 }

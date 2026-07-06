@@ -140,6 +140,17 @@ CREATE INDEX IF NOT EXISTS idx_notification_user_created ON notification (user_i
 )SQL",
             },
         },
+        {
+            4,
+            "device API columns",
+            {
+                "ALTER TABLE device ADD COLUMN external_id TEXT",
+                "ALTER TABLE device ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+                "ALTER TABLE device ADD COLUMN interface_json TEXT NOT NULL DEFAULT '{}'",
+                "ALTER TABLE device ADD COLUMN settings_json TEXT",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_device_external_id ON device(external_id)",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)
@@ -158,6 +169,7 @@ CREATE INDEX IF NOT EXISTS idx_notification_user_created ON notification (user_i
     }
 
     void seedNotificationsIfEmpty(const drogon::orm::DbClientPtr& client);
+    void seedRoomsAndDevicesIfEmpty(const drogon::orm::DbClientPtr& client);
 
     void seedInitialData(const drogon::orm::DbClientPtr& client)
     {
@@ -165,6 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_notification_user_created ON notification (user_i
         if (!rows.empty() && rows[0][0].as<int64_t>() > 0)
         {
             seedNotificationsIfEmpty(client);
+            seedRoomsAndDevicesIfEmpty(client);
             return;
         }
 
@@ -190,6 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_notification_user_created ON notification (user_i
             now);
 
         seedNotificationsIfEmpty(client);
+        seedRoomsAndDevicesIfEmpty(client);
     }
 
     void seedNotificationsIfEmpty(const drogon::orm::DbClientPtr& client)
@@ -211,6 +225,66 @@ INSERT INTO notification (id, user_id, type, message, read, created_at) VALUES
         catch (const std::exception&)
         {
             // notification table may not exist yet on very old DB paths
+        }
+    }
+
+    void seedRoomsAndDevicesIfEmpty(const drogon::orm::DbClientPtr& client)
+    {
+        try
+        {
+            auto room_rows = client->execSqlSync("SELECT COUNT(*) FROM room");
+            if (!room_rows.empty() && room_rows[0][0].as<int64_t>() == 0)
+            {
+                client->execSqlSync(
+                    R"SQL(
+INSERT INTO room (id, name, description) VALUES
+(1, '거실', '거실'),
+(2, '침실', '침실'),
+(3, '부엌', '부엌')
+)SQL");
+                client->execSqlSync(
+                    R"SQL(
+INSERT INTO room_user_map (room_id, user_id) VALUES
+(1, 1), (1, 2), (2, 1)
+)SQL");
+            }
+
+            auto device_rows = client->execSqlSync("SELECT COUNT(*) FROM device");
+            if (!device_rows.empty() && device_rows[0][0].as<int64_t>() > 0)
+                return;
+
+            client->execSqlSync(
+                R"SQL(
+INSERT INTO device (id, external_id, name, description, class, archived, enabled, interface_json, settings_json) VALUES
+(1, '3a7f2c9d10b4e85f', '침실 하방 레이더', 'SRS R4SN mmWave 레이더', 'srs_r4sn', 0, 1,
+ '{"host":"192.168.0.33","mac":"68:96:6A:4C:69:D4","point_cloud":{"enabled":true,"port":29172},"iq":{"enabled":true,"port":29171}}',
+ '{"angle_z":0.0,"angle_y":0.0,"min_x":-5.0,"max_x":5.0,"min_y":0.0,"max_y":10.0,"min_z":-2.0,"max_z":2.0}'),
+(2, '5c1e8b6402fda973', 'Wave Station', '침실 Wave Station', 'wave_station', 0, 1,
+ '{"host":"192.168.0.60","port":8765}',
+ '{"sample_rate":16000,"sample_size":16,"channels":1}'),
+(3, '27d9a4f3c85b016e', '거실 카메라', '거실 IoT 카메라', 'reolink_e1_pro', 0, 1,
+ '{"host":"192.168.0.50","mac":"94:8C:D7:A2:6A:97","user":"enc:0500120444","password":"enc:0500120444595d5e51","rtsp_port":554,"go2rtc":true}',
+ NULL),
+(4, '6b0f3e8a92c47d15', '플러그1', '거실 스마트 플러그1 - 에어컨', 'tuya_ep2h', 0, 1,
+ '{"host":"192.168.0.37","mac":"50:8B:B9:9F:6E:83","device_id":"eb61aa6ce49add5d80yfcj","local_key":"s^q2?;Ur|q{SlG(>","version":"3.3"}',
+ NULL),
+(5, '2c9f6a1b4d78e350', 'TV', '침실 책상 - 삼성 32인치 TV', 'tizen_tv', 0, 1,
+ '{"host":"192.168.0.24","mac":"04:E4:B6:A9:8D:0A","port":8002,"name":"WaveHome-TV"}',
+ NULL),
+(6, '5d0a3f8c26b91e74', '거실 조명', '거실 조명 - 컬러', 'philips_wiz_e29_color', 0, 1,
+ '{"host":"192.168.0.51","mac":"98:77:D5:D0:B4:42","port":38899}',
+ NULL)
+)SQL");
+
+            client->execSqlSync(
+                R"SQL(
+INSERT INTO device_room_map (device_id, room_id) VALUES
+(1, 2), (2, 2), (3, 1), (4, 1), (5, 2), (6, 1)
+)SQL");
+        }
+        catch (const std::exception& e)
+        {
+            LOG_WARN("Room/device seed skipped: {}", e.what());
         }
     }
 }

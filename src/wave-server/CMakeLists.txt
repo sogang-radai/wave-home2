@@ -15,6 +15,11 @@ set(_wave_server_sources
     web/http/v1/session_controller.cpp
     web/http/v1/session_store.cpp
     web/http/v1/accounts_controller.cpp
+    web/http/v1/accounts_store.cpp
+    web/http/v1/rooms_controller.cpp
+    web/http/v1/rooms_store.cpp
+    web/http/v1/devices_controller.cpp
+    web/http/v1/devices_store.cpp
     web/http/v1/push_controller.cpp
     web/http/v1/settings_controller.cpp
     web/http/v1/settings_store.cpp

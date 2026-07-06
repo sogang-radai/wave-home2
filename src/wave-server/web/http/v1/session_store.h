@@ -17,12 +17,13 @@ WAVE_NAMESPACE_BEGIN
 namespace web {
 namespace v1 {
 
-Json::Value makeError(const std::string& code, const std::string& message, int status = 400);
+Json::Value makeError(const std::string& code, const std::string& message, int status = 400, const std::string& field = "");
 void respondError(
     const std::function<void(const drogon::HttpResponsePtr&)>& callback,
     int status,
     const std::string& code,
-    const std::string& message);
+    const std::string& message,
+    const std::string& field = "");
 
 struct AccountView
 {
@@ -44,13 +45,14 @@ public:
     SessionView resolveSession(const drogon::HttpRequestPtr& req) const;
     Json::Value sessionJson(const SessionView& session) const;
 
+    std::optional<AccountView> findAccount(int64_t id) const;
+
     bool setActiveAccount(int64_t session_id, int64_t account_id, std::string& error);
     std::vector<AccountView> listAccounts() const;
 
 private:
     drogon::orm::DbClientPtr m_client;
     int64_t resolveSessionId(const drogon::HttpRequestPtr& req) const;
-    std::optional<AccountView> findAccount(int64_t id) const;
 };
 
 } // namespace v1
