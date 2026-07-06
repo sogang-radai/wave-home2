@@ -49,6 +49,16 @@ namespace
     {
         return id >= 0 && id <= 9;
     }
+
+    bool modelExists(const Json::Value& models, const std::string& id)
+    {
+        for (const auto& model : models)
+        {
+            if (model["id"].asString() == id)
+                return true;
+        }
+        return false;
+    }
 }
 
 SettingsStore::SettingsStore(drogon::orm::DbClientPtr client) :
@@ -333,6 +343,114 @@ Json::Value SettingsStore::listTtsSpeakers() const
         speakers.append(item);
     }
     return speakers;
+}
+
+Json::Value SettingsStore::listAiModels() const
+{
+    Json::Value models(Json::arrayValue);
+    auto add = [&](const char* id, const char* vendor, const char* name, const char* provider, bool local, const char* endpoint)
+    {
+        Json::Value item;
+        item["id"] = id;
+        item["vendor"] = vendor;
+        item["name"] = name;
+        item["provider"] = provider;
+        item["local"] = local;
+        item["embedding"] = false;
+        item["endpoint"] = endpoint;
+        item["apiKey"] = Json::Value::null;
+        models.append(item);
+    };
+
+    add("gemma4-12b-mlx", "google", "gemma4-12b-mlx", "ollama", true, "http://127.0.0.1:11434/v1");
+    add("gemini-flash2.5", "google", "gemini-flash2.5", "Google", false, "https://generativelanguage.googleapis.com/v1beta/openai");
+    add("gpt5.4-mini", "openai", "gpt5.4-mini", "OpenAI", false, "https://api.openai.com/v1");
+    return models;
+}
+
+Json::Value SettingsStore::getAiAgentSettings(int64_t user_id) const
+{
+    Json::Value value;
+    value["personalPrompt"] = "";
+    value["selectedModelId"] = "gemini-flash2.5";
+    value["ctrlEnterSend"] = false;
+    value["waveAiSound"] = true;
+
+    auto rows = m_client->execSqlSync(
+        "SELECT personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound FROM user_ai_agent_settings WHERE user_id = ? LIMIT 1",
+        user_id);
+    if (rows.empty())
+        return value;
+
+    value["personalPrompt"] = rows[0]["personal_prompt"].as<std::string>();
+    value["selectedModelId"] = rows[0]["selected_model_id"].as<std::string>();
+    value["ctrlEnterSend"] = rows[0]["ctrl_enter_send"].as<int>() != 0;
+    value["waveAiSound"] = rows[0]["wave_ai_sound"].as<int>() != 0;
+    return value;
+}
+
+bool SettingsStore::putAiAgentSettings(
+    int64_t user_id,
+    const Json::Value& body,
+    Json::Value& out,
+    std::string& error,
+    std::string& field)
+{
+    out = getAiAgentSettings(user_id);
+    for (const auto& key : body.getMemberNames())
+        out[key] = body[key];
+
+    if (out.isMember("selectedModelId") && !modelExists(listAiModels(), out["selectedModelId"].asString()))
+    {
+        error = "존재하지 않는 AI 모델입니다.";
+        field = "selectedModelId";
+        return false;
+    }
+
+    const auto now = formatTimestamp();
+    try
+    {
+        auto existing = m_client->execSqlSync(
+            "SELECT user_id FROM user_ai_agent_settings WHERE user_id = ? LIMIT 1",
+            user_id);
+        if (existing.empty())
+        {
+            m_client->execSqlSync(
+                R"SQL(
+INSERT INTO user_ai_agent_settings
+    (user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+)SQL",
+                user_id,
+                out["personalPrompt"].asString(),
+                out["selectedModelId"].asString(),
+                out["ctrlEnterSend"].asBool() ? 1 : 0,
+                out["waveAiSound"].asBool() ? 1 : 0,
+                now);
+        }
+        else
+        {
+            m_client->execSqlSync(
+                R"SQL(
+UPDATE user_ai_agent_settings
+SET personal_prompt = ?, selected_model_id = ?, ctrl_enter_send = ?, wave_ai_sound = ?, updated_at = ?
+WHERE user_id = ?
+)SQL",
+                out["personalPrompt"].asString(),
+                out["selectedModelId"].asString(),
+                out["ctrlEnterSend"].asBool() ? 1 : 0,
+                out["waveAiSound"].asBool() ? 1 : 0,
+                now,
+                user_id);
+        }
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        LOG_ERROR("Failed to save AI agent settings: {}", e.what());
+        error = "설정 저장에 실패했습니다.";
+        return false;
+    }
 }
 
 } // namespace v1

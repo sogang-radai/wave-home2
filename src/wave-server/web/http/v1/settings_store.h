@@ -35,6 +35,10 @@ public:
     Json::Value listSounds() const;
     Json::Value listTtsSpeakers() const;
 
+    Json::Value listAiModels() const;
+    Json::Value getAiAgentSettings(int64_t user_id) const;
+    bool putAiAgentSettings(int64_t user_id, const Json::Value& body, Json::Value& out, std::string& error, std::string& field);
+
 private:
     drogon::orm::DbClientPtr m_client;
 

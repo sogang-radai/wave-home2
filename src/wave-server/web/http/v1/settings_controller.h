@@ -19,6 +19,9 @@ public:
     ADD_METHOD_TO(SettingsController::putSleep, "/api/v1/settings/sleep", drogon::Put);
     ADD_METHOD_TO(SettingsController::listSounds, "/api/v1/settings/sounds", drogon::Get);
     ADD_METHOD_TO(SettingsController::listTtsSpeakers, "/api/v1/settings/tts-speakers", drogon::Get);
+    ADD_METHOD_TO(SettingsController::listAiModels, "/api/v1/settings/ai-models", drogon::Get);
+    ADD_METHOD_TO(SettingsController::getAiAgent, "/api/v1/settings/ai-agent", drogon::Get);
+    ADD_METHOD_TO(SettingsController::putAiAgent, "/api/v1/settings/ai-agent", drogon::Put);
     METHOD_LIST_END
 
     void getGeneral(
@@ -42,6 +45,18 @@ public:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
     void listTtsSpeakers(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+    void listAiModels(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+    void getAiAgent(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+    void putAiAgent(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 };

@@ -121,6 +121,25 @@ CREATE TABLE IF NOT EXISTS push_subscription (
 ))SQL",
             },
         },
+        {
+            3,
+            "notification table and seed",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS notification (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL,
+    type       VARCHAR(20) NOT NULL,
+    message    VARCHAR(200) NOT NULL,
+    read       INTEGER NOT NULL,
+    created_at VARCHAR(50) NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_notification_user_created ON notification (user_id, created_at)
+)SQL",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)
@@ -138,11 +157,16 @@ CREATE TABLE IF NOT EXISTS push_subscription (
         }
     }
 
+    void seedNotificationsIfEmpty(const drogon::orm::DbClientPtr& client);
+
     void seedInitialData(const drogon::orm::DbClientPtr& client)
     {
         auto rows = client->execSqlSync("SELECT COUNT(*) FROM user");
         if (!rows.empty() && rows[0][0].as<int64_t>() > 0)
+        {
+            seedNotificationsIfEmpty(client);
             return;
+        }
 
         const auto now = formatTimestamp();
         LOG_INFO("Seeding initial user/session data");
@@ -164,6 +188,30 @@ CREATE TABLE IF NOT EXISTS push_subscription (
             "wavehome-dev-token",
             now,
             now);
+
+        seedNotificationsIfEmpty(client);
+    }
+
+    void seedNotificationsIfEmpty(const drogon::orm::DbClientPtr& client)
+    {
+        try
+        {
+            auto rows = client->execSqlSync("SELECT COUNT(*) FROM notification");
+            if (!rows.empty() && rows[0][0].as<int64_t>() > 0)
+                return;
+
+            client->execSqlSync(
+                R"SQL(
+INSERT INTO notification (id, user_id, type, message, read, created_at) VALUES
+(1, 1, 'timer', '착석 1시간 48분 경과 — 스트레칭을 해보세요', 0, '2026-07-02 07:10:00'),
+(2, 1, 'sleep', '오늘 수면 목표까지 30분 부족합니다', 0, '2026-07-02 07:12:00'),
+(3, 2, 'posture', '오래 앉아 있었어요. 자세를 바꿔보세요', 0, '2026-07-02 08:00:00')
+)SQL");
+        }
+        catch (const std::exception&)
+        {
+            // notification table may not exist yet on very old DB paths
+        }
     }
 }
 

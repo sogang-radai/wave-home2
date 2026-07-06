@@ -18,6 +18,8 @@ set(_wave_server_sources
     web/http/v1/push_controller.cpp
     web/http/v1/settings_controller.cpp
     web/http/v1/settings_store.cpp
+    web/http/v1/notifications_controller.cpp
+    web/http/v1/notifications_store.cpp
     web/http/push_notification.cpp
     web/push/web_push.cpp
     web/push/push_store.cpp
