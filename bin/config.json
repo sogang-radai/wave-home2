@@ -9,8 +9,15 @@
         "database_path": "data/database.db"
     },
     "setting_path": "data/settings.json",
+    "device_list_path": "device/device_list.json",
+    "rooms_path": "device/rooms.json",
     "gesture_sets_path": "gestures/gesture_sets.json",
     "sleep_model_path": "models/sleep/model.json",
     "stt_model_path": "models/stt/stt.json",
-    "tts_model_path": "models/tts/tts.json"
+    "tts_model_path": "models/tts/tts.json",
+    "push": {
+        "vapid_public_key": "BKY-kLDZ2RQNzaj6ZAQX48A7Phdw_3VMWTGzly9y7pqDcOA9_YfqxSwtqDdnzq0PBJkjCEue4C0zxe1VBCUdpWY",
+        "vapid_private_key": "lKXRAskIKrKHZpZBUAM8_SXWB4QphQCyLLyAAArtiNU",
+        "subject": "mailto:wavehome@local"
+    }
 }

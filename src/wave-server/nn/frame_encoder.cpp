@@ -428,27 +428,44 @@ bool FrameEncoder::Impl::findLatestConsecutiveWindow(
     uint64_t& out_begin,
     uint64_t& out_end) const
 {
-    if (frameMap.empty())
+    if (frameMap.empty() || sequence_length == 0)
         return false;
 
-    out_end = 0;
+    std::vector<uint64_t> indices;
+    indices.reserve(frameMap.size());
     for (const auto& [frame_idx, frame] : frameMap)
     {
         (void)frame;
-        out_end = std::max(out_end, frame_idx);
+        indices.push_back(frame_idx);
     }
+    std::sort(indices.begin(), indices.end());
 
-    if (out_end + 1 < sequence_length)
-        return false;
-
-    out_begin = out_end - (sequence_length - 1);
-    for (uint64_t frame_idx = out_begin; frame_idx <= out_end; ++frame_idx)
+    for (auto it = indices.rbegin(); it != indices.rend(); ++it)
     {
-        if (frameMap.find(frame_idx) == frameMap.end())
-            return false;
+        const uint64_t end = *it;
+        if (end + 1 < sequence_length)
+            continue;
+
+        const uint64_t begin = end - (sequence_length - 1);
+        bool complete = true;
+        for (uint64_t frame_idx = begin; frame_idx <= end; ++frame_idx)
+        {
+            if (frameMap.find(frame_idx) == frameMap.end())
+            {
+                complete = false;
+                break;
+            }
+        }
+
+        if (complete)
+        {
+            out_begin = begin;
+            out_end = end;
+            return true;
+        }
     }
 
-    return true;
+    return false;
 }
 
 bool FrameEncoder::Impl::getEmbeddingMatrix(uint32_t sequence_length, std::vector<float>& out_mat)

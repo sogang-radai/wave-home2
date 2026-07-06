@@ -1,9 +1,9 @@
 #include "app_state.h"
 
 #include <fstream>
-#include <filesystem>
 
-#include "../core/json.h"
+#include <drogon/drogon.h>
+
 #include "../core/logger.h"
 #include "util/exe_path.h"
 
@@ -12,19 +12,6 @@ WAVE_NAMESPACE_BEGIN
 namespace
 {
     static AppState* s_instance = nullptr;
-
-    std::filesystem::path resolveConfigPath(std::string_view config_path)
-    {
-        std::filesystem::path path(config_path);
-        if (path.is_absolute())
-            return path;
-
-        const auto base_dir = getExecutableDir();
-        if (!base_dir.empty())
-            return base_dir / path;
-
-        return path;
-    }
 }
 
 AppState& AppState::get()
@@ -45,46 +32,130 @@ AppState::~AppState()
     s_instance = nullptr;
 }
 
-void AppState::init(std::string_view config_path)
+std::filesystem::path AppState::resolvePath(const std::string& relative) const
+{
+    std::filesystem::path path(relative);
+    if (path.is_absolute())
+        return path;
+    if (!config_dir.empty())
+        return config_dir / path;
+    return std::filesystem::weakly_canonical(std::filesystem::current_path() / path);
+}
+
+drogon::orm::DbClientPtr AppState::db() const
+{
+    if (!m_initialized)
+        return nullptr;
+    return drogon::app().getDbClient();
+}
+
+bool AppState::loadDeviceManifests()
+{
+    const auto rooms_path = resolvePath(config.rooms_path);
+    const auto devices_path = resolvePath(config.device_list_path);
+
+    if (!std::filesystem::exists(rooms_path))
+    {
+        LOG_WARN("Rooms manifest not found ({}); device manager not loaded", rooms_path.string());
+        return false;
+    }
+
+    if (!std::filesystem::exists(devices_path))
+    {
+        LOG_WARN("Device list not found ({}); device manager not loaded", devices_path.string());
+        return false;
+    }
+
+    try
+    {
+        json rooms_json;
+        {
+            std::ifstream in(rooms_path);
+            in >> rooms_json;
+        }
+        json devices_json;
+        {
+            std::ifstream in(devices_path);
+            in >> devices_json;
+        }
+
+        if (!deviceManager.load(rooms_json, devices_json))
+        {
+            LOG_WARN("Device manager load returned false");
+            return false;
+        }
+
+        LOG_INFO(
+            "Device manager loaded ({} rooms, {} devices)",
+            deviceManager.enumerateRooms().size(),
+            deviceManager.enumerateDevices().size());
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        LOG_WARN("Device manager load failed: {}", e.what());
+        return false;
+    }
+}
+
+void AppState::init(const LaunchOptions& launch)
 {
     if (m_initialized)
         return;
 
-    const auto resolved_path = resolveConfigPath(config_path);
-    std::ifstream in(resolved_path);
-    if (!in.is_open())
+    test_mode = launch.test_mode;
+    no_devices = launch.no_devices || !config.devices_enabled;
+
+    std::filesystem::path resolved_config(launch.config_path);
+    if (!resolved_config.is_absolute())
     {
-        LOG_ERROR("Failed to open config file: {}", resolved_path.string());
+        const auto base_dir = getExecutableDir();
+        resolved_config = base_dir.empty()
+            ? std::filesystem::weakly_canonical(std::filesystem::current_path() / resolved_config)
+            : base_dir / resolved_config;
+    }
+    config_dir = resolved_config.parent_path();
+
+    if (!AppConfig::loadFromFile(resolved_config, config))
+    {
+        LOG_ERROR("Failed to load app config: {}", resolved_config.string());
         return;
     }
 
-    json root;
-    try
-    {
-        in >> root;
-    }
-    catch (const std::exception& e)
-    {
-        LOG_ERROR("Failed to parse config file {}: {}", resolved_path.string(), e.what());
-        return;
-    }
+    if (launch.port)
+        config.server["port"] = *launch.port;
+    if (launch.document_root)
+        config.server["document_root"] = *launch.document_root;
+    if (launch.test_mode)
+        config.server["test_mode"] = true;
 
-    if (!root.contains("server") || !root["server"].is_object())
-    {
-        LOG_ERROR("Config file is missing \"server\" object: {}", resolved_path.string());
-        return;
-    }
-
-    if (!server.init(root["server"]))
+    if (!server.init(config.server, launch.test_mode))
     {
         LOG_ERROR("Web server init failed");
         return;
     }
 
+    if (!launch.test_mode)
+    {
+        settings.load(resolvePath(config.setting_path).string());
+        if (!no_devices)
+            loadDeviceManifests();
+        else
+            LOG_INFO("Devices skipped (--no-devices or devices_enabled=false)");
+    }
+    else
+    {
+        LOG_INFO("Test mode: skipping settings, devices, and database");
+    }
+
     server.run();
     running.store(true, std::memory_order_release);
 
-    LOG_INFO("App initialized (config: {})", resolved_path.string());
+    LOG_INFO(
+        "App initialized (config: {}, test_mode: {}, no_devices: {})",
+        resolved_config.string(),
+        launch.test_mode,
+        no_devices);
     m_initialized = true;
 }
 
@@ -95,6 +166,9 @@ void AppState::shutdown()
 
     LOG_INFO("Shutting down app...");
     running.store(false, std::memory_order_release);
+
+    gesturePipelines.clear();
+    sleepPipelines.clear();
 
     server.shutdown();
 

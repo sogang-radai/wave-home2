@@ -33,6 +33,18 @@ enum class DeviceState
     Stopped,
 };
 
+struct DeviceBaseInfo
+{
+    DeviceID id = 0;
+    RoomID roomId = 0;
+    std::string name;
+    std::string description;
+    std::string vendor;
+    std::string model;
+    std::string className;
+    bool enabled = false;
+};
+
 class Device
 {
 public:
@@ -42,9 +54,13 @@ public:
     virtual int init(const json& config) = 0;
     virtual void shutdown() = 0;
 
+    const DeviceBaseInfo& getBaseInfo() const;
+
     std::string_view getName() const;
     std::string_view getDescription() const;
-    virtual std::string_view getClass() const = 0;
+    std::string_view getVendor() const;
+    std::string_view getModel() const;
+    virtual std::string_view getClass() const;
     bool isEnabled() const;
 
     DeviceID getId() const;
@@ -55,14 +71,10 @@ public:
     virtual std::string_view getErrorString(int error_code) const;
 
 protected:
-    void loadBaseConfig(const json& config);
+    const DeviceBaseInfo& loadBaseConfig(const json& config);
 
     std::atomic<DeviceState> m_state;
-    DeviceID m_id;
-    RoomID m_roomId;
-    std::string m_name;
-    std::string m_description;
-    bool m_enabled;
+    DeviceBaseInfo m_baseInfo;
     json m_errorJson;
 };
 

@@ -18,6 +18,7 @@
 
 #include "../core/coredefs.h"
 #include "../core/logger.h"
+#include "../db/database.h"
 #include "util/exe_path.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -89,7 +90,7 @@ Server::Server() :
 
 Server::~Server() = default;
 
-bool Server::init(const json& config)
+bool Server::init(const json& config, bool test_mode)
 {
     if (m_impl->running.load(std::memory_order_acquire))
     {
@@ -101,9 +102,11 @@ bool Server::init(const json& config)
     if (base_dir.empty())
         LOG_WARN("Executable directory is unknown; using relative paths from cwd");
 
-    const uint16_t port = config.value("port", 8500);
+    const uint16_t port = config.value("port", 8502);
     const size_t thread_num = config.value("threads_num", 2);
-    const std::string document_root = config.value("document_root", "./site");
+    const std::string document_root = config.value(
+        "document_root",
+        test_mode ? "../site-test" : "../site");
     const std::string home_page = config.value("home_page", "index.html");
     const std::string database_path = config.value("database_path", "data/database.db");
 
@@ -114,7 +117,8 @@ bool Server::init(const json& config)
             return path;
 
 #if defined(WAVE_SOURCE_DIR)
-        const auto fallback = std::filesystem::path(WAVE_SOURCE_DIR) / "site";
+        const auto fallback_name = test_mode ? "site-test" : "site";
+        const auto fallback = std::filesystem::path(WAVE_SOURCE_DIR) / fallback_name;
         if (std::filesystem::exists(fallback))
         {
             LOG_INFO(
@@ -133,11 +137,11 @@ bool Server::init(const json& config)
     if (!std::filesystem::exists(resolved_document_root))
     {
         LOG_WARN(
-            "Document root does not exist: {} (run scripts/build-site.sh to build site/)",
+            "Document root does not exist: {} (run scripts/build-site.sh or build-site-test.sh)",
             resolved_document_root.string());
     }
 
-    if (!ensureParentDir(resolved_database_path))
+    if (!test_mode && !ensureParentDir(resolved_database_path))
         return false;
 
     if (!ensureDir(resolved_upload_path))
@@ -154,23 +158,41 @@ bool Server::init(const json& config)
     app.setUploadPath(resolved_upload_path.string());
     app.addListener("0.0.0.0", port);
 
-    drogon::orm::Sqlite3Config db_config;
-    db_config.connectionNumber = thread_num > 0 ? thread_num : 1;
-    db_config.filename = resolved_database_path.string();
-    db_config.name = "default";
-    db_config.timeout = -1.0;
-    app.addDbClient(db_config);
+    if (!test_mode)
+    {
+        drogon::orm::Sqlite3Config db_config;
+        db_config.connectionNumber = thread_num > 0 ? thread_num : 1;
+        db_config.filename = resolved_database_path.string();
+        db_config.name = "default";
+        db_config.timeout = -1.0;
+        app.addDbClient(db_config);
+
+        app.registerBeginningAdvice([]()
+        {
+            auto client = drogon::app().getDbClient();
+            if (!db::runMigrations(client))
+            {
+                LOG_ERROR("Database migration failed; stopping server");
+                drogon::app().quit();
+            }
+        });
+    }
+    else
+    {
+        LOG_INFO("Test mode: static hosting only (no database, no API DB routes)");
+    }
 
     m_impl->port = port;
     m_impl->documentRoot = resolved_document_root.string();
 
     LOG_INFO(
-        "Web server configured: port={}, threads={}, document_root={}, database={}, uploads={}",
+        "Web server configured: port={}, threads={}, document_root={}, database={}, uploads={}, test_mode={}",
         port,
         thread_num,
         m_impl->documentRoot,
-        resolved_database_path.string(),
-        resolved_upload_path.string());
+        test_mode ? "(disabled)" : resolved_database_path.string(),
+        resolved_upload_path.string(),
+        test_mode);
 
     return true;
 }

@@ -70,7 +70,7 @@ bool SleepPipeline::init(std::string_view base_dir, const json& config, std::str
             return false;
         }
 
-        const size_t queue_size = std::max(m_bedWindow, m_tossWindow);
+        const size_t queue_size = std::max(m_bedWindow, m_tossWindow) * 4;
 
         if (!m_encoder.init(base_dir, config["frame_encoder"], queue_size, out_error))
             return false;

@@ -66,6 +66,10 @@ public:
     bool getPointCloudFrame(uint64_t frameIdx, RadarPointCloud& outFrame) override;
     std::future<void> getLatestPointCloudFrameAsync(RadarPointCloud& outFrame) override;
 
+    bool isPointCloudConnected() const;
+    void reconnectPointCloud();
+    void releasePointCloudFramesUpTo(uint64_t frame_idx);
+
     // IRadarIQProvider
     std::future<void> requestIQAsync(
         const std::vector<RadarIQRequest>& requests,
@@ -81,7 +85,7 @@ private:
     std::unique_ptr<IqImpl> m_iqImpl;
     Config m_config;
     Settings m_settings;
-    size_t m_pointCloudQueueSize = 512;
+    size_t m_pointCloudQueueSize = 2048;
 };
 
 DEVICE_NAMESPACE_END

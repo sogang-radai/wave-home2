@@ -93,9 +93,9 @@ bool FrameAggregator::Impl::parseConfig(
 
         name = config["name"].get<std::string>();
         networkType = config["type"].get<std::string>();
-        if (networkType != "1dcnn")
+        if (networkType != "1dcnn" && networkType != "lstm")
         {
-            out_error = "temporal_aggregator type must be '1dcnn'";
+            out_error = "temporal_aggregator type must be '1dcnn' or 'lstm'";
             return false;
         }
 

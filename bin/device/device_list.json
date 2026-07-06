@@ -2,6 +2,7 @@
     "device_list": [
         {
             "id": "3a7f2c9d10b4e85f",
+            "room_id": "3a7f2c9d10b4e85f",
             "name": "침실 하방 레이더",
             "description": "SRS R4SN mmWave 레이더",
             "vendor": "SRS",
@@ -137,12 +138,12 @@
             "vendor": "Samsung",
             "model": "G7 G70D S32DG700",
             "enabled": true,
-            "class": "tizen_tv",
+            "room_id": "3f91c6e52ad047b8",
+            "class": "samsung_g7",
             "interface": {
                 "host": "192.168.0.24",
                 "mac": "04:E4:B6:A9:8D:0A",
-                "port": 8002,
-                "name": "WaveHome-TV"
+                "token": "15874474"
             }
         },
         {
@@ -152,7 +153,7 @@
             "vendor": "Philips",
             "model": "WiZ Color E29",
             "enabled": true,
-            "class": "philips_wiz_e29",
+            "class": "philips_wiz_e29_color",
             "interface": {
                 "host": "192.168.0.51",
                 "mac": "98:77:D5:D0:B4:42",
@@ -166,7 +167,7 @@
             "vendor": "Philips",
             "model": "WiZ White E29",
             "enabled": true,
-            "class": "philips_wiz_e29",
+            "class": "philips_wiz_e29_white",
             "interface": {
                 "host": "192.168.0.82",
                 "mac": "98:77:D5:D0:B4:42",
@@ -180,7 +181,7 @@
             "vendor": "Philips",
             "model": "WiZ White E29",
             "enabled": true,
-            "class": "philips_wiz_e29",
+            "class": "philips_wiz_e29_white",
             "interface": {
                 "host": "192.168.0.83",
                 "mac": "98:77:D5:D0:B4:42",

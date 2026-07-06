@@ -43,8 +43,8 @@ namespace
 
     void validateConfig(const json& config)
     {
-        if (config.at("class").get<std::string>() != kClass)
-            throw std::invalid_argument("philips_wiz_e29 config field 'class' must be 'philips_wiz_e29'");
+        if (config.at("class").get<std::string>().rfind("philips_wiz_e29", 0) != 0)
+            throw std::invalid_argument("philips_wiz_e29 config field 'class' must start with 'philips_wiz_e29'");
 
         if (!config.contains("interface") || !config["interface"].is_object())
             throw std::invalid_argument("philips_wiz_e29 requires object field 'interface'");

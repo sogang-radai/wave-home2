@@ -37,18 +37,27 @@ namespace
         if (id.size() != 16 || parseDeviceID(id) == 0)
             throw std::invalid_argument("device config field 'id' must be a 16-character hex string");
 
-        if (!config.contains("room_id") || !config["room_id"].is_string())
-            throw std::invalid_argument("device config requires string field 'room_id'");
-
-        const auto& roomId = config["room_id"].get<std::string>();
-        if (roomId.size() != 16 || parseRoomID(roomId) == 0)
-            throw std::invalid_argument("device config field 'room_id' must be a 16-character hex string");
-
         if (!config.contains("name") || !config["name"].is_string())
             throw std::invalid_argument("device config requires string field 'name'");
 
+        if (config.contains("room_id"))
+        {
+            if (!config["room_id"].is_string())
+                throw std::invalid_argument("device config field 'room_id' must be a string");
+
+            const auto& roomId = config["room_id"].get<std::string>();
+            if (roomId.size() != 16 || parseRoomID(roomId) == 0)
+                throw std::invalid_argument("device config field 'room_id' must be a 16-character hex string");
+        }
+
         if (config.contains("description") && !config["description"].is_string())
             throw std::invalid_argument("device config field 'description' must be a string");
+
+        if (config.contains("vendor") && !config["vendor"].is_string())
+            throw std::invalid_argument("device config field 'vendor' must be a string");
+
+        if (config.contains("model") && !config["model"].is_string())
+            throw std::invalid_argument("device config field 'model' must be a string");
 
         if (!config.contains("enabled") || !config["enabled"].is_boolean())
             throw std::invalid_argument("device config requires boolean field 'enabled'");
@@ -132,38 +141,54 @@ std::string roomIDToString(RoomID id)
 
 Device::Device() :
     m_state(DeviceState::Uninitialized),
-    m_id(0),
-    m_roomId(0),
-    m_name(),
-    m_description(),
-    m_enabled(false),
+    m_baseInfo(),
     m_errorJson(defaultErrorJson())
 {
 }
 
+const DeviceBaseInfo& Device::getBaseInfo() const
+{
+    return m_baseInfo;
+}
+
 std::string_view Device::getName() const
 {
-    return m_name;
+    return m_baseInfo.name;
 }
 
 std::string_view Device::getDescription() const
 {
-    return m_description;
+    return m_baseInfo.description;
+}
+
+std::string_view Device::getVendor() const
+{
+    return m_baseInfo.vendor;
+}
+
+std::string_view Device::getModel() const
+{
+    return m_baseInfo.model;
+}
+
+std::string_view Device::getClass() const
+{
+    return m_baseInfo.className;
 }
 
 bool Device::isEnabled() const
 {
-    return m_enabled;
+    return m_baseInfo.enabled;
 }
 
 DeviceID Device::getId() const
 {
-    return m_id;
+    return m_baseInfo.id;
 }
 
 RoomID Device::getRoomId() const
 {
-    return m_roomId;
+    return m_baseInfo.roomId;
 }
 
 DeviceState Device::getState() const
@@ -182,19 +207,26 @@ std::string_view Device::getErrorString(int error_code) const
     return kUnknownError;
 }
 
-void Device::loadBaseConfig(const json& config)
+const DeviceBaseInfo& Device::loadBaseConfig(const json& config)
 {
     validateDeviceConfig(config);
 
-    m_id = parseDeviceID(config["id"].get<std::string>());
-    m_roomId = parseRoomID(config["room_id"].get<std::string>());
-    m_name = config["name"].get<std::string>();
-    m_description = config.value("description", "");
-    m_enabled = config["enabled"].get<bool>();
+    m_baseInfo.id = parseDeviceID(config["id"].get<std::string>());
+    m_baseInfo.roomId = config.contains("room_id")
+        ? parseRoomID(config["room_id"].get<std::string>())
+        : 0;
+    m_baseInfo.name = config["name"].get<std::string>();
+    m_baseInfo.description = config.value("description", "");
+    m_baseInfo.vendor = config.value("vendor", "");
+    m_baseInfo.model = config.value("model", "");
+    m_baseInfo.className = config["class"].get<std::string>();
+    m_baseInfo.enabled = config["enabled"].get<bool>();
 
     m_errorJson = defaultErrorJson();
     if (config.contains("errors"))
         m_errorJson.update(config["errors"]);
+
+    return m_baseInfo;
 }
 
 // ============================================================================

@@ -2,10 +2,14 @@
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <thread>
 
+#include <util/arg_parser.h>
+
 #include "app/app_state.h"
+#include "app/launch_options.h"
 #include "core/logger.h"
 #include "core/task_queue.h"
 
@@ -40,54 +44,79 @@ namespace
         sigaction(SIGINT, &action, nullptr);
         sigaction(SIGTERM, &action, nullptr);
     }
+
+    ws::LaunchOptions parseLaunchOptions(int argc, const char* argv[])
+    {
+        ArgParser parser(
+            "wave-server",
+            "Wave Home server (8500: real backend, 8502: team share — see --help)");
+        parser.addArgument("--config", "-c")
+            .help("config file path")
+            .defaultValue("config.json");
+        parser.addArgument("--port", "-p")
+            .help("HTTP listen port (overrides config)");
+        parser.addArgument("--site", "-s")
+            .help("static site directory (overrides config document_root)");
+        parser.addArgument("--test", "")
+            .help("static mock only: no DB/devices/API (site-test default)")
+            .actionFlag();
+        parser.addArgument("--no-devices", "")
+            .help("skip device manager (API+DB stay on; use when appliances are offline)")
+            .actionFlag();
+
+        parser.parseArgs(argc, argv);
+
+        ws::LaunchOptions launch;
+        launch.config_path = parser.get<std::string>("config");
+        if (parser.has("port"))
+            launch.port = parser.get<uint16_t>("port");
+        if (parser.has("site"))
+            launch.document_root = parser.get<std::string>("site");
+        launch.test_mode = parser.has("test");
+        launch.no_devices = parser.has("no-devices");
+        if (launch.test_mode && !parser.has("site"))
+            launch.document_root = "../site-test";
+
+        return launch;
+    }
 }
 
-class MyApp
+int main(int argc, const char* argv[])
 {
-public:
-    MyApp()
+    ws::LaunchOptions launch;
+    try
     {
-        m_taskQueue.init(12);
-        m_app.init("config.json");
-        installShutdownHandlers();
+        launch = parseLaunchOptions(argc, argv);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+        return 1;
     }
 
-    ~MyApp()
+    ws::TaskQueue taskQueue;
+    if (!taskQueue.init(12))
     {
-        shutdown();
+        LOG_ERROR("Task queue init failed");
+        return 1;
     }
 
-    int run()
+    installShutdownHandlers();
+
+    ws::AppState app;
+    app.init(launch);
+    if (!app.running.load(std::memory_order_acquire))
     {
-        LOG_INFO("Main loop started (Ctrl+Z or Ctrl+C to stop)");
-
-        while (m_app.running.load(std::memory_order_acquire))
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-        LOG_INFO("Main loop stopped");
-        shutdown();
-        return 0;
+        LOG_ERROR("Application failed to start");
+        return 1;
     }
 
-private:
-    void shutdown()
-    {
-        if (m_shutdownDone.exchange(true))
-            return;
+    LOG_INFO("Main loop started (Ctrl+Z or Ctrl+C to stop)");
+    while (app.running.load(std::memory_order_acquire))
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-        m_app.shutdown();
-        m_taskQueue.shutdown();
-        LOG_INFO("Task queue shutdown complete");
-    }
-
-    std::atomic<bool> m_shutdownDone{false};
-
-    ws::TaskQueue m_taskQueue;
-    ws::AppState m_app;
-};
-
-int main()
-{
-    auto app = std::make_unique<MyApp>();
-    return app->run();
+    LOG_INFO("Main loop stopped");
+    app.shutdown();
+    taskQueue.shutdown();
+    return 0;
 }

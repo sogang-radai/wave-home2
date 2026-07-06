@@ -467,48 +467,18 @@ struct SRSR4SN::Impl
             m_io.run();
         });
 
-        m_resolver.async_resolve(
-            m_host,
-            std::to_string(m_port),
-            [this](const std::error_code& ec, tcp::resolver::results_type endpoints)
-            {
-                if (ec)
-                {
-                    LOG_ERROR("srs_r4sn resolve failed: {}", ec.message());
-                    m_connected.store(false);
-                    return;
-                }
-
-                asio::async_connect(
-                    m_socket,
-                    endpoints,
-                    [this](const std::error_code& connectEc, const tcp::endpoint& endpoint)
-                    {
-                        if (connectEc)
-                        {
-                            LOG_ERROR("srs_r4sn connect failed: {}", connectEc.message());
-                            m_connected.store(false);
-                            return;
-                        }
-
-                        asio::socket_base::keep_alive option(true);
-                        m_socket.set_option(option);
-                        m_connected.store(true);
-
-                        LOG_INFO(
-                            "srs_r4sn connected to {}:{}",
-                            endpoint.address().to_string(),
-                            endpoint.port());
-
-                        m_readBuf.resize(8192);
-                        doRead();
-                    });
-            });
+        m_reconnectDelayMs = kInitialReconnectDelayMs;
+        asio::post(m_io, [this]()
+        {
+            if (m_work)
+                openConnection();
+        });
     }
 
     void stop()
     {
         std::error_code ec;
+        m_reconnectTimer.cancel();
         m_resolver.cancel();
         m_socket.cancel(ec);
         m_socket.shutdown(tcp::socket::shutdown_both, ec);
@@ -524,6 +494,33 @@ struct SRSR4SN::Impl
     bool isConnected() const
     {
         return m_connected.load();
+    }
+
+    void requestReconnect()
+    {
+        if (!m_work || m_connecting.load())
+            return;
+
+        asio::post(m_io, [this]()
+        {
+            if (!m_work || m_connecting.load())
+                return;
+
+            std::error_code ec;
+            m_reconnectTimer.cancel();
+            m_socket.cancel(ec);
+            m_socket.close(ec);
+            m_connected.store(false);
+            m_reconnectDelayMs = kInitialReconnectDelayMs;
+            openConnection();
+        });
+    }
+
+    void releaseFramesUpTo(uint64_t frame_idx)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        while (!m_frames.empty() && m_frames.front().frameIndex <= frame_idx)
+            m_frames.pop_front();
     }
 
     void setQueueSize(size_t size)
@@ -585,16 +582,128 @@ struct SRSR4SN::Impl
     }
 
 private:
+    static constexpr uint32_t kInitialReconnectDelayMs = 200;
+    static constexpr uint32_t kMaxReconnectDelayMs = 5000;
+    static constexpr auto kQueueWarnInterval = std::chrono::seconds(10);
+
+    bool shouldIgnoreIoError(const std::error_code& ec) const
+    {
+        return !m_work || ec == asio::error::operation_aborted;
+    }
+
+    void openConnection()
+    {
+        m_connecting.store(true);
+
+        std::error_code ec;
+        m_resolver.cancel();
+        m_socket.cancel(ec);
+        m_socket.close(ec);
+
+        m_resolver.async_resolve(
+            m_host,
+            std::to_string(m_port),
+            [this](const std::error_code& resolveEc, tcp::resolver::results_type endpoints)
+            {
+                if (shouldIgnoreIoError(resolveEc))
+                {
+                    m_connecting.store(false);
+                    return;
+                }
+
+                if (resolveEc)
+                {
+                    m_connecting.store(false);
+                    LOG_ERROR("srs_r4sn resolve failed: {}", resolveEc.message());
+                    scheduleReconnect("resolve_failed");
+                    return;
+                }
+
+                asio::async_connect(
+                    m_socket,
+                    endpoints,
+                    [this](const std::error_code& connectEc, const tcp::endpoint& endpoint)
+                    {
+                        if (shouldIgnoreIoError(connectEc))
+                        {
+                            m_connecting.store(false);
+                            return;
+                        }
+
+                        if (connectEc)
+                        {
+                            m_connecting.store(false);
+                            LOG_ERROR("srs_r4sn connect failed: {}", connectEc.message());
+                            scheduleReconnect("connect_failed");
+                            return;
+                        }
+
+                        asio::socket_base::keep_alive option(true);
+                        m_socket.set_option(option);
+                        m_connected.store(true);
+                        m_connecting.store(false);
+                        m_reconnectDelayMs = kInitialReconnectDelayMs;
+                        m_reconnectAttempts = 0;
+                        m_streamBuf.clear();
+
+                        LOG_INFO(
+                            "srs_r4sn connected to {}:{}",
+                            endpoint.address().to_string(),
+                            endpoint.port());
+
+                        m_readBuf.resize(8192);
+                        doRead();
+                    });
+            });
+    }
+
+    void scheduleReconnect(const char* reason)
+    {
+        if (!m_work)
+            return;
+
+        m_connected.store(false);
+        m_connecting.store(false);
+
+        m_reconnectTimer.cancel();
+        std::error_code ec;
+        m_socket.cancel(ec);
+        m_socket.close(ec);
+
+        const uint32_t delay = m_reconnectDelayMs;
+        m_reconnectDelayMs = std::min(m_reconnectDelayMs * 2u, kMaxReconnectDelayMs);
+        ++m_reconnectAttempts;
+
+        LOG_WARN(
+            "srs_r4sn disconnected ({}) — retry #{} in {} ms",
+            reason,
+            m_reconnectAttempts,
+            delay);
+
+        m_reconnectTimer.expires_after(std::chrono::milliseconds(delay));
+        m_reconnectTimer.async_wait([this, delay](const std::error_code& timerEc)
+        {
+            if (timerEc || !m_work)
+                return;
+
+            LOG_INFO("srs_r4sn reconnecting (delay was {} ms)", delay);
+            openConnection();
+        });
+    }
+
     void doRead()
     {
         m_socket.async_read_some(
             asio::buffer(m_readBuf),
             [this](const std::error_code& ec, std::size_t bytes)
             {
+                if (shouldIgnoreIoError(ec))
+                    return;
+
                 if (ec)
                 {
                     LOG_ERROR("srs_r4sn read failed: {}", ec.message());
-                    m_connected.store(false);
+                    scheduleReconnect("read_failed");
                     return;
                 }
 
@@ -610,8 +719,23 @@ private:
                     if (parsePacket(packetBuf, frame, m_lastFrameTimestampUs))
                     {
                         std::lock_guard<std::mutex> lock(m_mutex);
-                        while (m_frames.size() >= m_queueSize)
+                        if (m_frames.size() >= m_queueSize)
+                        {
+                            m_droppedFrames += 1;
+                            const auto now = std::chrono::steady_clock::now();
+                            if (m_lastQueueWarn.time_since_epoch().count() == 0
+                                || now - m_lastQueueWarn >= kQueueWarnInterval)
+                            {
+                                LOG_WARN(
+                                    "srs_r4sn point cloud queue full ({}), dropped {} frame(s) (no consumer; latest {})",
+                                    m_queueSize,
+                                    m_droppedFrames,
+                                    m_frames.front().frameIndex);
+                                m_lastQueueWarn = now;
+                                m_droppedFrames = 0;
+                            }
                             m_frames.pop_front();
+                        }
                         m_frames.push_back(std::move(frame));
                     }
                     else
@@ -634,7 +758,11 @@ private:
 
     tcp::resolver m_resolver;
     tcp::socket m_socket;
+    asio::steady_timer m_reconnectTimer{m_io};
     std::atomic<bool> m_connected{false};
+    std::atomic<bool> m_connecting{false};
+    uint32_t m_reconnectDelayMs = kInitialReconnectDelayMs;
+    uint32_t m_reconnectAttempts = 0;
 
     std::vector<uint8_t> m_readBuf;
     std::vector<uint8_t> m_streamBuf;
@@ -642,6 +770,8 @@ private:
 
     mutable std::mutex m_mutex;
     std::deque<RadarPointCloud> m_frames;
+    std::chrono::steady_clock::time_point m_lastQueueWarn{};
+    uint64_t m_droppedFrames = 0;
 };
 
 struct SRSR4SN::IqImpl
@@ -1019,6 +1149,23 @@ std::future<void> SRSR4SN::getLatestPointCloudFrameAsync(RadarPointCloud& outFra
 
         m_impl->getLatestFrame(outFrame);
     });
+}
+
+bool SRSR4SN::isPointCloudConnected() const
+{
+    return m_impl && m_impl->isConnected();
+}
+
+void SRSR4SN::reconnectPointCloud()
+{
+    if (m_impl)
+        m_impl->requestReconnect();
+}
+
+void SRSR4SN::releasePointCloudFramesUpTo(uint64_t frame_idx)
+{
+    if (m_impl)
+        m_impl->releaseFramesUpTo(frame_idx);
 }
 
 // ============================================================================

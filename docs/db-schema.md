@@ -1,19 +1,31 @@
 이 문서는 SQLite3 데이터베이스의 스키마를 정의하는 명세입니다.
 
-준수 사항
+## 변경 내역
+
+- **2026-07-07** — v1 API·프론트 mock 정렬
+  - `routine_task.source_insight_id` 추가
+  - `insight.label` 추가
+  - `chat_history.title`, `chat_history.updated_at` 추가
+  - `user_session`, 사용자 설정(`user_sleep_config`, `user_general_settings`, `user_ai_agent_settings`) 추가
+  - 홈 자동화 `automation_rule`, `home_event` 추가
+
+## 준수 사항
 
 - id는 INTEGER 사용
 - 타임스탬프는 VARCHAR(50) 사용, 포맷은 'YYYY-MM-DD HH:MM:SS'(ISO8601 에서 T 를 공백으로 대체)
 
-목차
+## 목차
 
 - 계정
+- 세션
 - 방
 - 장치
+- 사용자 설정
 - 통계
     - 수면
     - 전력
 - 제스처
+- 홈 자동화
 - 헬스 루틴/일정/TODO
 - 알림
 - 에이전트
@@ -33,6 +45,26 @@ CREATE TABLE user (
     created_at VARCHAR(50),            -- 생성 시각 'YYYY-MM-DD HH:MM:SS'
 
     PRIMARY KEY (id)
+);
+```
+
+---------------------------------------------------------------------------------------------------
+
+## 세션
+
+활성 구성원과 인증 토큰. 단일 가구·단일 로그인을 가정한다.
+
+### 스키마
+
+```sql
+CREATE TABLE user_session (
+    id                INTEGER     PRIMARY KEY,
+    active_user_id    INTEGER,                 -- nullable: 미선택
+    access_token_hash TEXT        NOT NULL,    -- Bearer 토큰 해시
+    created_at        VARCHAR(50) NOT NULL,
+    updated_at        VARCHAR(50) NOT NULL,
+
+    FOREIGN KEY (active_user_id) REFERENCES user(id)
 );
 ```
 
@@ -125,6 +157,61 @@ CREATE TABLE device_room_map (
     FOREIGN KEY (device_id) REFERENCES device(id),
     FOREIGN KEY (room_id) REFERENCES room(id)
 );
+```
+
+---------------------------------------------------------------------------------------------------
+
+## 사용자 설정
+
+구성원별 JSON 설정. 카탈로그(사운드·TTS 스피커·AI 모델 목록)는 정적 시드 파일로 두고 DB에는 저장하지 않는다.
+
+### 스키마
+
+```sql
+CREATE TABLE user_sleep_config (
+    user_id    INTEGER     PRIMARY KEY,
+    config     TEXT        NOT NULL,    -- json: bedtime, wakeTime, acAuto, …
+    updated_at VARCHAR(50) NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE TABLE user_general_settings (
+    user_id    INTEGER     PRIMARY KEY,
+    settings   TEXT        NOT NULL,    -- json: theme, language, notificationSound, ttsSpeakerId, …
+    updated_at VARCHAR(50) NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE TABLE user_ai_agent_settings (
+    user_id           INTEGER     PRIMARY KEY,
+    personal_prompt   TEXT        NOT NULL DEFAULT '',
+    selected_model_id TEXT        NOT NULL,    -- 카탈로그 id (gemini-flash2.5 등)
+    ctrl_enter_send   INTEGER     NOT NULL DEFAULT 0,
+    wave_ai_sound     INTEGER     NOT NULL DEFAULT 1,
+    updated_at        VARCHAR(50) NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+```
+
+`sleep_config` json 예시
+
+```json
+{
+  "bedtime": "23:30",
+  "wakeTime": "07:00",
+  "wakeUpSound": "love-yourself",
+  "acAuto": true,
+  "acTemp": 24,
+  "lightAuto": true,
+  "dimStartMinutes": 30,
+  "finalBrightness": 10,
+  "wakeLightRamp": true,
+  "wakeMusic": true,
+  "wakeTvOrAlarm": false
+}
 ```
 
 ---------------------------------------------------------------------------------------------------
@@ -320,13 +407,13 @@ CREATE TABLE power_report (
     id           INTEGER     PRIMARY KEY,
     energy_id    INTEGER     NOT NULL,    -- 원본 power_energy 행 id(granularity=period, 같은 device_id/time_start)
     device_id    INTEGER,                 -- NULL = 계측 플러그 합산
-    period       VARCHAR(10) NOT NULL,    -- '1h' | '24h' | '1w' | '1mo'
+    period       VARCHAR(10) NOT NULL,    -- '1h' | '24h' | '1w' | '1mo' | '1yr'
     period_start VARCHAR(50) NOT NULL,    -- 1h: 'YYYY-MM-DD HH:00:00', 24h/1w/1mo: 'YYYY-MM-DD'(구간 첫날) 
     metrics      TEXT,                    -- json: 구조화 지표(에너지/피크/전일대비 등)
     report_text  TEXT,                    -- LLM 생성 요약(추후 작성, 지금은 NULL)
     created_at   VARCHAR(50),             -- 생성 시각 'YYYY-MM-DD HH:MM:SS'
 
-    CHECK (period IN ('1h', '24h', '1w', '1mo')),
+    CHECK (period IN ('1h', '24h', '1w', '1mo', '1yr')),
     FOREIGN KEY (energy_id) REFERENCES power_energy(id),
     FOREIGN KEY (device_id) REFERENCES device(id)
 );
@@ -403,6 +490,56 @@ CREATE INDEX idx_gesture_log_occurred ON gesture_log (timestamp);
 
 ---------------------------------------------------------------------------------------------------
 
+## 홈 자동화
+
+트리거 룰과 이벤트 로그. 장치 마스터는 `device` + json 설정을 따른다.
+
+### 트리거 룰
+
+```sql
+CREATE TABLE automation_rule (
+    id            INTEGER      PRIMARY KEY,
+    user_id       INTEGER      NOT NULL,
+    name          VARCHAR(100) NOT NULL,
+    enabled       INTEGER      NOT NULL DEFAULT 1,
+    cooldown_ms   INTEGER      NOT NULL DEFAULT 0,
+    trigger_json  TEXT,                           -- nullable: 디바이스 쿼리 트리거
+    schedule_json TEXT,                           -- nullable: cron/시간 스케줄
+    actions_json  TEXT         NOT NULL,          -- 실행 액션 배열
+    created_at    VARCHAR(50)  NOT NULL,
+    updated_at    VARCHAR(50)  NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_automation_rule_user ON automation_rule (user_id);
+```
+
+### 홈 이벤트 로그
+
+`gesture_log`와 별도로 규칙 실행·스케줄 등 UI 이벤트 탭용 통합 로그.
+
+```sql
+CREATE TABLE home_event (
+    id           INTEGER      PRIMARY KEY,
+    user_id      INTEGER      NOT NULL,
+    type         VARCHAR(20)  NOT NULL,          -- 'gesture' | 'execution' | 'schedule' | 'connection' | …
+    occurred_at  VARCHAR(50)  NOT NULL,
+    device_id    INTEGER,
+    device_name  VARCHAR(100),
+    message      VARCHAR(300) NOT NULL,
+    triggered_by VARCHAR(100),                   -- rule:3, schedule:5, manual 등
+    detail_json  TEXT,
+
+    FOREIGN KEY (user_id) REFERENCES user(id),
+    FOREIGN KEY (device_id) REFERENCES device(id)
+);
+CREATE INDEX idx_home_event_user_time ON home_event (user_id, occurred_at);
+```
+
+- 제스처 감지 원본은 `gesture_log`에 남기고, UI용 이벤트는 `home_event`에 복제·요약해 넣을 수 있다.
+
+---------------------------------------------------------------------------------------------------
+
 ## 헬스 루틴/일정/TODO
 - 프론트 헬스 루틴(주간 계획) 페이지의 요일별 할 일 목록에 대응한다.
 - 하나의 할 일은 요일 + 카테고리 + (선택)시간대를 가진다. 시간대는 자정 기준 '분'으로 저장한다(프론트 startMin/endMin 과 동일).
@@ -421,14 +558,17 @@ CREATE TABLE routine_task (
     start_minute INTEGER,                 -- 자정 기준 분(0~1440). 시간 미지정이면 NULL
     end_minute   INTEGER,                 -- 자정 기준 분(0~1440)
     done         INTEGER      NOT NULL,   -- 0 = 미완료, 1 = 완료
+    source_insight_id INTEGER,            -- 인사이트에서 파생 시 (nullable)
 
     CHECK (day_of_week IN ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')),
     CHECK (created_by IN ('user', 'agent')),
     CHECK ((start_minute IS NULL AND end_minute IS NULL)
            OR (start_minute >= 0 AND start_minute < end_minute AND end_minute <= 1440)),
-    FOREIGN KEY (user_id) REFERENCES user(id)
+    FOREIGN KEY (user_id) REFERENCES user(id),
+    FOREIGN KEY (source_insight_id) REFERENCES insight(id)
 );
 CREATE INDEX idx_routine_task_user_day ON routine_task (user_id, day_of_week);
+CREATE INDEX idx_routine_task_insight ON routine_task (source_insight_id);
 ```
 
 ---------------------------------------------------------------------------------------------------
@@ -483,7 +623,9 @@ CREATE INDEX idx_notification_user_created ON notification (user_id, created_at)
 CREATE TABLE chat_history (
     id         INTEGER      NOT NULL,
     user_id    INTEGER      NOT NULL,
+    title      VARCHAR(100) NOT NULL DEFAULT '새 대화',
     created_at VARCHAR(50)  NOT NULL,   -- 생성 시각 'YYYY-MM-DD HH:MM:SS'
+    updated_at VARCHAR(50)  NOT NULL,   -- 마지막 메시지 시각
     message    TEXT         NOT NULL,   -- 대화 내용 json(messages 배열)
 
     PRIMARY KEY (id),
@@ -502,6 +644,7 @@ CREATE TABLE insight (
     user_id    INTEGER      NOT NULL,
     domain     VARCHAR(20)  NOT NULL,   -- 'sleep' | 'posture' | 'weekly-plan' | ...
     period     VARCHAR(10),             -- 'daily' | 'weekly' (해당 없으면 NULL)
+    label      VARCHAR(50),             -- UI 그룹 (예: '오늘의 권장 액션', '다음 주 목표')
     title      VARCHAR(100) NOT NULL,   -- 인사이트 제목
     text       VARCHAR(300) NOT NULL,   -- 인사이트 본문(권장 액션 등)
     approved   INTEGER      NOT NULL,   -- 0 = 미승인, 1 = 사용자 승인

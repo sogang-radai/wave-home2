@@ -11,6 +11,7 @@ sleep-net/dataset/
 sleep-net/training/
 sleep-net/samples/
 sleep-net/models/
+sleep-net/test/
 
 # Plan files (may contain credentials)
 [pP]lan.md
@@ -20,6 +21,7 @@ sleep-net/models/
 build/
 build-*/
 site/
+site-test/
 compile_commands.json
 .cache/
 

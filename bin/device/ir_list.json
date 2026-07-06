@@ -1,0 +1,84 @@
+{
+    "commands": [
+        {
+            "id": "ir_ac_power",
+            "name": "에어컨 전원",
+            "description": "LG 에어컨 전원 토글 (학습됨)",
+            "deviceHint": "LG 에어컨",
+            "unit": "us",
+            "timings": [9000, 4500, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 39000],
+            "source": "learned",
+            "createdAt": "2026-07-01T10:00:00+09:00"
+        },
+        {
+            "id": "ir_ac_temp_up",
+            "name": "에어컨 온도 올리기",
+            "description": "LG 에어컨 온도 +1",
+            "deviceHint": "LG 에어컨",
+            "unit": "us",
+            "timings": [9000, 4500, 560, 1690, 560, 560, 560, 1690, 560, 560, 560, 560, 560, 1690, 560, 39000],
+            "source": "learned",
+            "createdAt": "2026-07-01T10:02:00+09:00"
+        },
+        {
+            "id": "ir_ac_temp_down",
+            "name": "에어컨 온도 내리기",
+            "description": "LG 에어컨 온도 -1",
+            "deviceHint": "LG 에어컨",
+            "unit": "us",
+            "timings": [9000, 4500, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 1690, 560, 39000],
+            "source": "learned",
+            "createdAt": "2026-07-01T10:03:00+09:00"
+        },
+        {
+            "id": "ir_tv_power",
+            "name": "TV 전원",
+            "description": "삼성 TV 전원 토글",
+            "deviceHint": "삼성 TV",
+            "unit": "us",
+            "timings": [4500, 4500, 560, 560, 560, 560, 560, 1690, 560, 44000],
+            "source": "manual",
+            "createdAt": "2026-07-02T09:00:00+09:00"
+        },
+        {
+            "id": "ir_tv_vol_up",
+            "name": "TV 볼륨 올리기",
+            "description": "수동 입력",
+            "deviceHint": "삼성 TV",
+            "unit": "us",
+            "timings": [4500, 4500, 560, 560, 560, 560, 560, 1690, 560, 44000],
+            "source": "manual",
+            "createdAt": "2026-07-02T09:01:00+09:00"
+        },
+        {
+            "id": "ir_tv_vol_down",
+            "name": "TV 볼륨 내리기",
+            "description": "수동 입력",
+            "deviceHint": "삼성 TV",
+            "unit": "us",
+            "timings": [4500, 4500, 560, 1690, 560, 560, 560, 560, 560, 44000],
+            "source": "manual",
+            "createdAt": "2026-07-02T09:02:00+09:00"
+        },
+        {
+            "id": "ir_tv_ch_up",
+            "name": "TV 채널 올리기",
+            "description": "수동 입력",
+            "deviceHint": "삼성 TV",
+            "unit": "us",
+            "timings": [4500, 4500, 560, 1690, 560, 1690, 560, 560, 560, 44000],
+            "source": "manual",
+            "createdAt": "2026-07-02T09:03:00+09:00"
+        },
+        {
+            "id": "ir_tv_ch_down",
+            "name": "TV 채널 내리기",
+            "description": "수동 입력",
+            "deviceHint": "삼성 TV",
+            "unit": "us",
+            "timings": [4500, 4500, 560, 1690, 560, 1690, 560, 1690, 560, 44000],
+            "source": "manual",
+            "createdAt": "2026-07-02T09:04:00+09:00"
+        }
+    ]
+}

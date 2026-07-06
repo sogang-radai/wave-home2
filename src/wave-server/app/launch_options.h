@@ -1,0 +1,20 @@
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
+#include "../core/coredefs.h"
+
+WAVE_NAMESPACE_BEGIN
+
+struct LaunchOptions
+{
+    std::string config_path = "config.json";
+    std::optional<uint16_t> port;
+    std::optional<std::string> document_root;
+    bool test_mode = false;
+    bool no_devices = false;
+};
+
+WAVE_NAMESPACE_END
