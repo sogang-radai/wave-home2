@@ -1,3 +1,4 @@
+#include <memory>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -22,6 +23,7 @@ using ws::json;
 using namespace ws::dev;
 using ws::nn::SleepPipeline;
 using ws::nn::SleepResult;
+using ws::nn::FrameEncoderWindowMode;
 
 namespace
 {
@@ -89,6 +91,50 @@ namespace
         return labels[static_cast<size_t>(index)];
     }
 
+    std::vector<std::filesystem::path> discoverSleepModelDirs(const std::filesystem::path& parent)
+    {
+        if (!std::filesystem::is_directory(parent))
+            throw std::runtime_error("model-dir is not a directory: " + parent.string());
+
+        std::vector<std::filesystem::path> dirs;
+        for (const std::filesystem::directory_entry& entry :
+            std::filesystem::directory_iterator(parent))
+        {
+            if (!entry.is_directory())
+                continue;
+
+            const std::string name = entry.path().filename().string();
+            if (name.size() < 5 || name.compare(0, 5, "sleep") != 0)
+                continue;
+
+            if (!std::filesystem::is_regular_file(entry.path() / "model.json"))
+                continue;
+
+            dirs.push_back(entry.path());
+        }
+
+        std::sort(dirs.begin(), dirs.end());
+        if (dirs.empty())
+        {
+            throw std::runtime_error(
+                "no sleep*/model.json subfolders found under " + parent.string());
+        }
+
+        return dirs;
+    }
+
+    json loadModelConfig(const std::filesystem::path& model_dir)
+    {
+        const std::filesystem::path model_json = model_dir / "model.json";
+        std::ifstream in(model_json);
+        if (!in.is_open())
+            throw std::runtime_error("failed to open " + model_json.string());
+
+        json config;
+        in >> config;
+        return config;
+    }
+
     void nowDateTime(std::string& out_date, std::string& out_time)
     {
         const auto now = std::chrono::system_clock::now();
@@ -113,6 +159,10 @@ namespace
         uint64_t frameEnd = 0;
         size_t sampleCount = 0;
 
+        bool connected = true;
+        bool frameGap = false;
+        bool warmup = false;
+
         // 상태: 윈도우에서 가장 오래 유지된 클래스 + 해당 클래스 프레임들의 평균 확률.
         int32_t statusClass = -1;
         std::vector<float> statusScores;
@@ -124,9 +174,32 @@ namespace
         float tossIndex = 0.0f;
     };
 
+    struct TickLog
+    {
+        SleepResult result;
+        bool haveResult = false;
+        bool connected = false;
+        bool frameGap = false;
+    };
+
+    struct PushResult
+    {
+        size_t pushed = 0;
+        bool frameGap = false;
+    };
+
+    struct ModelSlot
+    {
+        std::string tag;
+        std::filesystem::path dir;
+        SleepPipeline pipeline;
+        std::ofstream csv;
+        std::vector<TickLog> logWindow;
+    };
+
     // 프레임 단위 결과 윈도우를 하나의 로그 행으로 축약한다.
     // 상태는 최다 프레임(최장 유지) 클래스, 뒤척임은 최대 tossIndex 프레임을 채택.
-    AggregatedLog aggregateWindow(const std::vector<SleepResult>& window)
+    AggregatedLog aggregateWindow(const std::vector<TickLog>& window)
     {
         AggregatedLog log;
         nowDateTime(log.date, log.time);
@@ -134,11 +207,32 @@ namespace
         if (window.empty())
             return log;
 
-        log.frameBegin = window.front().frameIndex;
-        log.frameEnd = window.back().frameIndex;
+        log.connected = true;
+        log.frameGap = false;
+        log.warmup = false;
+
+        std::vector<SleepResult> inferenceRows;
+        inferenceRows.reserve(window.size());
+
+        for (const TickLog& tick : window)
+        {
+            log.connected = log.connected && tick.connected;
+            log.frameGap = log.frameGap || tick.frameGap;
+            if (!tick.haveResult)
+                log.warmup = true;
+
+            if (tick.haveResult)
+                inferenceRows.push_back(tick.result);
+        }
+
+        if (inferenceRows.empty())
+            return log;
+
+        log.frameBegin = inferenceRows.front().frameIndex;
+        log.frameEnd = inferenceRows.back().frameIndex;
 
         std::vector<int32_t> classCounts;
-        for (const SleepResult& r : window)
+        for (const SleepResult& r : inferenceRows)
         {
             if (r.statusClass < 0)
                 continue;
@@ -154,7 +248,7 @@ namespace
         }
 
         size_t winningFrames = 0;
-        for (const SleepResult& r : window)
+        for (const SleepResult& r : inferenceRows)
         {
             if (r.statusClass != log.statusClass)
                 continue;
@@ -171,7 +265,7 @@ namespace
                 v /= static_cast<float>(winningFrames);
         }
 
-        for (const SleepResult& r : window)
+        for (const SleepResult& r : inferenceRows)
         {
             if (!r.tossValid)
                 continue;
@@ -192,7 +286,7 @@ namespace
         const std::vector<std::string>& bed_labels,
         const std::vector<std::string>& toss_labels)
     {
-        out << "date,time,frame_begin,frame_end,samples,status_label";
+        out << "date,time,frame_begin,frame_end,samples,connected,frame_gap,warmup,status_label";
         for (const std::string& label : bed_labels)
             out << ",status_" << label;
         out << ",toss_valid,toss_label,toss_index";
@@ -209,6 +303,9 @@ namespace
     {
         out << log.date << ',' << log.time << ','
             << log.frameBegin << ',' << log.frameEnd << ',' << log.sampleCount << ','
+            << (log.connected ? 1 : 0) << ','
+            << (log.frameGap ? 1 : 0) << ','
+            << (log.warmup ? 1 : 0) << ','
             << labelOf(bed_labels, log.statusClass);
 
         out << std::fixed << std::setprecision(4);
@@ -235,41 +332,87 @@ namespace
         out.flush();
     }
 
-    // 레이더 링 버퍼에서 아직 밀어 넣지 않은 프레임을 인덱스 오름차순으로 모두 push.
-    // 윈도우가 연속 프레임을 요구하므로 최신 프레임만 가져오면 안 되고, 사이 프레임까지 채워야 한다.
-    size_t pushNewFrames(
+    // 레이더에서 새 프레임을 한 번만 읽어 모든 파이프라인에 동일하게 push.
+    PushResult pushNewFrames(
         SRSR4SN& radar,
-        SleepPipeline& pipeline,
+        std::vector<std::unique_ptr<ModelSlot>>& models,
         bool& has_last,
         uint64_t& last_index,
         size_t& out_last_point_count)
     {
+        PushResult out;
         std::vector<uint64_t> indices;
         radar.enumeratePointCloudFrameIndices(indices);
         if (indices.empty())
-            return 0;
+            return out;
 
         std::sort(indices.begin(), indices.end());
 
-        size_t pushed = 0;
         for (const uint64_t idx : indices)
         {
             if (has_last && idx <= last_index)
                 continue;
+
+            if (has_last && idx > last_index + 1)
+                out.frameGap = true;
 
             RadarPointCloud frame;
             if (!radar.getPointCloudFrame(idx, frame))
                 continue;
 
             out_last_point_count = frame.points.size();
-            pipeline.pushFrame(std::move(frame));
+
+            for (size_t i = 0; i < models.size(); ++i)
+            {
+                if (i + 1 == models.size())
+                    models[i]->pipeline.pushFrame(std::move(frame));
+                else
+                    models[i]->pipeline.pushFrame(frame);
+            }
 
             has_last = true;
             last_index = idx;
-            ++pushed;
+            ++out.pushed;
         }
 
-        return pushed;
+        if (out.pushed > 0)
+            radar.releasePointCloudFramesUpTo(last_index);
+
+        return out;
+    }
+
+    void flushCsvWindows(std::vector<std::unique_ptr<ModelSlot>>& models, size_t log_frames, bool force_all)
+    {
+        for (auto& slot : models)
+        {
+            if (!slot->csv.is_open() || slot->logWindow.empty())
+                continue;
+
+            if (!force_all && slot->logWindow.size() < log_frames)
+                continue;
+
+            const AggregatedLog aggregated = aggregateWindow(slot->logWindow);
+            writeCsvRow(
+                slot->csv,
+                aggregated,
+                slot->pipeline.getBedLabels(),
+                slot->pipeline.getTossLabels());
+            slot->logWindow.clear();
+        }
+    }
+
+    void printStatusBlock(const std::string& block, size_t line_count, bool& first_paint)
+    {
+        if (!first_paint)
+            std::cout << "\033[" << line_count << "F";
+
+        std::istringstream lines(block);
+        std::string line;
+        while (std::getline(lines, line))
+            std::cout << "\033[2K\r" << line << '\n';
+
+        std::cout << std::flush;
+        first_paint = false;
     }
 }
 
@@ -278,10 +421,13 @@ int main(int argc, const char* argv[])
     ArgParser parser("test-sleep-net", "Real-time SleepNet (bed/toss) inference test on SRS R4SN radar.");
     parser.addArgument("--config", "-c")
         .help("device_list.json path.")
-        .defaultValue("bin/data/device_list.json");
-    parser.addArgument("--model", "-m")
-        .help("sleep model.json path.")
-        .defaultValue("bin/models/sleep/model.json");
+        .defaultValue("bin/device/device_list.json");
+    parser.addArgument("--model-dir", "-m")
+        .help("parent directory; loads every sleep*/model.json subfolder.")
+        .defaultValue("bin/models");
+    parser.addArgument("--csv-dir")
+        .help("directory for per-model CSV logs ({subfolder}.csv).")
+        .defaultValue(".");
     parser.addArgument("--fps", "-f")
         .help("output/poll rate in Hz.")
         .defaultValue("20");
@@ -291,11 +437,12 @@ int main(int argc, const char* argv[])
     parser.addArgument("--list", "-l")
         .help("list srs_r4sn devices and exit.")
         .actionFlag();
-    parser.addArgument("--csv")
-        .help("append aggregated results to a CSV log file.");
     parser.addArgument("--log-frames", "-n")
         .help("frames aggregated per CSV row (0 = ~1 second based on fps).")
         .defaultValue("0");
+    parser.addArgument("--consecutive")
+        .help("require consecutive frame indices for temporal windows (default: relaxed).")
+        .actionFlag();
 
     try
     {
@@ -308,11 +455,12 @@ int main(int argc, const char* argv[])
     }
 
     const std::string configPath = parser.get<std::string>("config");
-    const std::string modelFile = parser.get<std::string>("model");
+    const std::filesystem::path modelsParent(parser.get<std::string>("model-dir"));
+    const std::filesystem::path csvDir(parser.get<std::string>("csv-dir"));
     const double fps = parser.get<double>("fps");
     const int32_t radarIndex = parser.get<int32_t>("index");
     const bool listOnly = parser.has("list");
-    const std::string csvPath = parser.has("csv") ? parser.get<std::string>("csv") : std::string();
+    const bool consecutiveWindows = parser.has("consecutive");
     const int32_t logFramesArg = parser.get<int32_t>("log-frames");
 
     if (fps <= 0.0)
@@ -343,52 +491,74 @@ int main(int argc, const char* argv[])
 
         const json& radarConfig = radars[static_cast<size_t>(radarIndex)];
 
-        const std::filesystem::path modelPath(modelFile);
-        std::ifstream modelIn(modelPath);
-        if (!modelIn.is_open())
-            throw std::runtime_error("failed to open model " + modelFile);
+        const std::vector<std::filesystem::path> modelDirs = discoverSleepModelDirs(modelsParent);
+        std::vector<std::unique_ptr<ModelSlot>> models;
 
-        json modelConfig;
-        modelIn >> modelConfig;
+        std::cout << "models under " << modelsParent.string() << " (" << modelDirs.size() << "):\n";
 
-        const std::string baseDir = modelPath.has_parent_path()
-            ? modelPath.parent_path().string()
-            : std::string(".");
+        if (!csvDir.empty() && !std::filesystem::exists(csvDir))
+            std::filesystem::create_directories(csvDir);
 
-        SleepPipeline pipeline;
-        std::string error;
-        if (!pipeline.init(baseDir, modelConfig, error))
-            throw std::runtime_error("sleep pipeline init failed: " + error);
-
-        const std::vector<std::string>& bedLabels = pipeline.getBedLabels();
-        const std::vector<std::string>& tossLabels = pipeline.getTossLabels();
-
-        std::cout << "model: " << pipeline.getModelName()
-                  << "  embedding=" << pipeline.getEmbeddingSize()
-                  << "  bed_window=" << pipeline.getBedWindow()
-                  << "  toss_window=" << pipeline.getTossWindow()
-                  << "  toss_active_status=" << pipeline.getTossActiveStatus() << '\n';
-
-        std::ofstream csvFile;
-        if (!csvPath.empty())
+        for (const std::filesystem::path& dir : modelDirs)
         {
+            auto slot = std::make_unique<ModelSlot>();
+            slot->tag = dir.filename().string();
+            slot->dir = dir;
+
+            const json modelConfig = loadModelConfig(dir);
+            std::string error;
+            if (!slot->pipeline.init(dir.string(), modelConfig, error))
+            {
+                throw std::runtime_error(
+                    "sleep pipeline init failed for " + dir.string() + ": " + error);
+            }
+
+            slot->pipeline.setEncoderWindowMode(
+                consecutiveWindows
+                    ? FrameEncoderWindowMode::Consecutive
+                    : FrameEncoderWindowMode::Relaxed);
+
+            std::cout << "  " << slot->tag
+                      << "  name=" << slot->pipeline.getModelName()
+                      << "  bed_window=" << slot->pipeline.getBedWindow()
+                      << "  toss_window=" << slot->pipeline.getTossWindow()
+                      << '\n';
+
+            const std::filesystem::path csvPath = csvDir / (slot->tag + ".csv");
             const bool exists = std::filesystem::exists(csvPath)
                 && std::filesystem::file_size(csvPath) > 0;
-            csvFile.open(csvPath, std::ios::app);
-            if (!csvFile.is_open())
-                throw std::runtime_error("failed to open csv log " + csvPath);
+            slot->csv.open(csvPath, std::ios::app);
+            if (!slot->csv.is_open())
+                throw std::runtime_error("failed to open csv log " + csvPath.string());
             if (!exists)
-                writeCsvHeader(csvFile, bedLabels, tossLabels);
+            {
+                writeCsvHeader(
+                    slot->csv,
+                    slot->pipeline.getBedLabels(),
+                    slot->pipeline.getTossLabels());
+            }
 
-            std::cout << "csv log: " << csvPath
-                      << "  (every " << logFrames << " frames)\n";
+            std::cout << "    csv: " << csvPath.string() << '\n';
+            models.push_back(std::move(slot));
         }
+
+        std::cout << "csv aggregation: every " << logFrames << " frames\n";
+        std::cout << "encoder window: "
+                  << (consecutiveWindows ? "consecutive" : "relaxed") << '\n';
 
         SRSR4SN radar;
         const int initCode = radar.init(radarConfig);
         std::cout << "radar init => " << initCode << " (" << radar.getErrorString(initCode) << ")\n";
         if (initCode != 0)
             return 1;
+
+        size_t maxBedWindow = 0;
+        for (const auto& slot : models)
+            maxBedWindow = std::max(maxBedWindow, static_cast<size_t>(slot->pipeline.getBedWindow()));
+
+        const size_t radarQueueSize = std::max<size_t>(maxBedWindow * 8, 2048);
+        radar.setPointCloudQueueSize(radarQueueSize);
+        std::cout << "radar queue size: " << radarQueueSize << '\n';
 
         std::cout << "target " << fps << " Hz  (radar [" << radarIndex << "] "
                   << radarConfig.value("name", std::string("?")) << ")\n";
@@ -399,24 +569,25 @@ int main(int argc, const char* argv[])
         bool hasLast = false;
         uint64_t lastIndex = 0;
         size_t lastPointCount = 0;
-        size_t prevLineLength = 0;
-
-        std::vector<SleepResult> logWindow;
-        bool haveLoggedFrame = false;
-        uint64_t lastLoggedFrame = 0;
 
         auto lastTick = std::chrono::steady_clock::now()
             - std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
+
+        const bool multiModel = models.size() > 1;
+        bool firstPaint = true;
 
         while (g_running)
         {
             const auto loopStart = std::chrono::steady_clock::now();
 
-            const size_t pushed = pushNewFrames(radar, pipeline, hasLast, lastIndex, lastPointCount);
+            const PushResult push = pushNewFrames(radar, models, hasLast, lastIndex, lastPointCount);
+            const bool connected = radar.isPointCloudConnected();
 
-            SleepResult result;
             const auto inferStart = std::chrono::steady_clock::now();
-            const bool haveResult = pipeline.evaluate(result);
+            std::vector<SleepResult> results(models.size());
+            std::vector<bool> haveResults(models.size(), false);
+            for (size_t i = 0; i < models.size(); ++i)
+                haveResults[i] = models[i]->pipeline.evaluate(results[i]);
             const auto inferEnd = std::chrono::steady_clock::now();
 
             const double inferMs =
@@ -425,58 +596,73 @@ int main(int argc, const char* argv[])
                 1.0 / std::max(1e-6, std::chrono::duration<double>(loopStart - lastTick).count());
             lastTick = loopStart;
 
-            // CSV: 프레임 인덱스가 실제로 진행됐을 때만 한 프레임으로 집계(폴링 중복 방지).
-            if (csvFile.is_open() && haveResult
-                && (!haveLoggedFrame || result.frameIndex != lastLoggedFrame))
+            for (size_t i = 0; i < models.size(); ++i)
             {
-                logWindow.push_back(result);
-                haveLoggedFrame = true;
-                lastLoggedFrame = result.frameIndex;
+                TickLog tick;
+                tick.haveResult = haveResults[i];
+                tick.connected = connected;
+                tick.frameGap = push.frameGap;
+                if (haveResults[i])
+                    tick.result = results[i];
 
-                if (logWindow.size() >= logFrames)
-                {
-                    const AggregatedLog aggregated = aggregateWindow(logWindow);
-                    writeCsvRow(csvFile, aggregated, bedLabels, tossLabels);
-                    logWindow.clear();
-                }
+                models[i]->logWindow.push_back(tick);
             }
+            flushCsvWindows(models, logFrames, false);
 
-            std::ostringstream line;
-            line << std::fixed << std::setprecision(1);
-            line << "frame " << std::setw(6) << std::setfill('0')
-                 << (hasLast ? lastIndex : 0) << std::setfill(' ')
-                 << " | " << std::setw(5) << loopHz << "Hz"
-                 << " | new " << pushed
-                 << " | pts " << std::setw(3) << lastPointCount;
+            std::ostringstream block;
+            block << std::fixed << std::setprecision(1);
+            block << "frame " << std::setw(6) << std::setfill('0')
+                  << (hasLast ? lastIndex : 0) << std::setfill(' ')
+                  << " | " << std::setw(5) << loopHz << "Hz"
+                  << " | new " << push.pushed
+                  << " | pts " << std::setw(3) << lastPointCount
+                  << " | conn " << (connected ? 1 : 0)
+                  << " | infer " << std::setprecision(2) << inferMs << "ms";
 
-            if (!haveResult)
+            for (size_t i = 0; i < models.size(); ++i)
             {
-                line << " | warmup " << pipeline.getFrameCount() << "/" << pipeline.getBedWindow();
-            }
-            else
-            {
-                line << " | infer " << std::setprecision(2) << inferMs << "ms"
-                     << " | STATUS " << labelOf(bedLabels, result.statusClass)
-                     << " [" << formatScores(bedLabels, result.statusScores) << "]";
+                const ModelSlot& slot = *models[i];
+                const auto& bedLabels = slot.pipeline.getBedLabels();
+                const auto& tossLabels = slot.pipeline.getTossLabels();
 
-                if (result.tossValid)
+                block << '\n' << "  " << slot.tag << " | ";
+                if (!haveResults[i])
                 {
-                    line << " | TOSS " << labelOf(tossLabels, result.tossClass)
-                         << " idx " << std::setprecision(2) << result.tossIndex
-                         << " [" << formatScores(tossLabels, result.tossScores) << "]";
+                    block << "warmup " << slot.pipeline.getFrameCount()
+                          << '/' << slot.pipeline.getBedWindow();
                 }
                 else
                 {
-                    line << " | TOSS -";
+                    const SleepResult& result = results[i];
+                    block << "STATUS " << labelOf(bedLabels, result.statusClass)
+                          << " [" << formatScores(bedLabels, result.statusScores) << "]";
+
+                    if (result.tossValid)
+                    {
+                        block << " | TOSS " << labelOf(tossLabels, result.tossClass)
+                              << " idx " << std::setprecision(2) << result.tossIndex
+                              << " [" << formatScores(tossLabels, result.tossScores) << "]";
+                    }
+                    else
+                    {
+                        block << " | TOSS -";
+                    }
                 }
             }
 
-            std::string text = line.str();
-            if (text.size() < prevLineLength)
-                text.append(prevLineLength - text.size(), ' ');
-            prevLineLength = line.str().size();
-
-            std::cout << '\r' << text << std::flush;
+            if (multiModel)
+            {
+                printStatusBlock(block.str(), 1 + models.size(), firstPaint);
+            }
+            else
+            {
+                std::string text = block.str();
+                static size_t prevLineLength = 0;
+                if (text.size() < prevLineLength)
+                    text.append(prevLineLength - text.size(), ' ');
+                prevLineLength = text.size();
+                std::cout << '\r' << text << std::flush;
+            }
 
             const auto elapsed = std::chrono::steady_clock::now() - loopStart;
             const auto sleepFor = std::chrono::duration_cast<std::chrono::nanoseconds>(period) - elapsed;
@@ -484,14 +670,12 @@ int main(int argc, const char* argv[])
                 std::this_thread::sleep_for(sleepFor);
         }
 
-        if (csvFile.is_open() && !logWindow.empty())
-        {
-            const AggregatedLog aggregated = aggregateWindow(logWindow);
-            writeCsvRow(csvFile, aggregated, bedLabels, tossLabels);
-        }
+        flushCsvWindows(models, logFrames, true);
 
         std::cout << '\n';
         radar.shutdown();
+        for (auto& slot : models)
+            slot->pipeline.shutdown();
         return 0;
     }
     catch (const std::exception& ex)

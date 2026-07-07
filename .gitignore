@@ -5,6 +5,7 @@ bin/test/
 bin/models/tts/ko-kr/
 bin/models/stt/ko-kr/
 bin/uploads/
+bin/cache/
 
 # Dataset (too large)
 sleep-net/dataset/

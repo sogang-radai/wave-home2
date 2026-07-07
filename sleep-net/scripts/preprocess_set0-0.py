@@ -14,6 +14,8 @@ Source label -> head label mapping (set0):
 
 No augmentation yet: labels 3/4 are fed to bed-net as-is (status=2).
 
+See MODEL_VERSIONS.txt for preprocess/train/export mapping across model tags.
+
 --------------------------------------------------------------------------------
 Output format (single pickle, sleep-net/samples/set0-0.pkl)
 --------------------------------------------------------------------------------
@@ -47,7 +49,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SLEEP_NET_DIR = SCRIPT_DIR.parent
 sys.path.insert(0, str(SLEEP_NET_DIR))
 
-from pcr_loader import PCRFile  # noqa: E402
+from pcr_loader import PCRFile, find_dll_path  # noqa: E402
 
 # ============================================================================
 # Constants
@@ -102,23 +104,6 @@ POWER_DB_SCALE = 10.0  # dB = 10 * log10(power + 1)
 
 def log(message: str = "") -> None:
     print(message, flush=True)
-
-
-def find_dll() -> Path:
-    root = SLEEP_NET_DIR.parent  # wave-home2
-    candidates = [
-        root / "thirdparty" / "lzav" / "bin" / "x64" / "lzav_lib.dll",
-        root / "thirdparty" / "lzav" / "bin" / "x64" / "lzav_lib.so",
-        root / "thirdparty" / "lzav" / "bin" / "arm64" / "lzav_lib.so",
-        SLEEP_NET_DIR / "bin" / "x64" / "lzav_lib.dll",
-        SLEEP_NET_DIR / "bin" / "x64" / "lzav_lib.so",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(
-        "lzav_lib not found. Checked:\n  " + "\n  ".join(str(c) for c in candidates)
-    )
 
 
 def normalize_value(value: float, min_val: float, max_val: float) -> float:
@@ -190,7 +175,7 @@ def make_windows(
 # ============================================================================
 
 def build_dataset() -> dict:
-    dll_path = find_dll()
+    dll_path = find_dll_path()
     log(f"lzav DLL: {dll_path}")
     log(f"input   : {INPUT_SET_DIR}")
     log()
@@ -288,6 +273,7 @@ def build_dataset() -> dict:
         "bed_stride": BED_STRIDE,
         "toss_stride": TOSS_STRIDE,
         "validation_fraction": VALIDATION_FRACTION,
+        "preprocess_script": "preprocess_set0-0.py",
         "normalization": {
             "x": [X_MIN, X_MAX],
             "y": [Y_MIN, Y_MAX],

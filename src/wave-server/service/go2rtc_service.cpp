@@ -1,11 +1,14 @@
 #include "go2rtc_service.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
 #include <thread>
 
 #include <fcntl.h>
@@ -15,11 +18,12 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 
-#include "../core/logger.h"
-
 extern char** environ;
+
+#include "../core/logger.h"
 
 WAVE_NAMESPACE_BEGIN
 SERVICE_NAMESPACE_BEGIN
@@ -72,15 +76,101 @@ namespace
         return out;
     }
 
+    std::string detect_lan_ip()
+    {
+        ifaddrs* interfaces = nullptr;
+        if (getifaddrs(&interfaces) != 0)
+            return {};
+
+        std::string fallback;
+        for (const ifaddrs* iface = interfaces; iface != nullptr; iface = iface->ifa_next)
+        {
+            if (iface->ifa_addr == nullptr || iface->ifa_addr->sa_family != AF_INET)
+                continue;
+            if ((iface->ifa_flags & IFF_UP) == 0 || (iface->ifa_flags & IFF_LOOPBACK) != 0)
+                continue;
+
+            char buffer[INET_ADDRSTRLEN] = {};
+            const auto* addr = reinterpret_cast<const sockaddr_in*>(iface->ifa_addr);
+            if (::inet_ntop(AF_INET, &addr->sin_addr, buffer, sizeof(buffer)) == nullptr)
+                continue;
+
+            const std::string ip(buffer);
+            if (ip.rfind("192.168.", 0) == 0 || ip.rfind("10.", 0) == 0)
+            {
+                freeifaddrs(interfaces);
+                return ip;
+            }
+            if (fallback.empty())
+                fallback = ip;
+        }
+
+        freeifaddrs(interfaces);
+        return fallback;
+    }
+
+    int connect_tcp(const std::string& host, uint16_t port)
+    {
+        addrinfo hints {};
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+
+        addrinfo* result = nullptr;
+        const std::string port_str = std::to_string(port);
+        if (getaddrinfo(host.c_str(), port_str.c_str(), &hints, &result) != 0 || result == nullptr)
+            return -1;
+
+        int fd = -1;
+        for (addrinfo* ai = result; ai != nullptr; ai = ai->ai_next)
+        {
+            fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+            if (fd < 0)
+                continue;
+            if (::connect(fd, ai->ai_addr, ai->ai_addrlen) == 0)
+                break;
+            ::close(fd);
+            fd = -1;
+        }
+        freeaddrinfo(result);
+        return fd;
+    }
+
+    bool parse_http_response(int fd, std::string& body, int& status_code)
+    {
+        body.clear();
+        status_code = 0;
+
+        std::string buffer;
+        buffer.reserve(4096);
+        char chunk[1024];
+        while (buffer.find("\r\n\r\n") == std::string::npos)
+        {
+            const ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
+            if (n <= 0)
+                return false;
+            buffer.append(chunk, static_cast<size_t>(n));
+            if (buffer.size() > 65536)
+                return false;
+        }
+
+        const size_t header_end = buffer.find("\r\n\r\n");
+        const std::string headers = buffer.substr(0, header_end);
+        body = buffer.substr(header_end + 4);
+
+        if (std::sscanf(headers.c_str(), "HTTP/%*s %d", &status_code) < 1)
+            return false;
+        return status_code == 200;
+    }
+
     // Minimal blocking HTTP/1.1 client for localhost control calls.
-    // Returns the HTTP status code, or -1 on a connection/transport failure.
-    // When out_body is non-null, the response body is captured into it.
     int http_request(
         const std::string& host,
         uint16_t port,
         const std::string& method,
         const std::string& path_and_query,
-        std::string* out_body = nullptr)
+        std::string* out_body = nullptr,
+        const std::string* request_body = nullptr,
+        const char* content_type = nullptr)
     {
         addrinfo hints {};
         hints.ai_family = AF_UNSPEC;
@@ -107,12 +197,16 @@ namespace
         if (fd < 0)
             return -1;
 
+        const std::string body = request_body ? *request_body : std::string();
         std::string request;
         request += method + " " + path_and_query + " HTTP/1.1\r\n";
         request += "Host: " + host + ":" + portStr + "\r\n";
         request += "Connection: close\r\n";
-        request += "Content-Length: 0\r\n";
+        request += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+        if (content_type != nullptr)
+            request += std::string("Content-Type: ") + content_type + "\r\n";
         request += "\r\n";
+        request += body;
 
         size_t sent = 0;
         while (sent < request.size())
@@ -177,7 +271,16 @@ Go2RtcService::Go2RtcService()
 
 Go2RtcService::~Go2RtcService()
 {
+    shutdownAll();
+}
+
+void Go2RtcService::shutdownAll()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_shutdown)
+        return;
+    m_shutdown = true;
+    m_streams.clear();
     terminateProcess();
 }
 
@@ -208,8 +311,8 @@ bool Go2RtcService::acquireStream(const std::string& name, const std::vector<std
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    m_streams[name] = sources;
     const bool freshStart = (m_pid < 0);
+    m_streams[name] = sources;
 
     if (!ensureProcess())
     {
@@ -217,16 +320,19 @@ bool Go2RtcService::acquireStream(const std::string& name, const std::vector<std
         return false;
     }
 
-    if (freshStart)
+    if (!apiPutStream(name, sources))
     {
-        bool ok = true;
-        for (const auto& [streamName, streamSources] : m_streams)
-            ok = apiPutStream(streamName, streamSources) && ok;
-        LOG_INFO("Go2RtcService: started with {} stream(s)", m_streams.size());
-        return ok;
+        m_streams.erase(name);
+        if (m_pid > 0)
+            apiDeleteStream(name);
+        if (m_streams.empty())
+            terminateProcess();
+        return false;
     }
 
-    return apiPutStream(name, sources);
+    if (freshStart)
+        LOG_INFO("Go2RtcService: started with {} stream(s)", m_streams.size());
+    return true;
 }
 
 void Go2RtcService::releaseStream(const std::string& name)
@@ -298,6 +404,54 @@ bool Go2RtcService::fetchSnapshot(const std::string& name, std::vector<uint8_t>&
     }
 
     out_jpeg.assign(body.begin(), body.end());
+    return true;
+}
+
+bool Go2RtcService::exchangeWebRtc(const std::string& name, const std::string& offer_sdp, std::string& answer_sdp)
+{
+    if (offer_sdp.empty())
+        return false;
+
+    std::string host;
+    uint16_t port = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_pid <= 0 || m_streams.find(name) == m_streams.end())
+            return false;
+        host = m_config.apiHost;
+        port = m_config.apiPort;
+    }
+
+    const std::string query = "/api/webrtc?src=" + url_encode(name);
+    const int code = http_request(
+        host,
+        port,
+        "POST",
+        query,
+        &answer_sdp,
+        &offer_sdp,
+        "application/sdp");
+    if ((code != 200 && code != 201) || answer_sdp.empty())
+    {
+        LOG_ERROR("Go2RtcService: WebRTC exchange for '{}' failed (http {}, {} bytes)", name, code, answer_sdp.size());
+        return false;
+    }
+    return true;
+}
+
+bool Go2RtcService::hasStream(const std::string& name) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_streams.find(name) != m_streams.end();
+}
+
+bool Go2RtcService::getStreamEndpoint(const std::string& name, std::string& host, uint16_t& port) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_pid <= 0 || m_streams.find(name) == m_streams.end())
+        return false;
+    host = m_config.apiHost;
+    port = m_config.apiPort;
     return true;
 }
 
@@ -427,6 +581,15 @@ bool Go2RtcService::writeConfigFile()
     file << "  listen: \"" << m_config.apiHost << ":" << m_config.apiPort << "\"\n";
     file << "rtsp:\n";
     file << "  listen: \":" << m_config.rtspPort << "\"\n";
+    const std::string lan_ip = detect_lan_ip();
+    file << "webrtc:\n";
+    file << "  listen: \":8555\"\n";
+    if (!lan_ip.empty())
+    {
+        file << "  candidates:\n";
+        file << "    - " << lan_ip << "\n";
+        LOG_INFO("Go2RtcService: WebRTC candidate {}", lan_ip);
+    }
     if (!m_config.ffmpegPath.empty())
     {
         file << "ffmpeg:\n";
@@ -475,6 +638,202 @@ bool Go2RtcService::apiDeleteStream(const std::string& name)
     const std::string query = "/api/streams?src=" + url_encode(name);
     const int code = http_request(m_config.apiHost, m_config.apiPort, "DELETE", query);
     return code == 200;
+}
+
+struct Go2RtcService::LiveMp4Stream::Impl
+{
+    int fd = -1;
+    std::string raw;
+    std::string pending;
+    size_t chunk_remaining = 0;
+    enum class ChunkState
+    {
+        Size,
+        Data,
+        End,
+    };
+    ChunkState chunk_state = ChunkState::Size;
+
+    enum class ChunkResult
+    {
+        NeedMore,
+        End,
+        Error,
+    };
+
+    ChunkResult pull_chunked()
+    {
+        while (true)
+        {
+            if (chunk_state == ChunkState::Size)
+            {
+                const size_t line_end = raw.find("\r\n");
+                if (line_end == std::string::npos)
+                    return ChunkResult::NeedMore;
+
+                const std::string size_line = raw.substr(0, line_end);
+                raw.erase(0, line_end + 2);
+
+                char* end = nullptr;
+                const unsigned long chunk_size = std::strtoul(size_line.c_str(), &end, 16);
+                if (size_line.empty() || end == size_line.c_str())
+                    return ChunkResult::Error;
+                if (chunk_size == 0)
+                {
+                    if (raw.size() >= 2 && raw[0] == '\r' && raw[1] == '\n')
+                        raw.erase(0, 2);
+                    else if (!raw.empty() && raw[0] == '\n')
+                        raw.erase(0, 1);
+                    return ChunkResult::End;
+                }
+
+                chunk_remaining = static_cast<size_t>(chunk_size);
+                chunk_state = ChunkState::Data;
+            }
+
+            if (chunk_state == ChunkState::Data)
+            {
+                if (raw.size() < chunk_remaining)
+                    return ChunkResult::NeedMore;
+
+                pending.append(raw, 0, chunk_remaining);
+                raw.erase(0, chunk_remaining);
+                chunk_remaining = 0;
+                chunk_state = ChunkState::End;
+            }
+
+            if (chunk_state == ChunkState::End)
+            {
+                if (raw.empty())
+                    return ChunkResult::NeedMore;
+                if (raw[0] == '\r')
+                {
+                    if (raw.size() < 2)
+                        return ChunkResult::NeedMore;
+                    if (raw[1] != '\n')
+                        return ChunkResult::Error;
+                    raw.erase(0, 2);
+                }
+                else if (raw[0] == '\n')
+                {
+                    raw.erase(0, 1);
+                }
+                else
+                {
+                    return ChunkResult::Error;
+                }
+                chunk_state = ChunkState::Size;
+            }
+        }
+    }
+
+    bool fill_pending()
+    {
+        while (pending.empty())
+        {
+            if (!raw.empty())
+            {
+                switch (pull_chunked())
+                {
+                case ChunkResult::NeedMore:
+                    break;
+                case ChunkResult::End:
+                    return false;
+                case ChunkResult::Error:
+                    LOG_ERROR("Go2RtcService: invalid chunked stream.mp4 body");
+                    return false;
+                }
+                if (!pending.empty())
+                    return true;
+            }
+
+            char buffer[16384];
+            const ssize_t n = ::recv(fd, buffer, sizeof(buffer), 0);
+            if (n <= 0)
+                return false;
+
+            raw.append(buffer, static_cast<size_t>(n));
+        }
+        return true;
+    }
+};
+
+Go2RtcService::LiveMp4Stream::LiveMp4Stream() :
+    m_impl(std::make_unique<Impl>())
+{
+}
+
+Go2RtcService::LiveMp4Stream::~LiveMp4Stream()
+{
+    close();
+}
+
+bool Go2RtcService::LiveMp4Stream::open(const std::string& name)
+{
+    close();
+    if (name.empty())
+        return false;
+
+    std::string host;
+    uint16_t port = 0;
+    if (!Go2RtcService::get().getStreamEndpoint(name, host, port))
+        return false;
+
+    const int fd = connect_tcp(host, port);
+    if (fd < 0)
+        return false;
+
+    const std::string path = "/api/stream.mp4?src=" + url_encode(name);
+    std::string request;
+    request += "GET " + path + " HTTP/1.1\r\n";
+    request += "Host: " + host + ":" + std::to_string(port) + "\r\n";
+    request += "Connection: keep-alive\r\n";
+    request += "\r\n";
+
+    size_t sent = 0;
+    while (sent < request.size())
+    {
+        const ssize_t n = ::send(fd, request.data() + sent, request.size() - sent, 0);
+        if (n <= 0)
+        {
+            ::close(fd);
+            return false;
+        }
+        sent += static_cast<size_t>(n);
+    }
+
+    int status_code = 0;
+    if (!parse_http_response(fd, m_impl->raw, status_code))
+    {
+        LOG_ERROR("Go2RtcService: stream.mp4 for '{}' failed (http {})", name, status_code);
+        ::close(fd);
+        return false;
+    }
+
+    m_impl->fd = fd;
+    return true;
+}
+
+ssize_t Go2RtcService::LiveMp4Stream::read(char* buffer, size_t capacity)
+{
+    if (!m_impl || m_impl->fd < 0 || capacity == 0)
+        return 0;
+
+    if (!m_impl->fill_pending())
+        return 0;
+
+    const size_t n = std::min(capacity, m_impl->pending.size());
+    std::memcpy(buffer, m_impl->pending.data(), n);
+    m_impl->pending.erase(0, n);
+    return static_cast<ssize_t>(n);
+}
+
+void Go2RtcService::LiveMp4Stream::close()
+{
+    if (!m_impl || m_impl->fd < 0)
+        return;
+    ::close(m_impl->fd);
+    m_impl->fd = -1;
 }
 
 SERVICE_NAMESPACE_END

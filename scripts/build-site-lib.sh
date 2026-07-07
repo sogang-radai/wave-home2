@@ -38,13 +38,13 @@ install_deps() {
 install_deps
 
 if [[ "$USE_MOCK" == "true" ]]; then
-    export REACT_APP_USE_MOCK=true
+    MOCK_FLAG=true
 else
-    export REACT_APP_USE_MOCK=false
+    MOCK_FLAG=false
 fi
 
-echo "Building wave-home-front (REACT_APP_USE_MOCK=$REACT_APP_USE_MOCK) → $SITE_DIR"
-npm run build
+echo "Building wave-home-front (REACT_APP_USE_MOCK=$MOCK_FLAG) → $SITE_DIR"
+REACT_APP_USE_MOCK="$MOCK_FLAG" npm run build
 
 detect_out_dir() {
     if [[ -n "${WAVE_SITE_OUT_DIR:-}" ]]; then

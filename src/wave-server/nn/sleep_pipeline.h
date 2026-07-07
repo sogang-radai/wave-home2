@@ -53,6 +53,9 @@ public:
 
     size_t getFrameCount() const;
 
+    FrameEncoderWindowMode getEncoderWindowMode() const;
+    void setEncoderWindowMode(FrameEncoderWindowMode mode);
+
 private:
     FrameEncoder m_encoder;
     FrameAggregator m_bedAggregator;

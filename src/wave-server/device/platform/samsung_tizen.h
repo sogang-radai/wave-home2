@@ -106,6 +106,7 @@ public:
     const SessionConfig& getSessionConfig() const;
     const Capabilities& getCapabilities() const;
     SessionState getSessionState() const;
+    bool isApiReachable() const;
 
     int init(const json& config) override;
     void shutdown() override;
@@ -138,6 +139,8 @@ private:
     std::string m_lastInput;
     std::string m_cachedPowerState;
     std::chrono::steady_clock::time_point m_restCacheTime {};
+    mutable std::chrono::steady_clock::time_point m_lastTcpProbe {};
+    mutable bool m_lastTcpReachable = false;
     mutable std::mutex m_mutex;
 };
 

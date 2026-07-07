@@ -27,6 +27,8 @@ public:
     void init(const LaunchOptions& launch);
     void shutdown();
 
+    std::filesystem::path resolvePath(const std::string& relative) const;
+
     drogon::orm::DbClientPtr db() const;
 
     // App
@@ -54,7 +56,6 @@ public:
 
 private:
     bool loadDeviceManifests();
-    std::filesystem::path resolvePath(const std::string& relative) const;
 
     bool m_initialized = false;
 };

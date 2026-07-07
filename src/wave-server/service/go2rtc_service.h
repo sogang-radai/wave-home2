@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -59,7 +60,34 @@ public:
     // Passing an empty source stops the active playback.
     bool streamToCamera(const std::string& name, const std::string& source);
 
-private:
+    // Proxies a WebRTC offer to go2rtc and returns the answer SDP.
+    bool exchangeWebRtc(const std::string& name, const std::string& offer_sdp, std::string& answer_sdp);
+
+    bool hasStream(const std::string& name) const;
+
+    bool getStreamEndpoint(const std::string& name, std::string& host, uint16_t& port) const;
+
+    // Stops all streams and the child process before static destruction.
+    void shutdownAll();
+
+    // Opens a live fMP4 stream from go2rtc for HTTP proxying to browsers.
+    class LiveMp4Stream
+    {
+    public:
+        LiveMp4Stream();
+        ~LiveMp4Stream();
+
+        LiveMp4Stream(const LiveMp4Stream&) = delete;
+        LiveMp4Stream& operator=(const LiveMp4Stream&) = delete;
+
+        bool open(const std::string& name);
+        ssize_t read(char* buffer, size_t capacity);
+        void close();
+
+    private:
+        struct Impl;
+        std::unique_ptr<Impl> m_impl;
+    };
     Go2RtcService();
     ~Go2RtcService();
     Go2RtcService(const Go2RtcService&) = delete;
@@ -77,6 +105,7 @@ private:
     std::unordered_map<std::string, std::vector<std::string>> m_streams;
     int m_pid = -1;
     std::string m_configPath;
+    bool m_shutdown = false;
 };
 
 SERVICE_NAMESPACE_END

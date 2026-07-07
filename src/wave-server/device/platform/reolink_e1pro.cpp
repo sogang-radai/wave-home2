@@ -6,6 +6,7 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <random>
 #include <stdexcept>
 #include <thread>
@@ -16,6 +17,14 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <unistd.h>
+
+#include <arpa/inet.h>
+#include <cerrno>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "../../core/logger.h"
@@ -34,7 +43,7 @@ namespace
     constexpr std::string_view kCipherKey = "wave-home";
 
     // Codec used by go2rtc when transcoding audio for the camera speaker.
-    // Reolink's ONVIF backchannel is G.711 (PCMU/8000); swap to "pcma" if silent.
+    // Reolink backchannel advertises PCMU/8000 only (see go2rtc stream probe).
     constexpr const char* kTalkCodec = "pcmu";
 
     // --- secret obfuscation (stub cipher) -----------------------------------
@@ -248,10 +257,10 @@ namespace
             if (fd < 0)
                 continue;
 
-            timeval tv {};
-            tv.tv_sec = 8;
-            ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-            ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        timeval tv {};
+        tv.tv_sec = 3;
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
             if (::connect(fd, ai->ai_addr, ai->ai_addrlen) == 0)
                 break;
@@ -375,6 +384,13 @@ namespace
         return buffer;
     }
 
+    // go2rtc RTSP ingest for video/audio listen-in. Disable the RTSP
+    // backchannel so talk-back is routed through the ONVIF source instead.
+    std::string go2rtc_rtsp_url(const ReolinkE1Pro::Config& config, bool main_stream)
+    {
+        return rtsp_url(config, main_stream) + "#backchannel=0";
+    }
+
     // ONVIF source for go2rtc; provides the two-way audio backchannel that a
     // plain RTSP source lacks.
     std::string onvif_url(const ReolinkE1Pro::Config& config)
@@ -427,14 +443,45 @@ namespace
         ::waitpid(pid, &status, 0);
         return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     }
+
+    float db_to_level(float db)
+    {
+        // Map roughly [-60, 0] dBFS to [0, 1].
+        const float clamped = std::max(-60.0f, std::min(0.0f, db));
+        return (clamped + 60.0f) / 60.0f;
+    }
+
+    float parse_mean_volume_db(const std::string& log_path)
+    {
+        std::ifstream in(log_path);
+        if (!in)
+            return -60.0f;
+
+        std::string line;
+        while (std::getline(in, line))
+        {
+            const auto pos = line.find("mean_volume:");
+            if (pos == std::string::npos)
+                continue;
+            float db = -60.0f;
+            if (std::sscanf(line.c_str() + pos, "mean_volume: %f dB", &db) == 1)
+                return db;
+        }
+        return -60.0f;
+    }
 }
 
 struct ReolinkE1Pro::Impl
 {
     Config config;
     std::string streamName;
+    std::string talkStreamName;
     bool go2rtcActive = false;
+    bool go2rtcTalkActive = false;
+    std::vector<std::string> go2rtcSources;
+    std::string go2rtcTalkSource;
     std::string ptzProfileToken;
+    mutable std::mutex ptzMutex;
 
     std::string onvifCall(const std::string& service_path, const std::string& inner)
     {
@@ -454,26 +501,33 @@ struct ReolinkE1Pro::Impl
         return body;
     }
 
-    const std::string& profileToken()
+    std::string resolveProfileToken()
     {
-        if (!ptzProfileToken.empty())
-            return ptzProfileToken;
+        {
+            std::lock_guard<std::mutex> lock(ptzMutex);
+            if (!ptzProfileToken.empty())
+                return ptzProfileToken;
+        }
 
         const std::string body = onvifCall(
             "/onvif/media_service",
             "<GetProfiles xmlns=\"http://www.onvif.org/ver10/media/wsdl\"/>");
 
-        // token="XXX" of the first profile.
+        std::string token;
         const size_t tok = body.find("token=\"");
         if (tok != std::string::npos)
         {
             const size_t start = tok + 7;
             const size_t end = body.find('"', start);
             if (end != std::string::npos)
-                ptzProfileToken = body.substr(start, end - start);
+                token = body.substr(start, end - start);
         }
+        if (token.empty())
+            token = "000";
+
+        std::lock_guard<std::mutex> lock(ptzMutex);
         if (ptzProfileToken.empty())
-            ptzProfileToken = "000";
+            ptzProfileToken = token;
         return ptzProfileToken;
     }
 };
@@ -531,42 +585,33 @@ int ReolinkE1Pro::init(const json& config)
     if (m_config.go2rtc)
     {
         m_impl->streamName = deviceIDToString(getId());
-
-        std::vector<std::string> sources;
+        m_impl->talkStreamName = m_impl->streamName + "_talk";
         if (!m_config.go2rtcSource.empty())
         {
-            sources.push_back(m_config.go2rtcSource);
+            m_impl->go2rtcSources.push_back(m_config.go2rtcSource);
         }
         else
         {
-            sources.push_back(rtsp_url(m_config, true)); // video / snapshot
-            sources.push_back(onvif_url(m_config));      // two-way audio backchannel
+            m_impl->go2rtcSources.push_back(go2rtc_rtsp_url(m_config, true));
+            m_impl->go2rtcTalkSource = onvif_url(m_config);
         }
-
-        if (!service::Go2RtcService::get().acquireStream(m_impl->streamName, sources))
-        {
-            LOG_ERROR("ReolinkE1Pro: go2rtc stream registration failed");
-            m_state = DeviceState::Stopped;
-            return -5;
-        }
-        m_impl->go2rtcActive = true;
-        LOG_INFO("ReolinkE1Pro: go2rtc stream '{}' active", m_impl->streamName);
     }
 
     const int macRc = verifyMac(config, m_config.host);
     if (macRc != 0)
     {
-        if (m_impl->go2rtcActive)
-        {
-            service::Go2RtcService::get().releaseStream(m_impl->streamName);
-            m_impl->go2rtcActive = false;
-        }
         m_state = DeviceState::Stopped;
         return macRc;
     }
 
     m_state = DeviceState::Running;
     LOG_INFO("ReolinkE1Pro initialized: {}", m_config.host);
+
+    std::thread([impl = m_impl.get()]()
+    {
+        (void)impl->resolveProfileToken();
+    }).detach();
+
     return 0;
 }
 
@@ -578,6 +623,11 @@ void ReolinkE1Pro::shutdown()
     m_state = DeviceState::ShuttingDown;
 
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_impl->go2rtcTalkActive)
+    {
+        service::Go2RtcService::get().releaseStream(m_impl->talkStreamName);
+        m_impl->go2rtcTalkActive = false;
+    }
     if (m_impl->go2rtcActive)
     {
         service::Go2RtcService::get().releaseStream(m_impl->streamName);
@@ -590,6 +640,105 @@ void ReolinkE1Pro::shutdown()
 std::string_view ReolinkE1Pro::getClass() const
 {
     return kClass;
+}
+
+bool ReolinkE1Pro::ensureGo2rtcStream()
+{
+    bool video_active = false;
+    bool need_talk = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_config.go2rtc || m_impl->go2rtcSources.empty())
+            return false;
+        video_active = m_impl->go2rtcActive;
+        need_talk = !m_impl->go2rtcTalkSource.empty();
+    }
+
+    if (!video_active)
+    {
+        if (!isHostReachable())
+            return false;
+
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_impl->go2rtcActive)
+        {
+            video_active = true;
+        }
+        else if (!service::Go2RtcService::get().acquireStream(m_impl->streamName, m_impl->go2rtcSources))
+        {
+            LOG_ERROR("ReolinkE1Pro: go2rtc stream registration failed");
+            return false;
+        }
+        else
+        {
+            m_impl->go2rtcActive = true;
+            video_active = true;
+            LOG_INFO("ReolinkE1Pro: go2rtc stream '{}' active", m_impl->streamName);
+        }
+    }
+
+    if (need_talk)
+        (void)ensureGo2rtcTalkStream();
+
+    return video_active;
+}
+
+bool ReolinkE1Pro::ensureGo2rtcTalkStream()
+{
+    std::string talk_name;
+    std::string talk_source;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_config.go2rtc || m_impl->go2rtcTalkSource.empty())
+            return false;
+        if (m_impl->go2rtcTalkActive)
+            return true;
+        talk_name = m_impl->talkStreamName;
+        talk_source = m_impl->go2rtcTalkSource;
+    }
+
+    if (!isHostReachable())
+        return false;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_impl->go2rtcTalkActive)
+        return true;
+    if (!service::Go2RtcService::get().acquireStream(talk_name, talk_source))
+    {
+        LOG_ERROR("ReolinkE1Pro: go2rtc talk stream registration failed");
+        return false;
+    }
+    m_impl->go2rtcTalkActive = true;
+    LOG_INFO("ReolinkE1Pro: go2rtc talk stream '{}' active", talk_name);
+    return true;
+}
+
+void ReolinkE1Pro::releaseGo2rtcStream()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_impl->go2rtcTalkActive)
+    {
+        service::Go2RtcService::get().releaseStream(m_impl->talkStreamName);
+        m_impl->go2rtcTalkActive = false;
+        LOG_INFO("ReolinkE1Pro: go2rtc talk stream '{}' released", m_impl->talkStreamName);
+    }
+    if (!m_impl->go2rtcActive)
+        return;
+    service::Go2RtcService::get().releaseStream(m_impl->streamName);
+    m_impl->go2rtcActive = false;
+    LOG_INFO("ReolinkE1Pro: go2rtc stream '{}' released", m_impl->streamName);
+}
+
+bool ReolinkE1Pro::isGo2rtcStreamActive() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_impl->go2rtcActive;
+}
+
+std::string_view ReolinkE1Pro::getGo2rtcStreamName() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_impl->streamName;
 }
 
 // ============================================================================
@@ -610,9 +759,62 @@ json ReolinkE1Pro::query(std::string_view name, const json& params)
         return out;
     }
 
+    if (name == "status")
+    {
+        json out = json::object();
+        out["streaming"] = m_impl->go2rtcActive;
+        out["micLevel"] = probeMicLevel();
+        return out;
+    }
+
     json err = json::object();
     err["code"] = -8;
     return err;
+}
+
+float ReolinkE1Pro::probeMicLevel()
+{
+    if (!m_impl->go2rtcActive)
+        return 0.0f;
+
+    const auto now = std::chrono::steady_clock::now();
+    float cached = 0.0f;
+    bool should_probe = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        cached = m_cachedMicLevel;
+        if (m_lastMicProbe == std::chrono::steady_clock::time_point{}
+            || now - m_lastMicProbe >= std::chrono::seconds(3))
+        {
+            should_probe = !m_micProbeInFlight.exchange(true);
+        }
+    }
+
+    if (should_probe)
+    {
+        const std::string source = service::Go2RtcService::get().streamRtspUrl(m_impl->streamName);
+        std::thread([this, source]()
+        {
+            const std::string log = (std::filesystem::temp_directory_path() / "wave_mic_probe.log").string();
+            const std::vector<std::string> args = {
+                resolve_ffmpeg(), "-nostdin", "-hide_banner", "-loglevel", "info",
+                "-rtsp_transport", "tcp",
+                "-i", source,
+                "-t", "0.15",
+                "-vn", "-af", "volumedetect",
+                "-f", "null", "-",
+            };
+            (void)run_process(args, log);
+            const float level = db_to_level(parse_mean_volume_db(log));
+
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_lastMicProbe = std::chrono::steady_clock::now();
+            m_cachedMicLevel = level;
+            m_micProbeInFlight.store(false);
+        }).detach();
+    }
+
+    return cached;
 }
 
 std::future<json> ReolinkE1Pro::queryAsync(std::string_view name, const json& params, uint32_t timeout_ms)
@@ -650,22 +852,27 @@ std::future<int> ReolinkE1Pro::invokeAsync(std::string_view name, const json& pa
 
 bool ReolinkE1Pro::captureFrame(CameraFrame& outFrame)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_impl->go2rtcActive)
+    if (!ensureGo2rtcStream())
     {
         LOG_ERROR("ReolinkE1Pro: captureFrame requires go2rtc to be enabled");
         return false;
+    }
+
+    std::string stream_name;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        stream_name = m_impl->streamName;
     }
 
     // The first frame after the stream is registered may be empty until
     // go2rtc has pulled a keyframe from the camera, so retry briefly.
     std::vector<uint8_t> jpeg;
     bool ok = false;
-    for (int attempt = 0; attempt < 6 && !ok; ++attempt)
+    for (int attempt = 0; attempt < 3 && !ok; ++attempt)
     {
         if (attempt > 0)
-            std::this_thread::sleep_for(std::chrono::milliseconds(700));
-        ok = service::Go2RtcService::get().fetchSnapshot(m_impl->streamName, jpeg);
+            std::this_thread::sleep_for(std::chrono::milliseconds(350));
+        ok = service::Go2RtcService::get().fetchSnapshot(stream_name, jpeg);
     }
     if (!ok)
         return false;
@@ -736,8 +943,7 @@ PtzCapabilities ReolinkE1Pro::getPtzCapabilities() const
 
 bool ReolinkE1Pro::movePtz(const PtzVector& velocity, uint32_t durationMs)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    const std::string& token = m_impl->profileToken();
+    const std::string token = m_impl->resolveProfileToken();
 
     char inner[512];
     std::snprintf(
@@ -756,21 +962,14 @@ bool ReolinkE1Pro::movePtz(const PtzVector& velocity, uint32_t durationMs)
     if (durationMs > 0)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(durationMs));
-        char stopInner[256];
-        std::snprintf(
-            stopInner, sizeof(stopInner),
-            "<Stop xmlns=\"http://www.onvif.org/ver20/ptz/wsdl\">"
-            "<ProfileToken>%s</ProfileToken><PanTilt>true</PanTilt><Zoom>true</Zoom></Stop>",
-            token.c_str());
-        m_impl->onvifCall("/onvif/ptz_service", stopInner);
+        stopPtz();
     }
     return true;
 }
 
 bool ReolinkE1Pro::stopPtz()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    const std::string& token = m_impl->profileToken();
+    const std::string token = m_impl->resolveProfileToken();
 
     char inner[256];
     std::snprintf(
@@ -791,8 +990,7 @@ bool ReolinkE1Pro::movePtzTo(const PtzVector& position)
 
 bool ReolinkE1Pro::enumeratePtzPresets(std::vector<PtzPreset>& outPresets)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    const std::string& token = m_impl->profileToken();
+    const std::string token = m_impl->resolveProfileToken();
 
     char inner[256];
     std::snprintf(
@@ -835,8 +1033,7 @@ bool ReolinkE1Pro::enumeratePtzPresets(std::vector<PtzPreset>& outPresets)
 
 bool ReolinkE1Pro::gotoPtzPreset(uint32_t presetId)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    const std::string& token = m_impl->profileToken();
+    const std::string token = m_impl->resolveProfileToken();
 
     char inner[320];
     std::snprintf(
@@ -851,8 +1048,7 @@ bool ReolinkE1Pro::gotoPtzPreset(uint32_t presetId)
 
 bool ReolinkE1Pro::savePtzPreset(uint32_t presetId, std::string_view name)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    const std::string& token = m_impl->profileToken();
+    const std::string token = m_impl->resolveProfileToken();
 
     char inner[384];
     std::snprintf(
@@ -867,8 +1063,7 @@ bool ReolinkE1Pro::savePtzPreset(uint32_t presetId, std::string_view name)
 
 bool ReolinkE1Pro::movePtzHome()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    const std::string& token = m_impl->profileToken();
+    const std::string token = m_impl->resolveProfileToken();
 
     char inner[256];
     std::snprintf(
@@ -963,8 +1158,11 @@ std::future<bool> ReolinkE1Pro::playFrameAsync(const AudioFrame& frame)
 void ReolinkE1Pro::stopPlayback()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_impl->go2rtcActive)
-        service::Go2RtcService::get().streamToCamera(m_impl->streamName, "");
+    auto& go2rtc = service::Go2RtcService::get();
+    if (m_impl->go2rtcTalkActive)
+        go2rtc.streamToCamera(m_impl->talkStreamName, "");
+    else if (m_impl->go2rtcActive)
+        go2rtc.streamToCamera(m_impl->streamName, "");
 }
 
 // ============================================================================
@@ -997,24 +1195,61 @@ bool ReolinkE1Pro::recordAudioToFile(const std::string& path, uint32_t seconds)
 
 bool ReolinkE1Pro::playAudioFile(const std::string& path)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_impl->go2rtcActive)
+    if (!ensureGo2rtcStream())
     {
         LOG_ERROR("ReolinkE1Pro: playAudioFile requires go2rtc to be enabled");
         return false;
     }
 
-    std::error_code ec;
-    const std::string abs = std::filesystem::absolute(path, ec).string();
-    if (ec)
+    std::string abs;
+    std::string talk_stream;
+    std::string video_stream;
+    bool use_talk_stream = false;
     {
-        LOG_ERROR("ReolinkE1Pro: bad audio path '{}'", path);
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::error_code ec;
+        abs = std::filesystem::absolute(path, ec).string();
+        if (ec || abs.empty())
+        {
+            LOG_ERROR("ReolinkE1Pro: bad audio path '{}'", path);
+            return false;
+        }
+        video_stream = m_impl->streamName;
+        talk_stream = m_impl->talkStreamName;
+        use_talk_stream = !m_impl->go2rtcTalkSource.empty();
+    }
+
+    if (!std::filesystem::exists(abs))
+    {
+        LOG_ERROR("ReolinkE1Pro: audio file not found '{}'", abs);
         return false;
     }
 
+    if (use_talk_stream && !ensureGo2rtcTalkStream())
+    {
+        LOG_ERROR("ReolinkE1Pro: go2rtc talk stream unavailable");
+        return false;
+    }
+
+    const std::string& dst = use_talk_stream ? talk_stream : video_stream;
     const std::string source =
         std::string("ffmpeg:") + abs + "#audio=" + kTalkCodec + "#input=file";
-    return service::Go2RtcService::get().streamToCamera(m_impl->streamName, source);
+
+    auto& go2rtc = service::Go2RtcService::get();
+    constexpr int k_max_attempts = 5;
+    for (int attempt = 0; attempt < k_max_attempts; ++attempt)
+    {
+        if (go2rtc.streamToCamera(dst, source))
+        {
+            LOG_INFO("ReolinkE1Pro: playing TTS audio via go2rtc ({})", abs);
+            return true;
+        }
+        if (attempt + 1 < k_max_attempts)
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    }
+
+    LOG_ERROR("ReolinkE1Pro: go2rtc talk failed for '{}'", abs);
+    return false;
 }
 
 // ============================================================================
@@ -1025,12 +1260,89 @@ void ReolinkE1Pro::registerActionsAndQueries()
 {
     m_queries = {
         {Query::Json, "stream", "RTSP stream URIs (main/sub, go2rtc)", json::object()},
+        {Query::Json, "status", "Streaming and microphone level", json::object()},
     };
 
     m_actionMap.clear();
     m_queryMap.clear();
     for (auto& query : m_queries)
         m_queryMap[query.name] = &query;
+}
+
+bool ReolinkE1Pro::isHostReachable() const
+{
+    if (m_state != DeviceState::Running)
+        return false;
+
+    const auto now = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_lastReachabilityCheck != std::chrono::steady_clock::time_point{}
+            && now - m_lastReachabilityCheck < std::chrono::seconds(5))
+        {
+            return m_lastReachability;
+        }
+    }
+
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+        return false;
+
+    sockaddr_in addr {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(m_config.onvifPort);
+    if (::inet_pton(AF_INET, m_config.host.c_str(), &addr.sin_addr) != 1)
+    {
+        ::close(fd);
+        return false;
+    }
+
+    const int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags >= 0)
+        ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+    const int connect_rc = ::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    if (connect_rc == 0)
+    {
+        ::close(fd);
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastReachabilityCheck = now;
+        m_lastReachability = true;
+        return true;
+    }
+
+    if (connect_rc < 0 && errno != EINPROGRESS)
+    {
+        ::close(fd);
+        return false;
+    }
+
+    pollfd pfd {};
+    pfd.fd = fd;
+    pfd.events = POLLOUT;
+    const int poll_rc = ::poll(&pfd, 1, 2000);
+    if (poll_rc <= 0)
+    {
+        ::close(fd);
+        return false;
+    }
+
+    int socket_error = 0;
+    socklen_t error_len = sizeof(socket_error);
+    if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_len) != 0)
+    {
+        ::close(fd);
+        return false;
+    }
+
+    ::close(fd);
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastReachabilityCheck = now;
+        m_lastReachability = socket_error == 0;
+    }
+    return socket_error == 0;
 }
 
 DEVICE_NAMESPACE_END

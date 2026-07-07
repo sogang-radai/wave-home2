@@ -151,6 +151,27 @@ CREATE INDEX IF NOT EXISTS idx_notification_user_created ON notification (user_i
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_device_external_id ON device(external_id)",
             },
         },
+        {
+            5,
+            "power energy statistics",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS power_energy (
+    id           INTEGER     PRIMARY KEY,
+    device_id    INTEGER,
+    granularity  VARCHAR(3)  NOT NULL,
+    time_start   VARCHAR(50) NOT NULL,
+    energy_wh    REAL        NOT NULL,
+    coverage     REAL        NOT NULL,
+    sample_count INTEGER     NOT NULL,
+    CHECK (granularity IN ('5m', '1h', '24h', '1w', '1mo')),
+    FOREIGN KEY (device_id) REFERENCES device(id)
+))SQL",
+                R"SQL(
+CREATE UNIQUE INDEX IF NOT EXISTS uq_power_energy ON power_energy (COALESCE(device_id, -1), granularity, time_start)
+)SQL",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)

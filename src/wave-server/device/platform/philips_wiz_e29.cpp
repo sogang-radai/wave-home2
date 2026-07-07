@@ -232,7 +232,6 @@ int PhilipsWizE29::init(const json& config)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 init failed: {}", ex.what());
         m_state = DeviceState::Stopped;
         return -5;
     }

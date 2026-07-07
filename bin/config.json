@@ -12,7 +12,7 @@
     "device_list_path": "device/device_list.json",
     "rooms_path": "device/rooms.json",
     "gesture_sets_path": "gestures/gesture_sets.json",
-    "sleep_model_path": "models/sleep/model.json",
+    "sleep_model_path": "models/sleep0-0/model.json",
     "stt_model_path": "models/stt/stt.json",
     "tts_model_path": "models/tts/tts.json",
     "push": {

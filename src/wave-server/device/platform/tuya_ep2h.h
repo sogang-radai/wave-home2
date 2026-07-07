@@ -1,8 +1,10 @@
 #pragma once
 
+#include <chrono>
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 
 #include "../device.h"
@@ -29,6 +31,9 @@ public:
 
     const Config& getConfig() const;
 
+    /** Latest plug telemetry; force=true bypasses the 1s device cache. */
+    json readStatus(bool force_refresh = false);
+
     // Device
     int init(const json& config) override;
     void shutdown() override;
@@ -47,12 +52,16 @@ private:
     struct Impl;
 
     void registerActionsAndQueries();
-    json fetchDatapoints();
+    json fetchDatapoints(bool force = false);
+    void invalidateDatapointCache();
     int setSwitch(bool on);
 
     std::unique_ptr<Impl> m_impl;
     Config m_config;
     mutable std::mutex m_mutex;
+    mutable std::optional<json> m_cachedDps;
+    mutable std::chrono::steady_clock::time_point m_cachedDpsAt{};
+    static constexpr std::chrono::milliseconds kMinQueryInterval{5000};
 };
 
 DEVICE_NAMESPACE_END

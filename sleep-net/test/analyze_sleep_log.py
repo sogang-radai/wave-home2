@@ -2,6 +2,7 @@
 
 The CSV is written one row per aggregation window (default ~1 s). Columns:
     date, time, frame_begin, frame_end, samples,
+    connected, frame_gap, warmup (optional diagnostics),
     status_label, status_absent, status_awake, status_asleep,
     toss_valid, toss_label, toss_index, toss_calm, toss_slight, toss_moderate
 
@@ -75,6 +76,52 @@ def coverage_stats(df: pd.DataFrame, gap_threshold: float = 5.0) -> dict:
         "max_gap_s": float(gaps.max()) if not gaps.empty else 0.0,
         "threshold": gap_threshold,
     }
+
+
+def find_time_gap_episodes(df: pd.DataFrame, gap_threshold: float = 5.0) -> pd.DataFrame:
+    """Rows where the previous CSV row is missing for longer than gap_threshold."""
+    if df.empty:
+        return pd.DataFrame(columns=["start", "end", "gap_s"])
+
+    diff = df["timestamp"].diff().dt.total_seconds()
+    rows = []
+    for i in range(1, len(df)):
+        gap_s = float(diff.iloc[i])
+        if gap_s > gap_threshold:
+            rows.append(
+                {
+                    "start": df["timestamp"].iloc[i - 1],
+                    "end": df["timestamp"].iloc[i],
+                    "gap_s": gap_s,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def find_disconnect_episodes(df: pd.DataFrame) -> pd.DataFrame:
+    """Merge consecutive rows with connected=0 into disconnect episodes."""
+    if "connected" not in df.columns:
+        return pd.DataFrame(columns=["start", "end", "duration_s", "warmup_rows"])
+
+    disc = df[df["connected"] == 0].copy()
+    if disc.empty:
+        return pd.DataFrame(columns=["start", "end", "duration_s", "warmup_rows"])
+
+    change = (disc.index.to_series().diff() > 1).cumsum()
+    rows = []
+    for _, group in disc.groupby(change):
+        start = group["timestamp"].iloc[0]
+        end = group["timestamp"].iloc[-1]
+        duration = (end - start).total_seconds() + float(group["duration_s"].iloc[-1])
+        rows.append(
+            {
+                "start": start,
+                "end": end,
+                "duration_s": duration,
+                "warmup_rows": int((group["warmup"] == 1).sum()) if "warmup" in group.columns else 0,
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def find_episodes(df: pd.DataFrame, min_seconds: float = 30.0) -> pd.DataFrame:
@@ -175,6 +222,37 @@ def build_summary(df: pd.DataFrame) -> str:
         lines.append("  (gaps = no inference output: radar frame drops or broken 160-frame window)")
         lines.append("")
 
+    if {"connected", "frame_gap", "warmup"}.issubset(df.columns):
+        lines.append("--- diagnostics (per aggregated row) ---")
+        disc = int((df["connected"] == 0).sum())
+        gap_rows = int((df["frame_gap"] == 1).sum())
+        warm = int((df["warmup"] == 1).sum())
+        lines.append(f"  rows with disconnect : {disc}")
+        lines.append(f"  rows with frame_gap  : {gap_rows}")
+        lines.append(f"  rows with warmup     : {warm}")
+        lines.append("")
+
+        gap_eps = find_time_gap_episodes(df)
+        if not gap_eps.empty:
+            lines.append("--- time gaps (no CSV row; check srs_r4sn read_failed / reconnecting logs) ---")
+            for _, ep in gap_eps.iterrows():
+                lines.append(
+                    f"  {ep['start'].strftime('%H:%M:%S')} -> {ep['end'].strftime('%H:%M:%S')}  "
+                    f"gap {fmt_hms(ep['gap_s'])}"
+                )
+            lines.append("  expected log pattern: read_failed -> disconnected (read_failed) -> reconnecting")
+            lines.append("")
+
+        disc_eps = find_disconnect_episodes(df)
+        if not disc_eps.empty:
+            lines.append("--- disconnect episodes (connected=0 rows merged) ---")
+            for _, ep in disc_eps.iterrows():
+                lines.append(
+                    f"  {ep['start'].strftime('%H:%M:%S')} - {ep['end'].strftime('%H:%M:%S')}  "
+                    f"{fmt_hms(ep['duration_s'])}  warmup_rows={int(ep['warmup_rows'])}"
+                )
+            lines.append("")
+
     lines.append("--- status durations ---")
     durs = status_durations(df)
     for label in STATUS_LABELS:
@@ -237,11 +315,28 @@ def make_plot(df: pd.DataFrame, out_path: Path) -> None:
         2, 1, figsize=(14, 6), sharex=True, gridspec_kw={"height_ratios": [1, 1]}
     )
 
+    # Shade time gaps and disconnect rows for quick visual inspection.
+    gap_eps = find_time_gap_episodes(df)
+    for _, ep in gap_eps.iterrows():
+        for ax in (ax_status, ax_toss):
+            ax.axvspan(ep["start"], ep["end"], color="#ffcccc", alpha=0.45, linewidth=0)
+
+    if "connected" in df.columns:
+        disc = df[df["connected"] == 0]
+        for ts in disc["timestamp"]:
+            for ax in (ax_status, ax_toss):
+                ax.axvline(ts, color="#ff8800", alpha=0.35, linewidth=0.8)
+
+    if "warmup" in df.columns:
+        warm = df[df["warmup"] == 1]
+        for ts in warm["timestamp"]:
+            ax_status.axvline(ts, color="#ccccff", alpha=0.25, linewidth=0.6)
+
     ax_status.step(df["timestamp"], status_code, where="post", color="#3366cc", linewidth=1.0)
     ax_status.set_yticks([0, 1, 2])
     ax_status.set_yticklabels(STATUS_LABELS)
     ax_status.set_ylim(-0.3, 2.3)
-    ax_status.set_title("Sleep status over the night")
+    ax_status.set_title("Sleep status (pink=time gap, orange=disconnect, blue=warmup)")
     ax_status.grid(True, axis="x", alpha=0.3)
 
     ax_toss.plot(df["timestamp"], toss, color="#cc4444", linewidth=0.7)
@@ -283,6 +378,37 @@ def main() -> None:
     if not args.no_plot:
         make_plot(df, out_dir / "timeline.png")
         print(f"\nplot saved  : {out_dir / 'timeline.png'}")
+
+    if {"connected", "frame_gap", "warmup"}.issubset(df.columns):
+        gap_eps = find_time_gap_episodes(df)
+        disc_eps = find_disconnect_episodes(df)
+        report_lines = [
+            "Disconnect / gap correlation report",
+            f"CSV: {args.csv}",
+            "",
+            "Correlate pink spans on timeline.png with console logs:",
+            "  srs_r4sn read failed: ...",
+            "  srs_r4sn disconnected (read_failed) — retry #N in X ms",
+            "  srs_r4sn reconnecting (delay was X ms)",
+            "  srs_r4sn connected to ...",
+            "",
+        ]
+        if not gap_eps.empty:
+            report_lines.append("Time gaps (no CSV row):")
+            for _, ep in gap_eps.iterrows():
+                report_lines.append(
+                    f"  {ep['start']} -> {ep['end']}  ({fmt_hms(ep['gap_s'])})"
+                )
+            report_lines.append("")
+        if not disc_eps.empty:
+            report_lines.append("Disconnect episodes:")
+            for _, ep in disc_eps.iterrows():
+                report_lines.append(
+                    f"  {ep['start']} - {ep['end']}  ({fmt_hms(ep['duration_s'])})  "
+                    f"warmup_rows={int(ep['warmup_rows'])}"
+                )
+        (out_dir / "disconnect_report.txt").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+        print(f"report saved : {out_dir / 'disconnect_report.txt'}")
 
     print(f"summary saved: {out_dir / 'summary.txt'}")
     print(f"hourly saved : {out_dir / 'hourly.csv'}")

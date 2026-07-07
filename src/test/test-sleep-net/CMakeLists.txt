@@ -5,6 +5,7 @@ set(TEST_SLEEP_NET_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/test")
 add_executable(test-sleep-net
     main.cpp
     "${CMAKE_SOURCE_DIR}/src/wave-server/core/logger.cpp"
+    "${CMAKE_SOURCE_DIR}/src/common/network/net_util.cpp"
     "${CMAKE_SOURCE_DIR}/src/wave-server/device/device.cpp"
     "${CMAKE_SOURCE_DIR}/src/wave-server/device/platform/srs_r4sn.cpp"
     "${CMAKE_SOURCE_DIR}/src/wave-server/nn/frame_encoder.cpp"

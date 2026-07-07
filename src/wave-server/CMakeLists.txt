@@ -9,6 +9,7 @@ set(_wave_server_sources
     db/database.cpp
     service/llm_client.cpp
     service/go2rtc_service.cpp
+    service/power_manager.cpp
     web/server.cpp
     web/http/api_controller.cpp
     web/http/v1/health_controller.cpp
@@ -25,6 +26,10 @@ set(_wave_server_sources
     web/http/v1/settings_store.cpp
     web/http/v1/notifications_controller.cpp
     web/http/v1/notifications_store.cpp
+    web/http/v1/iot_controller.cpp
+    web/http/v1/iot_store.cpp
+    web/http/v1/power_controller.cpp
+    web/http/v1/power_store.cpp
     web/http/push_notification.cpp
     web/push/web_push.cpp
     web/push/push_store.cpp
@@ -35,6 +40,7 @@ set(_wave_server_sources
     device/platform/reolink_e1pro.cpp
     device/platform/philips_wiz_e29.cpp
     device/platform/samsung_tizen.cpp
+    device/platform/radai_ws.cpp
     device/platform/ir_device.cpp
     device/protocol/ir_remote.cpp
     nn/frame_encoder.cpp
@@ -52,6 +58,7 @@ endif()
 add_executable(wave-server ${_wave_server_sources})
 
 include("${CMAKE_SOURCE_DIR}/cmake/ncnn.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/opus.cmake")
 
 find_package(OpenSSL REQUIRED)
 
@@ -73,9 +80,11 @@ set(_wave_server_libs drogon wave::asio wave::tuyapp ncnn nlohmann_json::nlohman
 if(WAVE_BUILD_TTS)
     include("${CMAKE_SOURCE_DIR}/cmake/sherpa_onnx.cmake")
     list(APPEND _wave_server_libs sherpa-onnx-cxx-api)
+    target_compile_definitions(wave-server PRIVATE WAVE_BUILD_TTS=1)
 endif()
 
 target_link_libraries(wave-server PRIVATE ${_wave_server_libs} OpenSSL::SSL OpenSSL::Crypto)
+wave_link_opus(wave-server)
 if(APPLE)
     target_link_libraries(wave-server PRIVATE "-framework Security" "-framework CoreFoundation")
 endif()

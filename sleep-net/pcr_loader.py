@@ -96,19 +96,34 @@ def _parse_sensor_spec(buffer: memoryview, offset: int) -> Tuple[SensorSpec, int
     return SensorSpec(*values), offset
 
 def find_dll_path() -> Path:
-    script_dir = Path(__file__).resolve().parent.parent
-    candidates = [
-        script_dir / "bin" / "x64" / "lzav_lib.dll",
-        script_dir / "bin" / "x64" / "lzav_lib.so",
-        script_dir / "bin" / "arm64" / "lzav_lib.so",
-        script_dir / "bin" / "x64" / "lzav_lib.dylib",
-        script_dir / "bin" / "arm64" / "lzav_lib.dylib",
-        script_dir / "lzav_lib.dll",
+    import platform
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    machine = platform.machine().lower()
+    is_arm = machine in ("arm64", "aarch64")
+
+    names = ["lzav_lib.dylib", "lzav_lib.so", "lzav_lib.dll"]
+    arch_dirs = ["arm64", "x64"] if is_arm else ["x64", "arm64"]
+    base_dirs = [
+        repo_root / "thirdparty" / "lzav" / "bin",
+        script_dir / "bin",
+        repo_root / "bin",
     ]
+
+    candidates: List[Path] = []
+    for base in base_dirs:
+        for arch in arch_dirs:
+            for name in names:
+                candidates.append(base / arch / name)
+    candidates.append(script_dir / "lzav_lib.dll")
+
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise FileNotFoundError("lzav_lib not found in the expected folders.")
+    raise FileNotFoundError(
+        "lzav_lib not found. Build or copy lzav for your platform under "
+        "thirdparty/lzav/bin/{arm64|x64}/lzav_lib.so"
+    )
 
 # ============================================================================
 # Core Classes

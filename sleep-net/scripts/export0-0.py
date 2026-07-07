@@ -12,6 +12,8 @@ The intermediate ONNX files are NOT discarded; both the .onnx and the ncnn
 
 Input : TRAIN_OUTPUT_DIR/best_model.pth   (from scripts/training0-0.py)
 Output: MODELS_DIR/{name}.onnx, {name}.ncnn.param, {name}.ncnn.bin
+
+See MODEL_VERSIONS.txt for the full model matrix (0-0 CNN, 0-1/0-2 LSTM).
 """
 
 from __future__ import annotations

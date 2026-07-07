@@ -1,0 +1,9 @@
+7767517
+7 10
+Input                    in0                      0 1 in0
+MemoryData               /lstm/Slice_output_0     0 1 1 0=128 1=1
+Split                    splitncnn_0              1 4 1 2 3 4 5
+LSTM                     lstm_1                   3 1 in0 2 5 6 0=128 1=131072 2=0 3=128
+LSTM                     lstm_2                   3 1 6 3 4 7 0=128 1=65536 2=0 3=128
+Reduction                mean_5                   1 1 7 8 0=3 1=0 -23303=1,0 4=0 5=1
+InnerProduct             linear_0                 1 1 8 out0 0=3 1=1 2=384

@@ -723,14 +723,8 @@ private:
                         {
                             m_droppedFrames += 1;
                             const auto now = std::chrono::steady_clock::now();
-                            if (m_lastQueueWarn.time_since_epoch().count() == 0
-                                || now - m_lastQueueWarn >= kQueueWarnInterval)
+                            if (m_lastQueueWarn.time_since_epoch().count() == 0 || now - m_lastQueueWarn >= kQueueWarnInterval)
                             {
-                                LOG_WARN(
-                                    "srs_r4sn point cloud queue full ({}), dropped {} frame(s) (no consumer; latest {})",
-                                    m_queueSize,
-                                    m_droppedFrames,
-                                    m_frames.front().frameIndex);
                                 m_lastQueueWarn = now;
                                 m_droppedFrames = 0;
                             }
@@ -1034,7 +1028,6 @@ int SRSR4SN::init(const json& config)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("srs_r4sn init failed: {}", ex.what());
         m_impl.reset();
         m_state = DeviceState::Stopped;
         return -5;

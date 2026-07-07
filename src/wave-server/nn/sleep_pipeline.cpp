@@ -233,5 +233,15 @@ size_t SleepPipeline::getFrameCount() const
     return m_encoder.getFrameCount();
 }
 
+FrameEncoderWindowMode SleepPipeline::getEncoderWindowMode() const
+{
+    return m_encoder.getWindowMode();
+}
+
+void SleepPipeline::setEncoderWindowMode(FrameEncoderWindowMode mode)
+{
+    m_encoder.setWindowMode(mode);
+}
+
 NN_NAMESPACE_END
 WAVE_NAMESPACE_END

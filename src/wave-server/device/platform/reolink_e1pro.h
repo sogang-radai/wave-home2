@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <future>
@@ -8,6 +9,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <algorithm>
+#include <atomic>
 
 #include "../device.h"
 #include "../interface/audio.h"
@@ -68,6 +71,16 @@ public:
 
     std::string_view getClass() const override;
 
+    // True when the camera host accepts a TCP connection on the ONVIF port.
+    bool isHostReachable() const;
+
+    // Lazily registers the go2rtc stream after verifying host reachability.
+    bool ensureGo2rtcStream();
+    bool ensureGo2rtcTalkStream();
+    void releaseGo2rtcStream();
+    bool isGo2rtcStreamActive() const;
+    std::string_view getGo2rtcStreamName() const;
+
     // Queryable
     json query(std::string_view name, const json& params) override;
     std::future<json> queryAsync(std::string_view name, const json& params, uint32_t timeout_ms = 1000) override;
@@ -120,9 +133,16 @@ private:
 
     void registerActionsAndQueries();
 
+    float probeMicLevel();
+
     std::unique_ptr<Impl> m_impl;
     Config m_config;
     mutable std::mutex m_mutex;
+    mutable std::chrono::steady_clock::time_point m_lastReachabilityCheck {};
+    mutable bool m_lastReachability = false;
+    mutable std::chrono::steady_clock::time_point m_lastMicProbe {};
+    mutable float m_cachedMicLevel = 0.0f;
+    mutable std::atomic<bool> m_micProbeInFlight {false};
 };
 
 DEVICE_NAMESPACE_END

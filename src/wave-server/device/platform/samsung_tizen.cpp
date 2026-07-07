@@ -10,6 +10,11 @@
 #include <random>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
+
+#include <atomic>
+
+#include <poll.h>
 
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -84,6 +89,35 @@ namespace
         if (source == "displayport" || source == "dp") return "KEY_DISPLAYPORT";
         if (source == "source") return "KEY_SOURCE";
         if (source == "tv" || source == "dtv") return "KEY_DTV";
+        return nullptr;
+    }
+
+    struct AppLaunchTarget
+    {
+        std::string app_id;
+        std::string action_type;
+    };
+
+    const AppLaunchTarget* resolveAppLaunch(std::string_view app)
+    {
+        static const std::unordered_map<std::string, AppLaunchTarget> k_known_apps = {
+            {"netflix", {"3201907018807", "DEEP_LINK"}},
+            {"youtube", {"111299001912", "DEEP_LINK"}},
+            {"prime_video", {"3201910019365", "DEEP_LINK"}},
+            {"samsung_tv_plus", {"3201702012461", "DEEP_LINK"}},
+        };
+
+        const auto key = std::string(app);
+        const auto it = k_known_apps.find(key);
+        if (it != k_known_apps.end())
+            return &it->second;
+
+        static thread_local AppLaunchTarget custom;
+        if (!key.empty() && std::all_of(key.begin(), key.end(), ::isdigit))
+        {
+            custom = {key, "DEEP_LINK"};
+            return &custom;
+        }
         return nullptr;
     }
 
@@ -254,7 +288,10 @@ namespace
                 status = SSLHandshake(m_sslContext);
             if (status != noErr)
             {
-                LOG_ERROR("samsung_g7: TLS handshake failed for {} (status={})", host, static_cast<int>(status));
+                LOG_WARN(
+                    "samsung_g7: TLS handshake failed for {} (status={}); WebSocket remote-control only — REST may still work",
+                    host,
+                    static_cast<int>(status));
                 close();
                 return false;
             }
@@ -315,28 +352,54 @@ namespace
 
         bool readSome(std::string& buffer, uint32_t timeoutMs)
         {
-            timeval tv {};
-            tv.tv_sec = static_cast<time_t>(timeoutMs / 1000);
-            tv.tv_usec = static_cast<suseconds_t>((timeoutMs % 1000) * 1000);
-            ::setsockopt(m_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            if (m_fd < 0)
+                return false;
 
-            char chunk[4096];
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    deadline - std::chrono::steady_clock::now()).count();
+                if (remaining <= 0)
+                    break;
+
+                pollfd pfd {};
+                pfd.fd = m_fd;
+                pfd.events = POLLIN;
+                const int pollMs = static_cast<int>(std::min<int64_t>(remaining, 500));
+                const int pollRc = ::poll(&pfd, 1, pollMs);
+                if (pollRc <= 0 || (pfd.revents & POLLIN) == 0)
+                    continue;
+
+                char chunk[8192];
 #ifdef __APPLE__
-            size_t n = sizeof(chunk);
-            const OSStatus status = SSLRead(m_sslContext, chunk, sizeof(chunk), &n);
-            if (status != noErr && status != errSSLWouldBlock)
-                return false;
-            if (n == 0)
-                return false;
-            buffer.append(chunk, n);
-            return true;
+                size_t n = sizeof(chunk);
+                const OSStatus status = SSLRead(m_sslContext, chunk, sizeof(chunk), &n);
+                if (status == noErr && n > 0)
+                {
+                    buffer.append(chunk, n);
+                    return true;
+                }
+                if (status == errSSLWouldBlock)
+                    continue;
+                if (status == errSSLClosedGraceful || status == errSSLClosedAbort)
+                    return false;
 #else
-            const int n = SSL_read(m_ssl, chunk, sizeof(chunk));
-            if (n <= 0)
+                const int n = SSL_read(m_ssl, chunk, sizeof(chunk));
+                if (n > 0)
+                {
+                    buffer.append(chunk, static_cast<size_t>(n));
+                    return true;
+                }
+                if (n == 0)
+                    return false;
+                const int sslErr = SSL_get_error(m_ssl, n);
+                if (sslErr == SSL_ERROR_WANT_READ || sslErr == SSL_ERROR_WANT_WRITE)
+                    continue;
                 return false;
-            buffer.append(chunk, static_cast<size_t>(n));
-            return true;
 #endif
+            }
+            return false;
         }
 
         bool readHttpResponse(std::string& body, uint32_t timeoutMs)
@@ -349,8 +412,8 @@ namespace
                 if (!readSome(raw, timeoutMs))
                 {
                     if (headersDone)
-                        break;
-                    return !body.empty();
+                        return true;
+                    return false;
                 }
 
                 if (!headersDone)
@@ -373,10 +436,30 @@ namespace
                         }
                         return static_cast<int>(body.size()) >= contentLen;
                     }
+                    continue;
                 }
             }
 
-            return headersDone && !body.empty();
+            return headersDone;
+        }
+
+        bool readHttpUpgrade(std::string& headersOut, std::string& pendingOut, uint32_t timeoutMs)
+        {
+            std::string raw;
+            for (int attempt = 0; attempt < 128; ++attempt)
+            {
+                if (!readSome(raw, timeoutMs))
+                    return false;
+
+                const size_t sep = raw.find("\r\n\r\n");
+                if (sep == std::string::npos)
+                    continue;
+
+                headersOut = raw.substr(0, sep);
+                pendingOut = raw.substr(sep + 4);
+                return true;
+            }
+            return false;
         }
 
         void close()
@@ -421,12 +504,12 @@ namespace
         int m_fd = -1;
     };
 
-    std::vector<uint8_t> buildMaskedTextFrame(const std::string& text)
+    std::vector<uint8_t> buildMaskedFrame(uint8_t opcode, std::string_view payload)
     {
         std::vector<uint8_t> frame;
-        frame.push_back(0x81);
+        frame.push_back(static_cast<uint8_t>(0x80 | opcode));
 
-        const size_t len = text.size();
+        const size_t len = payload.size();
         uint8_t mask[4];
         std::random_device rd;
         for (int i = 0; i < 4; ++i)
@@ -451,39 +534,98 @@ namespace
 
         frame.insert(frame.end(), mask, mask + 4);
         for (size_t i = 0; i < len; ++i)
-            frame.push_back(static_cast<uint8_t>(text[i] ^ mask[i % 4]));
+            frame.push_back(static_cast<uint8_t>(payload[i] ^ mask[i % 4]));
         return frame;
     }
 
-    bool readWsTextFrame(TlsConnection& tls, std::string& outText, uint32_t timeoutMs)
+    std::vector<uint8_t> buildMaskedTextFrame(const std::string& text)
     {
-        std::string buffer;
-        while (buffer.size() < 2)
+        return buildMaskedFrame(0x01, text);
+    }
+
+    std::string tokenFromJsonValue(const json& token)
+    {
+        if (token.is_string())
+            return token.get<std::string>();
+        if (token.is_number_integer())
+            return std::to_string(token.get<int64_t>());
+        if (token.is_number_unsigned())
+            return std::to_string(token.get<uint64_t>());
+        return {};
+    }
+
+    std::string extractWsToken(const json& msg)
+    {
+        if (!msg.contains("data") || !msg["data"].is_object())
+            return {};
+
+        const auto& data = msg["data"];
+        if (data.contains("token"))
         {
-            if (!tls.readSome(buffer, timeoutMs))
-                return false;
+            const std::string token = tokenFromJsonValue(data["token"]);
+            if (!token.empty())
+                return token;
         }
+
+        if (data.contains("clients") && data["clients"].is_array())
+        {
+            for (const auto& client : data["clients"])
+            {
+                if (!client.contains("attributes") || !client["attributes"].is_object())
+                    continue;
+                const auto& attrs = client["attributes"];
+                if (!attrs.contains("token"))
+                    continue;
+                const std::string token = tokenFromJsonValue(attrs["token"]);
+                if (!token.empty())
+                    return token;
+            }
+        }
+        return {};
+    }
+
+    enum class WsFrameKind
+    {
+        Incomplete,
+        Closed,
+        Ping,
+        Text,
+        Ignored,
+    };
+
+    struct WsFrame
+    {
+        WsFrameKind kind = WsFrameKind::Incomplete;
+        std::string payload;
+    };
+
+    bool parseWsFrame(std::string& buffer, WsFrame& out)
+    {
+        out = {};
+        if (buffer.size() < 2)
+            return false;
 
         const uint8_t opcode = static_cast<uint8_t>(buffer[0]) & 0x0f;
         if (opcode == 0x08)
-            return false;
+        {
+            out.kind = WsFrameKind::Closed;
+            return true;
+        }
 
         uint64_t payloadLen = static_cast<uint8_t>(buffer[1]) & 0x7f;
         size_t offset = 2;
         if (payloadLen == 126)
         {
-            while (buffer.size() < offset + 2)
-                if (!tls.readSome(buffer, timeoutMs))
-                    return false;
+            if (buffer.size() < offset + 2)
+                return false;
             payloadLen = (static_cast<uint8_t>(buffer[offset]) << 8)
                 | static_cast<uint8_t>(buffer[offset + 1]);
             offset += 2;
         }
         else if (payloadLen == 127)
         {
-            while (buffer.size() < offset + 8)
-                if (!tls.readSome(buffer, timeoutMs))
-                    return false;
+            if (buffer.size() < offset + 8)
+                return false;
             payloadLen = 0;
             for (int i = 0; i < 8; ++i)
                 payloadLen = (payloadLen << 8) | static_cast<uint8_t>(buffer[offset + i]);
@@ -491,15 +633,132 @@ namespace
         }
 
         const bool masked = (static_cast<uint8_t>(buffer[1]) & 0x80) != 0;
+        size_t maskOffset = offset;
         if (masked)
             offset += 4;
 
-        while (buffer.size() < offset + payloadLen)
-            if (!tls.readSome(buffer, timeoutMs))
-                return false;
+        if (buffer.size() < offset + payloadLen)
+            return false;
 
-        outText.assign(buffer.data() + static_cast<size_t>(offset), static_cast<size_t>(payloadLen));
-        return opcode == 0x01 || opcode == 0x02;
+        std::string payload(buffer.data() + static_cast<size_t>(offset), static_cast<size_t>(payloadLen));
+        if (masked && payloadLen > 0)
+        {
+            const uint8_t mask[4] = {
+                static_cast<uint8_t>(buffer[maskOffset]),
+                static_cast<uint8_t>(buffer[maskOffset + 1]),
+                static_cast<uint8_t>(buffer[maskOffset + 2]),
+                static_cast<uint8_t>(buffer[maskOffset + 3]),
+            };
+            for (size_t i = 0; i < payloadLen; ++i)
+                payload[i] = static_cast<char>(static_cast<uint8_t>(payload[i]) ^ mask[i % 4]);
+        }
+
+        buffer.erase(0, offset + static_cast<size_t>(payloadLen));
+        out.payload = std::move(payload);
+
+        if (opcode == 0x09)
+            out.kind = WsFrameKind::Ping;
+        else if (opcode == 0x01 || opcode == 0x02)
+            out.kind = WsFrameKind::Text;
+        else
+            out.kind = WsFrameKind::Ignored;
+        return true;
+    }
+
+    bool handleWsChannelEvent(std::string_view event)
+    {
+        if (event == "ms.channel.timeOut")
+        {
+            LOG_WARN("samsung_g7: websocket ms.channel.timeOut");
+            return false;
+        }
+        if (event == "ms.error")
+        {
+            LOG_WARN("samsung_g7: websocket ms.error");
+            return false;
+        }
+        return true;
+    }
+
+    bool dispatchWsFrame(TlsConnection& tls, std::mutex& ioMutex, WsFrame& frame)
+    {
+        if (frame.kind == WsFrameKind::Closed)
+            return false;
+
+        if (frame.kind == WsFrameKind::Ping)
+        {
+            const auto pong = buildMaskedFrame(0x0a, frame.payload);
+            std::lock_guard<std::mutex> lock(ioMutex);
+            if (!tls.writeAll(pong.data(), pong.size()))
+                return false;
+            return true;
+        }
+
+        if (frame.kind != WsFrameKind::Text)
+            return true;
+
+        json msg = json::parse(frame.payload, nullptr, false);
+        if (msg.is_discarded())
+            return true;
+
+        const std::string event = msg.value("event", "");
+        if (event.empty())
+            return true;
+
+        LOG_DEBUG("samsung_g7: websocket event: {}", event);
+        return handleWsChannelEvent(event);
+    }
+
+    bool drainWsFrames(TlsConnection& tls, std::mutex& ioMutex, std::string& pending, bool& connected)
+    {
+        while (connected)
+        {
+            WsFrame frame;
+            if (!parseWsFrame(pending, frame))
+                break;
+
+            if (!dispatchWsFrame(tls, ioMutex, frame))
+            {
+                connected = false;
+                return false;
+            }
+        }
+        return connected;
+    }
+
+    bool pollWsText(TlsConnection& tls, std::string& buffer, std::string& outText, uint32_t timeoutMs)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            WsFrame frame;
+            if (parseWsFrame(buffer, frame))
+            {
+                if (frame.kind == WsFrameKind::Closed)
+                    return false;
+                if (frame.kind == WsFrameKind::Ping)
+                {
+                    const auto pong = buildMaskedFrame(0x0a, frame.payload);
+                    if (!tls.writeAll(pong.data(), pong.size()))
+                        return false;
+                    continue;
+                }
+                if (frame.kind == WsFrameKind::Text)
+                {
+                    outText = std::move(frame.payload);
+                    return true;
+                }
+                continue;
+            }
+
+            const auto remaining = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                deadline - std::chrono::steady_clock::now()).count());
+            if (remaining == 0)
+                break;
+            if (!tls.readSome(buffer, remaining))
+                continue;
+        }
+        return false;
     }
 
     std::string buildWsUrl(const SamsungTizen::InterfaceConfig& cfg, bool includeToken)
@@ -645,29 +904,42 @@ namespace
     class WsSession
     {
     public:
-        bool open(const SamsungTizen::InterfaceConfig& cfg, bool includeToken, uint32_t timeoutMs)
+        ~WsSession()
         {
             close();
-            if (!m_tls.connect(cfg.host, cfg.port, timeoutMs))
+        }
+
+        bool open(const SamsungTizen::InterfaceConfig& cfg, bool includeToken, uint32_t timeoutMs,
+            std::string* errorOut = nullptr, bool startKeepAlive = true)
+        {
+            auto fail = [&](std::string_view message) {
+                if (errorOut)
+                    *errorOut = std::string(message);
+                close();
                 return false;
+            };
+
+            close();
+            if (!m_tls.connect(cfg.host, cfg.port, timeoutMs))
+                return fail("TCP connection failed");
 
             const std::string handshake = buildWsUrl(cfg, includeToken);
             if (!m_tls.writeAll(handshake.data(), handshake.size()))
-            {
-                close();
-                return false;
-            }
+                return fail("WebSocket handshake write failed");
 
-            std::string response;
-            if (!m_tls.readHttpResponse(response, timeoutMs) || response.find("101") == std::string::npos)
-            {
-                close();
-                return false;
-            }
+            std::string headers;
+            std::string pending;
+            if (!m_tls.readHttpUpgrade(headers, pending, timeoutMs))
+                return fail("WebSocket upgrade read failed");
+            if (headers.find("101") == std::string::npos)
+                return fail("WebSocket upgrade rejected (expected HTTP 101)");
+
+            m_pending = std::move(pending);
 
             const bool hasSavedToken = includeToken && !cfg.token.empty();
             const uint32_t eventWaitMs = hasSavedToken ? 2000u : timeoutMs;
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(eventWaitMs);
+            auto lastProgress = std::chrono::steady_clock::now();
 
             while (std::chrono::steady_clock::now() < deadline)
             {
@@ -676,67 +948,121 @@ namespace
                 if (remaining == 0)
                     break;
 
+                if (!hasSavedToken
+                    && std::chrono::steady_clock::now() - lastProgress > std::chrono::seconds(5))
+                {
+                    LOG_INFO("samsung_g7: still waiting for display approval...");
+                    lastProgress = std::chrono::steady_clock::now();
+                }
+
                 std::string frame;
-                if (!readWsTextFrame(m_tls, frame, std::min(remaining, 500u)))
+                if (!pollWsText(m_tls, m_pending, frame, remaining))
                     continue;
 
                 json msg = json::parse(frame, nullptr, false);
                 if (msg.is_discarded())
+                {
+                    LOG_WARN("samsung_g7: ignored non-JSON websocket payload ({} bytes)", frame.size());
                     continue;
+                }
 
                 const std::string event = msg.value("event", "");
+                LOG_INFO("samsung_g7: websocket event: {}", event.empty() ? "(none)" : event);
                 if (event == "ms.channel.connect")
                 {
                     m_connected = true;
-                    if (msg.contains("data") && msg["data"].contains("token"))
-                        m_token = msg["data"]["token"].get<std::string>();
+                    m_token = extractWsToken(msg);
+                    if (startKeepAlive)
+                        startReader();
                     return true;
                 }
                 if (event == "ms.channel.unauthorized")
                 {
-                    close();
-                    return false;
+                    if (hasSavedToken)
+                        return fail("Token rejected (ms.channel.unauthorized)");
+                    continue;
                 }
             }
 
             if (hasSavedToken)
             {
                 m_connected = true;
+                if (startKeepAlive)
+                    startReader();
                 return true;
             }
 
-            close();
-            return false;
+            return fail("Timed out waiting for ms.channel.connect (approve on the display)");
         }
 
         bool sendJson(const json& payload, uint32_t timeoutMs)
         {
-            if (!m_connected)
+            (void)timeoutMs;
+            if (!m_connected.load())
                 return false;
+
             const std::string text = payload.dump();
             const auto frame = buildMaskedTextFrame(text);
+            std::lock_guard<std::mutex> lock(m_ioMutex);
+            if (!m_connected.load())
+                return false;
             if (!m_tls.writeAll(frame.data(), frame.size()))
             {
-                close();
+                m_connected = false;
                 return false;
             }
-            (void)timeoutMs;
             return true;
         }
 
-        bool isConnected() const { return m_connected; }
+        bool isConnected() const { return m_connected.load(); }
         const std::string& issuedToken() const { return m_token; }
 
         void close()
         {
+            stopReader();
             m_connected = false;
             m_token.clear();
+            m_pending.clear();
             m_tls.close();
         }
 
     private:
+        void startReader()
+        {
+            stopReader();
+            m_readerRunning = true;
+            m_reader = std::thread([this]() { readerLoop(); });
+        }
+
+        void stopReader()
+        {
+            m_readerRunning = false;
+            if (m_reader.joinable())
+                m_reader.join();
+        }
+
+        void readerLoop()
+        {
+            while (m_readerRunning.load())
+            {
+                if (!m_connected.load())
+                    break;
+
+                if (!m_tls.readSome(m_pending, 1000))
+                    continue;
+
+                bool connected = m_connected.load();
+                if (!drainWsFrames(m_tls, m_ioMutex, m_pending, connected))
+                    m_connected = false;
+            }
+        }
+
         TlsConnection m_tls;
-        bool m_connected = false;
+        std::atomic<bool> m_connected {false};
+        std::atomic<bool> m_readerRunning {false};
+        std::thread m_reader;
+        std::mutex m_ioMutex;
+        std::string m_pending;
         std::string m_token;
     };
 
@@ -838,10 +1164,15 @@ SamsungTizenTokenClient::Result SamsungTizenTokenClient::requestToken()
         }
 
         WsSession ws;
-        if (!ws.open(m_impl->iface, false, m_impl->timeoutMs))
+        SamsungTizen::InterfaceConfig iface = m_impl->iface;
+        iface.token.clear();
+
+        LOG_INFO("samsung_g7: waiting for pairing approval on {} (select Allow on the display)", iface.host);
+        std::string wsError;
+        if (!ws.open(iface, false, m_impl->timeoutMs, &wsError, false))
         {
             result.errorCode = -5;
-            result.message = "pairing connection failed (press Allow on the display)";
+            result.message = wsError.empty() ? "pairing connection failed" : wsError;
             return result;
         }
 
@@ -849,7 +1180,7 @@ SamsungTizenTokenClient::Result SamsungTizenTokenClient::requestToken()
         if (result.token.empty())
         {
             result.errorCode = -5;
-            result.message = "no token in ms.channel.connect response";
+            result.message = "connected but no token in ms.channel.connect";
             return result;
         }
 
@@ -915,6 +1246,41 @@ const SamsungTizen::Capabilities& SamsungTizen::getCapabilities() const
 SamsungTizen::SessionState SamsungTizen::getSessionState() const
 {
     return m_sessionState;
+}
+
+bool SamsungTizen::isApiReachable() const
+{
+    if (m_state != DeviceState::Running)
+        return false;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (m_restCacheTime != std::chrono::steady_clock::time_point{})
+    {
+        const auto age = now - m_restCacheTime;
+        if (age < std::chrono::seconds(60))
+            return true;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_lastTcpProbe != std::chrono::steady_clock::time_point{}
+            && now - m_lastTcpProbe < std::chrono::seconds(5))
+        {
+            return m_lastTcpReachable;
+        }
+    }
+
+    const int fd = tcpConnect(m_interface.host, m_interface.port, 2000);
+    const bool reachable = fd >= 0;
+    if (fd >= 0)
+        ::close(fd);
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastTcpProbe = now;
+        m_lastTcpReachable = reachable;
+    }
+    return reachable;
 }
 
 int SamsungTizen::init(const json& config)
@@ -1230,14 +1596,18 @@ int SamsungTizen::invoke(std::string_view name, const json& params)
         if (!params.contains("app") || !params["app"].is_string())
             return -9;
 
+        const auto* launch = resolveAppLaunch(params["app"].get<std::string>());
+        if (!launch)
+            return -9;
+
         const json payload = {
             {"method", "ms.channel.emit"},
             {"params", {
                 {"event", "ed.apps.launch"},
                 {"to", "host"},
                 {"data", {
-                    {"appId", params["app"].get<std::string>()},
-                    {"action_type", "NATIVE_LAUNCH"},
+                    {"appId", launch->app_id},
+                    {"action_type", launch->action_type},
                 }},
             }},
         };
@@ -1251,6 +1621,10 @@ int SamsungTizen::invoke(std::string_view name, const json& params)
         }
         return 0;
     }
+    if (name == "input_source")
+        return sendRemoteKey("KEY_SOURCE");
+    if (name == "play_pause")
+        return sendRemoteKey("KEY_PLAY");
     if (name == "nav_up") return sendRemoteKey("KEY_UP");
     if (name == "nav_down") return sendRemoteKey("KEY_DOWN");
     if (name == "nav_left") return sendRemoteKey("KEY_LEFT");
@@ -1287,6 +1661,8 @@ void SamsungTizen::registerActionsAndQueries()
         {Action::Json, Action::Repeat, "select", "OK / enter", json::object()},
         {Action::Json, Action::Repeat, "home", "Home", json::object()},
         {Action::Json, Action::Repeat, "back", "Back", json::object()},
+        {Action::Json, Action::Repeat, "input_source", "Cycle external input", json::object()},
+        {Action::Json, Action::Repeat, "play_pause", "Play / pause", json::object()},
         {Action::Json, Action::Repeat, "send_key", "Send raw remote key", json::object()},
     };
 

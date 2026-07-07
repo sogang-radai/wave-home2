@@ -88,6 +88,8 @@ struct FrameEncoder::Impl
     std::deque<std::unique_ptr<CachedFrame>> frameQueue;
     std::unordered_map<uint64_t, CachedFrame*> frameMap;
 
+    FrameEncoderWindowMode windowMode = FrameEncoderWindowMode::Relaxed;
+
     std::vector<float> embeddingMatrixCache;
     bool matrixCacheValid = false;
     uint32_t cacheLength = 0;
@@ -111,6 +113,8 @@ struct FrameEncoder::Impl
     const CachedFrame* findFrame(uint64_t frame_idx) const;
     void invalidateMatrixCache();
     bool findLatestConsecutiveWindow(uint32_t sequence_length, uint64_t& out_begin, uint64_t& out_end) const;
+    bool findLatestRelaxedWindow(uint32_t sequence_length, uint64_t& out_begin, uint64_t& out_end) const;
+    bool findLatestWindow(uint32_t sequence_length, uint64_t& out_begin, uint64_t& out_end) const;
     bool getEmbeddingMatrix(uint32_t sequence_length, std::vector<float>& out_mat);
 };
 
@@ -401,8 +405,12 @@ void FrameEncoder::Impl::upsertFrame(const dev::RadarPointCloud& frame)
         return;
     }
 
-    if (matrixCacheValid && frame_idx != cacheWindowEnd + 1)
+    if (windowMode == FrameEncoderWindowMode::Consecutive &&
+        matrixCacheValid &&
+        frame_idx != cacheWindowEnd + 1)
+    {
         invalidateMatrixCache();
+    }
 
     auto owned = std::make_unique<CachedFrame>();
     owned->frameIndex = frame_idx;
@@ -468,6 +476,30 @@ bool FrameEncoder::Impl::findLatestConsecutiveWindow(
     return false;
 }
 
+bool FrameEncoder::Impl::findLatestRelaxedWindow(
+    uint32_t sequence_length,
+    uint64_t& out_begin,
+    uint64_t& out_end) const
+{
+    if (sequence_length == 0 || frameQueue.size() < sequence_length)
+        return false;
+
+    const size_t start = frameQueue.size() - static_cast<size_t>(sequence_length);
+    out_begin = frameQueue[start]->frameIndex;
+    out_end = frameQueue.back()->frameIndex;
+    return true;
+}
+
+bool FrameEncoder::Impl::findLatestWindow(
+    uint32_t sequence_length,
+    uint64_t& out_begin,
+    uint64_t& out_end) const
+{
+    if (windowMode == FrameEncoderWindowMode::Consecutive)
+        return findLatestConsecutiveWindow(sequence_length, out_begin, out_end);
+    return findLatestRelaxedWindow(sequence_length, out_begin, out_end);
+}
+
 bool FrameEncoder::Impl::getEmbeddingMatrix(uint32_t sequence_length, std::vector<float>& out_mat)
 {
     if (sequence_length == 0)
@@ -475,29 +507,56 @@ bool FrameEncoder::Impl::getEmbeddingMatrix(uint32_t sequence_length, std::vecto
 
     uint64_t begin = 0;
     uint64_t end = 0;
-    if (!findLatestConsecutiveWindow(sequence_length, begin, end))
+    if (!findLatestWindow(sequence_length, begin, end))
         return false;
 
     const size_t matrix_size = static_cast<size_t>(sequence_length) * embeddingSize;
     if (embeddingMatrixCache.size() != matrix_size)
         embeddingMatrixCache.assign(matrix_size, 0.f);
 
-    if (matrixCacheValid &&
-        cacheLength == sequence_length &&
-        cacheWindowBegin + 1 == begin &&
-        cacheWindowEnd + 1 == end)
+    const size_t row_bytes = static_cast<size_t>(embeddingSize) * sizeof(float);
+    const size_t shift_bytes = static_cast<size_t>(sequence_length - 1) * row_bytes;
+
+    if (windowMode == FrameEncoderWindowMode::Consecutive)
     {
-        const size_t row_bytes = static_cast<size_t>(embeddingSize) * sizeof(float);
-        const size_t shift_bytes = static_cast<size_t>(sequence_length - 1) * row_bytes;
+        if (matrixCacheValid &&
+            cacheLength == sequence_length &&
+            cacheWindowBegin + 1 == begin &&
+            cacheWindowEnd + 1 == end)
+        {
+            std::memmove(
+                embeddingMatrixCache.data(),
+                embeddingMatrixCache.data() + embeddingSize,
+                shift_bytes);
+
+            const CachedFrame* frame = findFrame(end);
+            if (!frame)
+                return false;
+
+            std::memcpy(
+                embeddingMatrixCache.data() + shift_bytes,
+                frame->embedding.data(),
+                row_bytes);
+
+            cacheWindowBegin = begin;
+            cacheWindowEnd = end;
+            out_mat = embeddingMatrixCache;
+            return true;
+        }
+    }
+    else if (matrixCacheValid &&
+        cacheLength == sequence_length &&
+        frameQueue.size() > sequence_length &&
+        cacheWindowBegin == frameQueue[frameQueue.size() - static_cast<size_t>(sequence_length) - 1]->frameIndex &&
+        cacheWindowEnd == frameQueue[frameQueue.size() - 2]->frameIndex &&
+        frameQueue.back()->frameIndex == end)
+    {
         std::memmove(
             embeddingMatrixCache.data(),
             embeddingMatrixCache.data() + embeddingSize,
             shift_bytes);
 
-        const CachedFrame* frame = findFrame(end);
-        if (!frame)
-            return false;
-
+        const CachedFrame* frame = frameQueue.back().get();
         std::memcpy(
             embeddingMatrixCache.data() + shift_bytes,
             frame->embedding.data(),
@@ -518,16 +577,31 @@ bool FrameEncoder::Impl::getEmbeddingMatrix(uint32_t sequence_length, std::vecto
         return true;
     }
 
-    for (uint64_t row = 0; row < sequence_length; ++row)
+    if (windowMode == FrameEncoderWindowMode::Consecutive)
     {
-        const CachedFrame* frame = findFrame(begin + row);
-        if (!frame)
-            return false;
+        for (uint64_t row = 0; row < sequence_length; ++row)
+        {
+            const CachedFrame* frame = findFrame(begin + row);
+            if (!frame)
+                return false;
 
-        std::memcpy(
-            embeddingMatrixCache.data() + static_cast<size_t>(row) * embeddingSize,
-            frame->embedding.data(),
-            static_cast<size_t>(embeddingSize) * sizeof(float));
+            std::memcpy(
+                embeddingMatrixCache.data() + static_cast<size_t>(row) * embeddingSize,
+                frame->embedding.data(),
+                row_bytes);
+        }
+    }
+    else
+    {
+        const size_t start = frameQueue.size() - static_cast<size_t>(sequence_length);
+        for (size_t row = 0; row < sequence_length; ++row)
+        {
+            const CachedFrame* frame = frameQueue[start + row].get();
+            std::memcpy(
+                embeddingMatrixCache.data() + row * embeddingSize,
+                frame->embedding.data(),
+                row_bytes);
+        }
     }
 
     cacheLength = sequence_length;
@@ -599,6 +673,22 @@ const FrameEncoderNormalizeSettings& FrameEncoder::getNormalizeSettings() const
 {
     assert(m_impl);
     return m_impl->normalizeSettings;
+}
+
+FrameEncoderWindowMode FrameEncoder::getWindowMode() const
+{
+    assert(m_impl);
+    return m_impl->windowMode;
+}
+
+void FrameEncoder::setWindowMode(FrameEncoderWindowMode mode)
+{
+    assert(m_impl);
+    if (m_impl->windowMode == mode)
+        return;
+
+    m_impl->windowMode = mode;
+    m_impl->invalidateMatrixCache();
 }
 
 void FrameEncoder::setQueueSize(size_t size)

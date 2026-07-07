@@ -266,6 +266,23 @@ const TuyaEP2H::Config& TuyaEP2H::getConfig() const
 // Device
 // ============================================================================
 
+json TuyaEP2H::readStatus(bool force_refresh)
+{
+    if (m_state != DeviceState::Running)
+        return makeQueryError(-4);
+
+    try
+    {
+        const json dps = fetchDatapoints(force_refresh);
+        return buildStatusResult(dps);
+    }
+    catch (const std::exception& ex)
+    {
+        LOG_ERROR("TuyaEP2H readStatus failed: {}", ex.what());
+        return makeQueryError(-5, ex.what());
+    }
+}
+
 int TuyaEP2H::init(const json& config)
 {
     validateTuyaEp2hConfig(config);
@@ -302,7 +319,6 @@ int TuyaEP2H::init(const json& config)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("TuyaEP2H init failed: {}", ex.what());
         m_state = DeviceState::Stopped;
         return -5;
     }
@@ -335,6 +351,9 @@ json TuyaEP2H::query(std::string_view name, const json& params)
 
     try
     {
+        if (name == "status")
+            return readStatus(false);
+
         const json dps = fetchDatapoints();
 
         if (name == "switch")
@@ -375,9 +394,6 @@ json TuyaEP2H::query(std::string_view name, const json& params)
                 {"unit", "kWh"},
             };
         }
-
-        if (name == "status")
-            return buildStatusResult(dps);
 
         return makeQueryError(-8);
     }
@@ -464,18 +480,34 @@ void TuyaEP2H::registerActionsAndQueries()
         m_queryMap[query.name] = &query;
 }
 
-json TuyaEP2H::fetchDatapoints()
+json TuyaEP2H::fetchDatapoints(bool force)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_impl->queryDatapoints();
+    const auto now = std::chrono::steady_clock::now();
+    if (!force && m_cachedDps && (now - m_cachedDpsAt) < kMinQueryInterval)
+        return *m_cachedDps;
+
+    auto dps = m_impl->queryDatapoints();
+    m_cachedDps = dps;
+    m_cachedDpsAt = now;
+    return dps;
+}
+
+void TuyaEP2H::invalidateDatapointCache()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_cachedDps.reset();
 }
 
 int TuyaEP2H::setSwitch(bool on)
 {
     try
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_impl->controlSwitch(on);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_impl->controlSwitch(on);
+        }
+        invalidateDatapointCache();
         return 0;
     }
     catch (const std::exception& ex)

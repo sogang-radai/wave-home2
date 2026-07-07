@@ -5,6 +5,8 @@
 #include <drogon/drogon.h>
 
 #include "../core/logger.h"
+#include "../service/power_manager.h"
+#include "../web/http/v1/iot_store.h"
 #include "util/exe_path.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -151,6 +153,16 @@ void AppState::init(const LaunchOptions& launch)
     server.run();
     running.store(true, std::memory_order_release);
 
+    if (!launch.test_mode && !no_devices)
+    {
+        deviceManager.startDevicesAsync();
+        ws::service::PowerManager::get().start();
+
+        std::string tts_error;
+        if (!web::v1::warmUpTtsService(tts_error))
+            LOG_WARN("TTS warmup failed: {}", tts_error);
+    }
+
     LOG_INFO(
         "App initialized (config: {}, test_mode: {}, no_devices: {})",
         resolved_config.string(),
@@ -167,8 +179,13 @@ void AppState::shutdown()
     LOG_INFO("Shutting down app...");
     running.store(false, std::memory_order_release);
 
+    deviceManager.shutdown();
+    ws::service::PowerManager::get().stop();
+
     gesturePipelines.clear();
     sleepPipelines.clear();
+
+    web::v1::shutdownBackgroundServices();
 
     server.shutdown();
 

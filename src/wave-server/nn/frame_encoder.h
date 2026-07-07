@@ -66,6 +66,12 @@ struct FrameEncoderNormalizeSettings
     float maxDoppler = 0.0f;
 };
 
+enum class FrameEncoderWindowMode
+{
+    Relaxed = 0,
+    Consecutive = 1,
+};
+
 class FrameEncoder
 {
 public:
@@ -77,6 +83,9 @@ public:
 
     uint32_t getEmbeddingSize() const;
     const FrameEncoderNormalizeSettings& getNormalizeSettings() const;
+
+    FrameEncoderWindowMode getWindowMode() const;
+    void setWindowMode(FrameEncoderWindowMode mode);
 
     void setQueueSize(size_t size);
     size_t getQueueSize() const;
