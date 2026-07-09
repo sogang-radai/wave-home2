@@ -2,6 +2,12 @@
 
 ## 변경 내역
 
+- **2026-07-08** — 알람·일정·인사이트·리포트 전면 재설계
+  - `routine_task` → `schedule_task` (`schedule_kind`, `event_date`)
+  - `alarm` 테이블 추가
+  - `insight` 재정의 — `surface`, `date`, `rule_json`, `schedule_task_json`, 원탭 적용
+  - `posture_report`, `weekly_plan_report`, `posture_stat`(초안) 추가
+  - 인사이트·리포트별 RAG 벡터 테이블 (`vec_insight_*`, `vec_posture_report`, `vec_weekly_plan_report`)
 - **2026-07-07** — v1 API·프론트 mock 정렬
   - `routine_task.source_insight_id` 추가
   - `insight.label` 추가
@@ -22,20 +28,31 @@
 - 장치
 - 사용자 설정
 - 통계
-    - 수면
-    - 전력
+  - 수면
+  - 전력
+  - 자세 (초안)
+- 리포트
+  - 수면 (기존)
+  - 전력 (기존)
+  - 자세
+  - 주간 계획 배너
 - 제스처
 - 홈 자동화
-- 헬스 루틴/일정/TODO
+- 루틴/일정 (schedule_task)
+- 알람
 - 알림
 - 에이전트
-    - 채팅
-    - 인사이트
+  - 채팅
+  - 인사이트
 
----------------------------------------------------------------------------------------------------
+---
+
 
 
 ## 계정
+
+
+
 ### 스키마
 
 ```sql
@@ -48,7 +65,9 @@ CREATE TABLE user (
 );
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+
 
 ## 세션
 
@@ -68,9 +87,14 @@ CREATE TABLE user_session (
 );
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+
 
 ## 방
+
+
+
 ### 스키마
 
 ```sql
@@ -92,16 +116,22 @@ CREATE TABLE room_user_map (
 );
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+
 
 ## 장치
+
 - 장치 목록은 json으로 관리함, 테이블은 FK참조 목적으로만(자세한 세팅값은 json에 저장)
 - 서버 기동시 json을 읽어서 db와 대조 후 없던 장치는 추가 => id를 다시 할당하고 json에 반영
 - 만약 json에서 장치가 사라지면 db의 archived를 1로 => 다시 생기면 0으로
 - 디바이스의 성격에 따라 사용되는 방이 여러개 일수도 있음(N:M)
 - 디바이스를 여러명이 공유할 수도 있음(N:M)
 
+
+
 ### 지원 장치 목록
+
 개발 대상
     - Wave Station
         - ESP32
@@ -159,7 +189,9 @@ CREATE TABLE device_room_map (
 );
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+
 
 ## 사용자 설정
 
@@ -214,10 +246,16 @@ CREATE TABLE user_ai_agent_settings (
 }
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+
 
 ## 통계
+
+
+
 ### 수면
+
 - 프레임 원본은 저장하지 않고, 1분을 최소 영구 단위로 축약한다.
 - granularity 로 해상도를 구분한다: 1m(최소 단위), 30m(에이전트 입력/RAG).
 - 30m 행에는 환경 스냅샷과 자연어 요약을 함께 두어 RAG 에 사용한다.
@@ -336,6 +374,8 @@ CREATE VIRTUAL TABLE vec_sleep_report USING vec0 (
 );
 ```
 
+
+
 ### 전력
 
 스마트 플러그의 전력을 받아 장치별 사용량(에너지)을 산출
@@ -452,15 +492,88 @@ CREATE VIRTUAL TABLE vec_power_report USING vec0 (
 );
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+### 자세 (초안)
+
+`posture_stat` 상세 스펙 미확정. 리포트·인사이트·RAG 경로만 열어둔다. `vec_posture_stat` 은 추후.
+
+```sql
+CREATE TABLE posture_stat (
+    id          INTEGER     PRIMARY KEY,
+    user_id     INTEGER     NOT NULL,
+    granularity VARCHAR(3)  NOT NULL,    -- '1h' | '1d' (추후 확장)
+    time_start  VARCHAR(50) NOT NULL,
+    time_end    VARCHAR(50),
+    score       INTEGER,                 -- 자세 점수 0~100
+    metrics     TEXT,                    -- json (스펙 확정 후 정규화)
+
+    CHECK (granularity IN ('1h', '1d')),
+    UNIQUE (user_id, granularity, time_start),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+```
+
+### 자세 리포트
+
+```sql
+CREATE TABLE posture_report (
+    id           INTEGER     PRIMARY KEY,
+    user_id      INTEGER     NOT NULL,
+    period       VARCHAR(10) NOT NULL,    -- 'daily' | 'weekly'
+    period_start VARCHAR(50) NOT NULL,
+    metrics      TEXT,
+    report_text  TEXT,
+
+    CHECK (period IN ('daily', 'weekly')),
+    UNIQUE (user_id, period, period_start),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE VIRTUAL TABLE vec_posture_report USING vec0 (
+    report_id INTEGER PRIMARY KEY,
+    embedding float[768]
+);
+```
+
+권장 인사이트 카드는 `insight` (`surface='posture_report'`, `date` = `period_start`).
+
+### 주간 계획 배너 리포트
+
+에이전트가 `db/query`·`rag/search` 로 일정·수면·자세 데이터를 조회해 narrative 생성. `metrics` 컬럼 없음.
+
+```sql
+CREATE TABLE weekly_plan_report (
+    id           INTEGER     PRIMARY KEY,
+    user_id      INTEGER     NOT NULL,
+    period_start VARCHAR(50) NOT NULL,    -- 해당 주 월요일 'YYYY-MM-DD'
+    headline     VARCHAR(100),
+    report_text  TEXT NOT NULL,
+    created_at   VARCHAR(50) NOT NULL,
+
+    UNIQUE (user_id, period_start),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE VIRTUAL TABLE vec_weekly_plan_report USING vec0 (
+    report_id INTEGER PRIMARY KEY,
+    embedding float[768]
+);
+```
+
+---
+
+
 
 ## 제스처
+
 - 제스처 세트/클래스 정의는 json으로 관리함(gestures/gesture_sets.json + 각 set.json).
 - 세트 테이블은 FK 참조용 id 만 둔다(장치와 동일한 방식). 로그가 어떤 세트에서 나왔는지 가리키는 용도.
 - 세트 내 개별 제스처는 set.json 의 class_id 로 식별하며 별도 테이블을 두지 않는다.
 - 로그는 json 이 바뀌어도 남아야 하므로 이름/동작을 스냅샷으로 저장한다.
 
 스키마
+
 ```sql
 CREATE TABLE gesture_set (
     id       INTEGER NOT NULL,
@@ -488,31 +601,52 @@ CREATE TABLE gesture_log (
 CREATE INDEX idx_gesture_log_occurred ON gesture_log (timestamp);
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+
 
 ## 홈 자동화
 
 트리거 룰과 이벤트 로그. 장치 마스터는 `device` + json 설정을 따른다.
 
+> **런타임**: wave-server 는 IoT 트리거·예약을 SQLite `automation_rule` 테이블에 저장한다.
+> 최초 기동 시 테이블이 비어 있으면 `device/rules.json` 을 **1회 import** 한다.
+
 ### 트리거 룰
 
 ```sql
 CREATE TABLE automation_rule (
-    id            INTEGER      PRIMARY KEY,
-    user_id       INTEGER      NOT NULL,
-    name          VARCHAR(100) NOT NULL,
-    enabled       INTEGER      NOT NULL DEFAULT 1,
-    cooldown_ms   INTEGER      NOT NULL DEFAULT 0,
-    trigger_json  TEXT,                           -- nullable: 디바이스 쿼리 트리거
-    schedule_json TEXT,                           -- nullable: cron/시간 스케줄
-    actions_json  TEXT         NOT NULL,          -- 실행 액션 배열
-    created_at    VARCHAR(50)  NOT NULL,
-    updated_at    VARCHAR(50)  NOT NULL,
+    id              INTEGER      PRIMARY KEY,
+    user_id         INTEGER      NOT NULL,
+    external_id     TEXT         NOT NULL,          -- API 룰 id (예: rule_schedule_tv_off_once)
+    name            VARCHAR(100) NOT NULL,
+    enabled         INTEGER      NOT NULL DEFAULT 1,
+    cooldown_ms     INTEGER      NOT NULL DEFAULT 0,
+    trigger_json    TEXT,                           -- nullable: 디바이스 쿼리 트리거
+    schedule_json   TEXT,                           -- nullable: cron/시간 스케줄
+    actions_json    TEXT         NOT NULL,          -- action + execMode + repeatIntervalMs
+    created_at      VARCHAR(50)  NOT NULL,
+    updated_at      VARCHAR(50)  NOT NULL,
 
+    UNIQUE (external_id),
     FOREIGN KEY (user_id) REFERENCES user(id)
 );
 CREATE INDEX idx_automation_rule_user ON automation_rule (user_id);
 ```
+
+`actions_json` 예시 (단일 액션 룰):
+
+```json
+{
+  "deviceId": "2c9f6a1b4d78e350",
+  "name": "off",
+  "params": {},
+  "execMode": "once",
+  "repeatIntervalMs": 0
+}
+```
+
+
 
 ### 홈 이벤트 로그
 
@@ -538,46 +672,93 @@ CREATE INDEX idx_home_event_user_time ON home_event (user_id, occurred_at);
 
 - 제스처 감지 원본은 `gesture_log`에 남기고, UI용 이벤트는 `home_event`에 복제·요약해 넣을 수 있다.
 
----------------------------------------------------------------------------------------------------
+---
 
-## 헬스 루틴/일정/TODO
-- 프론트 헬스 루틴(주간 계획) 페이지의 요일별 할 일 목록에 대응한다.
-- 하나의 할 일은 요일 + 카테고리 + (선택)시간대를 가진다. 시간대는 자정 기준 '분'으로 저장한다(프론트 startMin/endMin 과 동일).
-- 에이전트가 인사이트 기반으로 할 일을 제안/추가할 수 있으므로 생성 주체(created_by)를 남긴다.
 
-스키마
+
+## 루틴/일정 (schedule_task)
+
+- 프론트 주간 계획·대시보드 "오늘 할일"의 단일 소스. 별도 TODO 테이블 없음.
+- `schedule_kind='weekly'` — 매주 해당 요일 반복. `once` — `event_date` 하루만.
+- 에이전트 인사이트 적용 시 `source_insight_id` 로 연결.
+
 ```sql
-CREATE TABLE routine_task (
-    id           INTEGER      PRIMARY KEY,
-    user_id      INTEGER      NOT NULL,
-    title        VARCHAR(100) NOT NULL,   -- 할 일 제목
-    created_at   VARCHAR(50),             -- 생성 시각 'YYYY-MM-DD HH:MM:SS'
-    created_by   VARCHAR(10)  NOT NULL,   -- 'user' | 'agent' 생성 주체
-    category     VARCHAR(10)  NOT NULL,   -- 예: 'posture' | 'sleep' | 'diet' | 'mental' | ...
-    day_of_week  VARCHAR(3)   NOT NULL,   -- 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
-    start_minute INTEGER,                 -- 자정 기준 분(0~1440). 시간 미지정이면 NULL
-    end_minute   INTEGER,                 -- 자정 기준 분(0~1440)
-    done         INTEGER      NOT NULL,   -- 0 = 미완료, 1 = 완료
-    source_insight_id INTEGER,            -- 인사이트에서 파생 시 (nullable)
+CREATE TABLE schedule_task (
+    id                INTEGER      PRIMARY KEY,
+    user_id           INTEGER      NOT NULL,
+    title             VARCHAR(100) NOT NULL,
+    created_at        VARCHAR(50),
+    created_by        VARCHAR(10)  NOT NULL,   -- 'user' | 'agent'
+    category          VARCHAR(10)  NOT NULL,   -- 'posture' | 'sleep' | 'diet' | 'mental' | ...
+    schedule_kind     VARCHAR(10)  NOT NULL DEFAULT 'weekly',  -- 'weekly' | 'once'
+    day_of_week       VARCHAR(3)   NOT NULL,   -- 'mon'…'sun'
+    event_date        VARCHAR(10),             -- once: 'YYYY-MM-DD'. weekly: NULL
+    start_minute      INTEGER,
+    end_minute        INTEGER,
+    done              INTEGER      NOT NULL,   -- 0 | 1
+    source_insight_id INTEGER,
 
+    CHECK (schedule_kind IN ('weekly', 'once')),
     CHECK (day_of_week IN ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')),
     CHECK (created_by IN ('user', 'agent')),
+    CHECK (
+        (schedule_kind = 'weekly' AND event_date IS NULL)
+        OR (schedule_kind = 'once' AND event_date IS NOT NULL)
+    ),
     CHECK ((start_minute IS NULL AND end_minute IS NULL)
            OR (start_minute >= 0 AND start_minute < end_minute AND end_minute <= 1440)),
     FOREIGN KEY (user_id) REFERENCES user(id),
     FOREIGN KEY (source_insight_id) REFERENCES insight(id)
 );
-CREATE INDEX idx_routine_task_user_day ON routine_task (user_id, day_of_week);
-CREATE INDEX idx_routine_task_insight ON routine_task (source_insight_id);
+CREATE INDEX idx_schedule_task_user_day ON schedule_task (user_id, day_of_week);
+CREATE INDEX idx_schedule_task_user_event ON schedule_task (user_id, event_date);
+CREATE INDEX idx_schedule_task_insight ON schedule_task (source_insight_id);
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+## 알람
+
+```sql
+CREATE TABLE alarm (
+    id              INTEGER      PRIMARY KEY,
+    user_id         INTEGER      NOT NULL,
+    name            VARCHAR(100) NOT NULL,
+    time_minute     INTEGER      NOT NULL,   -- 0~1439
+    days_of_week    TEXT         NOT NULL,   -- JSON []. '[]'=1회성
+    smart_wake      INTEGER      NOT NULL,   -- 0 | 1
+    radar_device_id INTEGER,
+    device_id       INTEGER,
+    method          TEXT         NOT NULL,   -- JSON AlarmMethod
+    enabled         INTEGER      NOT NULL,
+    created_at      VARCHAR(50)  NOT NULL,
+    updated_at      VARCHAR(50)  NOT NULL,
+
+    CHECK (time_minute >= 0 AND time_minute <= 1439),
+    CHECK (smart_wake IN (0, 1)),
+    CHECK (enabled IN (0, 1)),
+    CHECK (smart_wake = 0 OR radar_device_id IS NOT NULL),
+    FOREIGN KEY (user_id) REFERENCES user(id),
+    FOREIGN KEY (radar_device_id) REFERENCES device(id),
+    FOREIGN KEY (device_id) REFERENCES device(id)
+);
+CREATE INDEX idx_alarm_user_enabled ON alarm (user_id, enabled);
+CREATE INDEX idx_alarm_user_time ON alarm (user_id, time_minute);
+```
+
+- API 응답의 `deviceId`·`radarDeviceId` 는 백엔드가 `device` 테이블의 16자리 hex 외부 id 로 변환한다.
+
+---
+
+
 
 ## 알림
+
 - 프론트 알림 패널에 표시되는 알림. 자동화/에이전트/센서 이벤트가 생성한다.
 - type 은 늘어날 수 있어 CHECK 를 걸지 않는다(값은 주석으로 관리). 읽음 여부만 상태로 둔다.
 
 스키마
+
 ```sql
 CREATE TABLE notification (
     id         INTEGER      PRIMARY KEY,
@@ -592,15 +773,22 @@ CREATE TABLE notification (
 CREATE INDEX idx_notification_user_created ON notification (user_id, created_at);
 ```
 
----------------------------------------------------------------------------------------------------
+---
+
+
 
 ## 에이전트
+
+
+
 ### 채팅
+
 - 한 행 = 한 대화 세션. message 컬럼에 대화 전체(메시지 배열)를 json 으로 저장한다.
 - gemma 를 ollama 로 돌리며 OpenAI chat protocol 을 사용한다. 아래는 그 포맷 예시.
 - content 는 문자열 또는 멀티모달 파트 배열(text/image_url)이 될 수 있다.
 
 대화 내용 json 예시 (OpenAI protocol)
+
 ```json
 {
     "messages": [
@@ -619,6 +807,7 @@ CREATE INDEX idx_notification_user_created ON notification (user_id, created_at)
 ```
 
 스키마
+
 ```sql
 CREATE TABLE chat_history (
     id         INTEGER      NOT NULL,
@@ -633,24 +822,80 @@ CREATE TABLE chat_history (
 );
 ```
 
-### 인사이트
-- 에이전트가 생성하는 권장 액션/제안. 프론트 인사이트 카드에 대응한다.
-- 사용자가 승인하면(approved=1) 헬스 루틴(routine_task) 등으로 반영될 수 있다.
 
-스키마
+
+### 인사이트
+
+- UI 표면(`surface`)별 권장 카드·배너. 에이전트가 생성하고 백엔드가 DB 에 저장한다.
+- `actionable=1` 이면 사용자 클릭 한 번으로 `rule_json` 또는 `schedule_task_json` 을 실제 룰·일정에 반영.
+- `date` — 발행일 `'YYYY-MM-DD'` 만. 정렬은 `created_at` asc.
+- RAG: surface 별 `vec_insight_*` (아래).
+
 ```sql
 CREATE TABLE insight (
-    id         INTEGER      PRIMARY KEY,
-    user_id    INTEGER      NOT NULL,
-    domain     VARCHAR(20)  NOT NULL,   -- 'sleep' | 'posture' | 'weekly-plan' | ...
-    period     VARCHAR(10),             -- 'daily' | 'weekly' (해당 없으면 NULL)
-    label      VARCHAR(50),             -- UI 그룹 (예: '오늘의 권장 액션', '다음 주 목표')
-    title      VARCHAR(100) NOT NULL,   -- 인사이트 제목
-    text       VARCHAR(300) NOT NULL,   -- 인사이트 본문(권장 액션 등)
-    approved   INTEGER      NOT NULL,   -- 0 = 미승인, 1 = 사용자 승인
-    created_at VARCHAR(50)  NOT NULL,   -- 생성 시각 'YYYY-MM-DD HH:MM:SS'
+    id                 INTEGER      PRIMARY KEY,
+    user_id            INTEGER      NOT NULL,
+    surface            VARCHAR(20)  NOT NULL,
+    kind               VARCHAR(10)  NOT NULL,   -- 'banner' | 'action' | 'goal' | 'tip'
+    date               VARCHAR(10)  NOT NULL,
+    label              VARCHAR(50),
+    title              VARCHAR(100) NOT NULL,
+    text               VARCHAR(500) NOT NULL,
+    actionable         INTEGER      NOT NULL DEFAULT 0,
+    action_type        VARCHAR(20),             -- 'schedule_task' | 'automation_rule' | 'reservation'
+    approved           INTEGER      NOT NULL DEFAULT 0,
+    rule_json          TEXT,                    -- automation_rule | reservation: Rule JSON
+    schedule_task_json TEXT,                    -- schedule_task: 초안 JSON
+    created_at         VARCHAR(50)  NOT NULL,
 
+    CHECK (surface IN ('dashboard_banner', 'weekly_plan', 'sleep_report', 'posture_report', 'power')),
+    CHECK (kind IN ('banner', 'action', 'goal', 'tip')),
+    CHECK (actionable IN (0, 1)),
+    CHECK (approved IN (0, 1)),
+    CHECK (actionable = 0 OR action_type IS NOT NULL),
+    CHECK (action_type NOT IN ('automation_rule', 'reservation') OR rule_json IS NOT NULL),
+    CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
     FOREIGN KEY (user_id) REFERENCES user(id)
 );
-CREATE INDEX idx_insight_user_domain ON insight (user_id, domain);
+CREATE INDEX idx_insight_user_surface_date ON insight (user_id, surface, date);
 ```
+
+RAG 임베딩 (surface 별 분리)
+
+```sql
+CREATE VIRTUAL TABLE vec_insight_dashboard USING vec0 (
+    insight_id INTEGER PRIMARY KEY,
+    embedding  float[768]
+);
+
+CREATE VIRTUAL TABLE vec_insight_weekly_plan USING vec0 (
+    insight_id INTEGER PRIMARY KEY,
+    embedding  float[768]
+);
+
+CREATE VIRTUAL TABLE vec_insight_sleep USING vec0 (
+    insight_id INTEGER PRIMARY KEY,
+    embedding  float[768]
+);
+
+CREATE VIRTUAL TABLE vec_insight_posture USING vec0 (
+    insight_id INTEGER PRIMARY KEY,
+    embedding  float[768]
+);
+
+CREATE VIRTUAL TABLE vec_insight_power USING vec0 (
+    insight_id INTEGER PRIMARY KEY,
+    embedding  float[768]
+);
+```
+
+`surface` 값
+
+| surface | 용도 |
+|---------|------|
+| `dashboard_banner` | 대시보드 히어로 배너 |
+| `weekly_plan` | 주간 계획 우측 AI 추천 |
+| `sleep_report` | 수면 리포트 내 권장 카드 |
+| `posture_report` | 자세 리포트 내 권장 카드 |
+| `power` | 전력 권장 (추후) |
+

@@ -85,6 +85,8 @@ public:
     uint32_t getEmbeddingSize() const;
     size_t getFrameCount() const;
 
+    bool isClassActive(int32_t class_id) const;
+
 private:
     struct TriggerState
     {

@@ -172,6 +172,235 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_power_energy ON power_energy (COALESCE(devi
 )SQL",
             },
         },
+        {
+            6,
+            "automation rules",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS automation_rule (
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER NOT NULL,
+    external_id     TEXT NOT NULL,
+    name            VARCHAR(100) NOT NULL,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    cooldown_ms     INTEGER NOT NULL DEFAULT 0,
+    trigger_json    TEXT,
+    schedule_json   TEXT,
+    actions_json    TEXT NOT NULL,
+    created_at      VARCHAR(50) NOT NULL,
+    updated_at      VARCHAR(50) NOT NULL,
+    UNIQUE (external_id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_automation_rule_user ON automation_rule (user_id)
+)SQL",
+            },
+        },
+        {
+            7,
+            "chat history",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS chat_history (
+    id         INTEGER      NOT NULL,
+    user_id    INTEGER      NOT NULL,
+    title      VARCHAR(100) NOT NULL DEFAULT '새 대화',
+    created_at VARCHAR(50)  NOT NULL,
+    updated_at VARCHAR(50)  NOT NULL,
+    message    TEXT         NOT NULL DEFAULT '[]',
+    PRIMARY KEY (id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_chat_history_user_updated ON chat_history (user_id, updated_at DESC)
+)SQL",
+            },
+        },
+        {
+            8,
+            "schedule tasks",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS schedule_task (
+    id                INTEGER      PRIMARY KEY,
+    user_id           INTEGER      NOT NULL,
+    title             VARCHAR(100) NOT NULL,
+    created_at        VARCHAR(50),
+    created_by        VARCHAR(10)  NOT NULL DEFAULT 'user',
+    category          VARCHAR(10)  NOT NULL DEFAULT 'mental',
+    schedule_kind     VARCHAR(10)  NOT NULL DEFAULT 'weekly',
+    day_of_week       VARCHAR(3)   NOT NULL,
+    event_date        VARCHAR(10),
+    start_minute      INTEGER,
+    end_minute        INTEGER,
+    done              INTEGER      NOT NULL DEFAULT 0,
+    source_insight_id INTEGER,
+    CHECK (schedule_kind IN ('weekly', 'once')),
+    CHECK (day_of_week IN ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')),
+    CHECK (created_by IN ('user', 'agent')),
+    CHECK (
+        (schedule_kind = 'weekly' AND event_date IS NULL)
+        OR (schedule_kind = 'once' AND event_date IS NOT NULL)
+    ),
+    CHECK ((start_minute IS NULL AND end_minute IS NULL)
+           OR (start_minute >= 0 AND start_minute < end_minute AND end_minute <= 1440)),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_schedule_task_user_day ON schedule_task (user_id, day_of_week)
+)SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_schedule_task_user_event ON schedule_task (user_id, event_date)
+)SQL",
+            },
+        },
+        {
+            9,
+            "insight storage",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS insight (
+    id                 INTEGER      PRIMARY KEY,
+    user_id            INTEGER      NOT NULL,
+    surface            VARCHAR(20)  NOT NULL,
+    kind               VARCHAR(10)  NOT NULL,
+    date               VARCHAR(10)  NOT NULL,
+    label              VARCHAR(50),
+    title              VARCHAR(100) NOT NULL,
+    text               VARCHAR(500) NOT NULL,
+    actionable         INTEGER      NOT NULL DEFAULT 0,
+    action_type        VARCHAR(20),
+    approved           INTEGER      NOT NULL DEFAULT 0,
+    rule_json          TEXT,
+    schedule_task_json TEXT,
+    created_at         VARCHAR(50)  NOT NULL,
+    CHECK (surface IN ('dashboard_banner', 'weekly_plan', 'sleep_report', 'posture_report', 'power')),
+    CHECK (kind IN ('banner', 'action', 'goal', 'tip')),
+    CHECK (actionable IN (0, 1)),
+    CHECK (approved IN (0, 1)),
+    CHECK (actionable = 0 OR action_type IS NOT NULL),
+    CHECK (action_type NOT IN ('automation_rule', 'reservation') OR rule_json IS NOT NULL),
+    CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_insight_user_surface_date ON insight (user_id, surface, date)
+)SQL",
+            },
+        },
+        {
+            10,
+            "sleep session, stat, report tables",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS sleep_session (
+    id             INTEGER     PRIMARY KEY,
+    user_id        INTEGER     NOT NULL,
+    room_id        INTEGER     NOT NULL,
+    radar_id       INTEGER     NOT NULL,
+    station_id     INTEGER,
+    night_date     VARCHAR(50) NOT NULL,
+    onset          VARCHAR(50),
+    final_wake     VARCHAR(50),
+    time_in_bed_s  INTEGER,
+    asleep_total_s INTEGER,
+    efficiency     REAL,
+    stage_totals   TEXT,
+    toss_events    INTEGER,
+    hr_mean        REAL,
+    br_mean        REAL,
+    snore_ratio    REAL,
+    FOREIGN KEY (user_id) REFERENCES user(id),
+    FOREIGN KEY (room_id) REFERENCES room(id),
+    FOREIGN KEY (radar_id) REFERENCES device(id),
+    FOREIGN KEY (station_id) REFERENCES device(id)
+))SQL",
+                R"SQL(
+CREATE TABLE IF NOT EXISTS sleep_stat (
+    id               INTEGER     PRIMARY KEY,
+    user_id          INTEGER     NOT NULL,
+    room_id          INTEGER     NOT NULL,
+    session_id       INTEGER,
+    granularity      VARCHAR(3)  NOT NULL,
+    time_start       VARCHAR(50) NOT NULL,
+    time_end         VARCHAR(50),
+    coverage         REAL        NOT NULL,
+    stage_label      VARCHAR(10),
+    stage_ratio      TEXT,
+    stage_confidence REAL,
+    status_ratio     TEXT,
+    toss_mean        REAL,
+    toss_max         REAL,
+    toss_p90         REAL,
+    toss_events      INTEGER,
+    toss_ratio       TEXT,
+    hr_mean          REAL,
+    hr_min           REAL,
+    hr_max           REAL,
+    hr_std           REAL,
+    hr_confidence    REAL,
+    br_mean          REAL,
+    br_min           REAL,
+    br_max           REAL,
+    br_std           REAL,
+    snore_ratio      REAL,
+    env_temp         REAL,
+    env_lux          REAL,
+    env_noise        REAL,
+    summary_text     TEXT,
+    CHECK (granularity IN ('1m', '30m')),
+    UNIQUE (user_id, granularity, time_start),
+    FOREIGN KEY (user_id) REFERENCES user(id),
+    FOREIGN KEY (room_id) REFERENCES room(id),
+    FOREIGN KEY (session_id) REFERENCES sleep_session(id)
+))SQL",
+                R"SQL(
+CREATE TABLE IF NOT EXISTS sleep_report (
+    id           INTEGER     PRIMARY KEY,
+    user_id      INTEGER     NOT NULL,
+    period       VARCHAR(10) NOT NULL,
+    period_start VARCHAR(50) NOT NULL,
+    session_id   INTEGER,
+    metrics      TEXT,
+    report_text  TEXT,
+    CHECK (period IN ('daily', 'weekly')),
+    UNIQUE (user_id, period, period_start),
+    FOREIGN KEY (user_id) REFERENCES user(id),
+    FOREIGN KEY (session_id) REFERENCES sleep_session(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_sleep_stat_user_granularity_time
+    ON sleep_stat (user_id, granularity, time_start)
+)SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_sleep_session_user_night
+    ON sleep_session (user_id, night_date)
+)SQL",
+            },
+        },
+        {
+            11,
+            "sleep embedding fallback tables",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS sleep_stat_embedding (
+    stat_id         INTEGER     PRIMARY KEY,
+    dim             INTEGER     NOT NULL,
+    embedding_blob  BLOB        NOT NULL,
+    updated_at      VARCHAR(50) NOT NULL,
+    FOREIGN KEY (stat_id) REFERENCES sleep_stat(id)
+))SQL",
+                R"SQL(
+CREATE TABLE IF NOT EXISTS sleep_report_embedding (
+    report_id       INTEGER     PRIMARY KEY,
+    dim             INTEGER     NOT NULL,
+    embedding_blob  BLOB        NOT NULL,
+    updated_at      VARCHAR(50) NOT NULL,
+    FOREIGN KEY (report_id) REFERENCES sleep_report(id)
+))SQL",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)
@@ -348,6 +577,33 @@ bool runMigrations(const drogon::orm::DbClientPtr& client)
 
     LOG_INFO("Database migrations complete (version {})", currentVersion(client));
     return true;
+}
+
+bool validateDatabaseSchema(const drogon::orm::DbClientPtr& client)
+{
+    if (!client)
+    {
+        LOG_ERROR("Database client is null");
+        return false;
+    }
+
+    try
+    {
+        const int version = currentVersion(client);
+        if (version <= 0)
+        {
+            LOG_ERROR("Database schema_version is empty or missing");
+            return false;
+        }
+
+        LOG_INFO("Database schema validated (version {}, migrations skipped)", version);
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        LOG_ERROR("Database schema validation failed: {}", e.what());
+        return false;
+    }
 }
 
 } // namespace db

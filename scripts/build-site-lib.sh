@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared frontend build + deploy. Source from build-site.sh / build-site-test.sh.
 # Required: WAVE_SITE_DEPLOY_DIR (e.g. site or site-test)
-# Optional: WAVE_SITE_USE_MOCK (true|false, default true)
+# Optional: WAVE_SITE_USE_MOCK, WAVE_SITE_API_MODE, WAVE_SITE_ANCHOR_DATE
 
 set -euo pipefail
 
@@ -37,14 +37,28 @@ install_deps() {
 
 install_deps
 
-if [[ "$USE_MOCK" == "true" ]]; then
+API_MODE="${WAVE_SITE_API_MODE:-}"
+if [[ -z "$API_MODE" ]]; then
+    if [[ "$USE_MOCK" == "true" ]]; then
+        API_MODE_FLAG=mock
+    else
+        API_MODE_FLAG=real
+    fi
+else
+    API_MODE_FLAG="$API_MODE"
+fi
+
+if [[ "$API_MODE_FLAG" == "mock" ]]; then
     MOCK_FLAG=true
 else
     MOCK_FLAG=false
 fi
 
-echo "Building wave-home-front (REACT_APP_USE_MOCK=$MOCK_FLAG) → $SITE_DIR"
-REACT_APP_USE_MOCK="$MOCK_FLAG" npm run build
+echo "Building wave-home-front (REACT_APP_API_MODE=$API_MODE_FLAG REACT_APP_USE_MOCK=$MOCK_FLAG) → $SITE_DIR"
+REACT_APP_API_MODE="$API_MODE_FLAG" \
+REACT_APP_USE_MOCK="$MOCK_FLAG" \
+REACT_APP_ANCHOR_DATE="${WAVE_SITE_ANCHOR_DATE:-}" \
+npm run build
 
 detect_out_dir() {
     if [[ -n "${WAVE_SITE_OUT_DIR:-}" ]]; then
@@ -122,4 +136,4 @@ rm -rf "$SITE_DIR"
 mkdir -p "$SITE_DIR"
 cp -a "$OUT_PATH"/. "$SITE_DIR/"
 
-echo "Site deployed to $SITE_DIR (from $OUT_PATH, mock=$USE_MOCK)"
+echo "Site deployed to $SITE_DIR (from $OUT_PATH, api_mode=$API_MODE_FLAG)"

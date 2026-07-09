@@ -3,7 +3,11 @@
 #include <cstdio>
 #include <random>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
+#include "../../../app/app_state.h"
+#include "../../../core/json.h"
 #include "../../../core/logger.h"
 #include "rooms_store.h"
 
@@ -18,6 +22,7 @@ namespace
         "wave_cam",
         "ir_reciever",
         "reolink_e1_pro",
+        "droid_cam",
         "wave_station",
     };
 
@@ -28,6 +33,59 @@ namespace
             return {};
         const auto end = value.find_last_not_of(" \t\n\r");
         return value.substr(start, end - start + 1);
+    }
+
+    Json::Value nlohmannToJsonValue(const json& value)
+    {
+        Json::CharReaderBuilder builder;
+        std::string errors;
+        std::istringstream stream(value.dump());
+        Json::Value out;
+        if (!Json::parseFromStream(builder, stream, &out, &errors))
+            return Json::Value(Json::objectValue);
+        return out;
+    }
+
+    Json::Value manifestConfigToDeviceJson(const json& cfg)
+    {
+        Json::Value device;
+        device["id"] = cfg.value("id", std::string());
+        device["name"] = cfg.value("name", std::string());
+        device["description"] = cfg.value("description", std::string());
+        device["enabled"] = cfg.value("enabled", true);
+        device["class"] = cfg.value("class", std::string());
+        device["room_id"] = Json::nullValue;
+
+        if (cfg.contains("interface") && cfg["interface"].is_object())
+            device["interface"] = nlohmannToJsonValue(cfg["interface"]);
+        else
+            device["interface"] = Json::Value(Json::objectValue);
+
+        if (cfg.contains("settings") && cfg["settings"].is_object())
+            device["settings"] = nlohmannToJsonValue(cfg["settings"]);
+
+        return device;
+    }
+
+    bool isInputClassLocal(const std::string& device_class)
+    {
+        for (const auto* cls : kInputClasses)
+        {
+            if (device_class == cls)
+                return true;
+        }
+        return false;
+    }
+
+    void appendDeviceToBuckets(
+        const Json::Value& device,
+        Json::Value& input,
+        Json::Value& output)
+    {
+        if (isInputClassLocal(device["class"].asString()))
+            input.append(device);
+        else
+            output.append(device);
     }
 }
 
@@ -122,6 +180,8 @@ Json::Value DevicesStore::listDevices() const
     Json::Value input(Json::arrayValue);
     Json::Value output(Json::arrayValue);
 
+    std::unordered_map<std::string, Json::Value> db_by_external_id;
+
     auto rows = m_client->execSqlSync(
         R"SQL(
 SELECT d.id, d.external_id, d.name, d.description, d.class, d.enabled, d.interface_json, d.settings_json
@@ -133,12 +193,36 @@ ORDER BY d.id
     for (const auto& row : rows)
     {
         const auto device_id = row["id"].as<int64_t>();
+        const auto external_id = row["external_id"].as<std::string>();
         const auto room_id = findRoomIdForDevice(device_id);
-        const auto device = rowToDeviceJson(row, room_id);
-        if (isInputClass(device["class"].asString()))
-            input.append(device);
+        db_by_external_id.emplace(external_id, rowToDeviceJson(row, room_id));
+    }
+
+    std::unordered_set<std::string> emitted;
+
+    const auto& manifest = ws::AppState::get().deviceManager.manifestEntries();
+    for (const auto& entry : manifest)
+    {
+        const auto external_id = entry.config.value("id", std::string());
+        if (external_id.empty())
+            continue;
+
+        Json::Value device;
+        const auto db_it = db_by_external_id.find(external_id);
+        if (db_it != db_by_external_id.end())
+            device = db_it->second;
         else
-            output.append(device);
+            device = manifestConfigToDeviceJson(entry.config);
+
+        emitted.insert(external_id);
+        appendDeviceToBuckets(device, input, output);
+    }
+
+    for (const auto& [external_id, device] : db_by_external_id)
+    {
+        if (emitted.contains(external_id))
+            continue;
+        appendDeviceToBuckets(device, input, output);
     }
 
     body["input_devices"] = input;

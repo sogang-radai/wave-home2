@@ -18,7 +18,9 @@
 
 #include "../core/coredefs.h"
 #include "../core/logger.h"
+#include "../app/app_state.h"
 #include "../db/database.h"
+#include "demo_policy.h"
 #include "util/exe_path.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -90,7 +92,7 @@ Server::Server() :
 
 Server::~Server() = default;
 
-bool Server::init(const json& config, bool test_mode)
+bool Server::init(const json& config, bool test_mode, bool demo_mode)
 {
     if (m_impl->running.load(std::memory_order_acquire))
     {
@@ -106,8 +108,11 @@ bool Server::init(const json& config, bool test_mode)
     const size_t thread_num = config.value("threads_num", 2);
     const std::string document_root = config.value(
         "document_root",
-        test_mode ? "../site-test" : "../site");
+        test_mode ? "../site-test" : (demo_mode ? "../site-demo" : "../site"));
     const std::string home_page = config.value("home_page", "index.html");
+    const bool skip_migrations = config.value("skip_migrations", false);
+    const bool read_only = config.value("read_only", false);
+
     const std::string database_path = config.value("database_path", "data/database.db");
 
     const auto resolved_document_root = [&]() -> std::filesystem::path
@@ -117,7 +122,7 @@ bool Server::init(const json& config, bool test_mode)
             return path;
 
 #if defined(WAVE_SOURCE_DIR)
-        const auto fallback_name = test_mode ? "site-test" : "site";
+        const auto fallback_name = test_mode ? "site-test" : (demo_mode ? "site-demo" : "site");
         const auto fallback = std::filesystem::path(WAVE_SOURCE_DIR) / fallback_name;
         if (std::filesystem::exists(fallback))
         {
@@ -137,12 +142,25 @@ bool Server::init(const json& config, bool test_mode)
     if (!std::filesystem::exists(resolved_document_root))
     {
         LOG_WARN(
-            "Document root does not exist: {} (run scripts/build-site.sh or build-site-test.sh)",
+            "Document root does not exist: {} (run scripts/build-site.sh, build-site-test.sh, or build-site-demo.sh)",
             resolved_document_root.string());
     }
 
-    if (!test_mode && !ensureParentDir(resolved_database_path))
-        return false;
+    if (!test_mode)
+    {
+        if (read_only)
+        {
+            if (!std::filesystem::exists(resolved_database_path))
+            {
+                LOG_ERROR("Read-only database not found: {}", resolved_database_path.string());
+                return false;
+            }
+        }
+        else if (!ensureParentDir(resolved_database_path))
+        {
+            return false;
+        }
+    }
 
     if (!ensureDir(resolved_upload_path))
         return false;
@@ -158,23 +176,36 @@ bool Server::init(const json& config, bool test_mode)
     app.setUploadPath(resolved_upload_path.string());
     app.addListener("0.0.0.0", port);
 
+    if (demo_mode)
+        registerDemoPolicy();
+
     if (!test_mode)
     {
         drogon::orm::Sqlite3Config db_config;
         db_config.connectionNumber = thread_num > 0 ? thread_num : 1;
-        db_config.filename = resolved_database_path.string();
+        std::string db_filename = resolved_database_path.string();
+        if (read_only)
+            db_filename += "?mode=ro";
+        db_config.filename = std::move(db_filename);
         db_config.name = "default";
         db_config.timeout = -1.0;
         app.addDbClient(db_config);
 
-        app.registerBeginningAdvice([]()
+        const bool skip_db = skip_migrations;
+        app.registerBeginningAdvice([skip_db]()
         {
             auto client = drogon::app().getDbClient();
-            if (!db::runMigrations(client))
+            const bool ok = skip_db
+                ? db::validateDatabaseSchema(client)
+                : db::runMigrations(client);
+            if (!ok)
             {
-                LOG_ERROR("Database migration failed; stopping server");
+                LOG_ERROR("Database preparation failed; stopping server");
                 drogon::app().quit();
+                return;
             }
+
+            AppState::get().onDatabaseReady(client);
         });
     }
     else
@@ -186,13 +217,16 @@ bool Server::init(const json& config, bool test_mode)
     m_impl->documentRoot = resolved_document_root.string();
 
     LOG_INFO(
-        "Web server configured: port={}, threads={}, document_root={}, database={}, uploads={}, test_mode={}",
+        "Web server configured: port={}, threads={}, document_root={}, database={}, uploads={}, test_mode={}, demo_mode={}, read_only={}, skip_migrations={}",
         port,
         thread_num,
         m_impl->documentRoot,
         test_mode ? "(disabled)" : resolved_database_path.string(),
         resolved_upload_path.string(),
-        test_mode);
+        test_mode,
+        demo_mode,
+        read_only,
+        skip_migrations);
 
     return true;
 }

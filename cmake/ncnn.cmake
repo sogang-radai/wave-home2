@@ -40,6 +40,13 @@ set(NCNN_ENABLED_LAYERS
     memorydata split lstm
 )
 
+if(WAVE_BUILD_POSE)
+    include("${CMAKE_CURRENT_LIST_DIR}/ncnn_pose.cmake")
+    set(NCNN_PIXEL ON CACHE BOOL "" FORCE)
+    list(APPEND NCNN_ENABLED_LAYERS ${NCNN_POSE_EXTRA_LAYERS})
+    list(REMOVE_DUPLICATES NCNN_ENABLED_LAYERS)
+endif()
+
 set(NCNN_ALL_LAYERS
     absval argmax batchnorm bias bnll concat convolution crop deconvolution
     dropout eltwise elu embed exp flatten innerproduct input log lrn memorydata

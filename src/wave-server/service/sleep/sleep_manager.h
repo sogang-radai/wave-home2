@@ -1,0 +1,132 @@
+#pragma once
+
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
+#include "../../core/json.h"
+#include "../../nn/sleep_pipeline.h"
+
+#include "sleep_aggregator.h"
+#include "sleep_session_fsm.h"
+#include "sleep_stage_synth.h"
+#include "sleep_vitals.h"
+#include "sleep_vec_store.h"
+
+#include "core/coredefs.h"
+
+WAVE_NAMESPACE_BEGIN
+SERVICE_NAMESPACE_BEGIN
+
+struct SleepRoomConfig
+{
+    int32_t roomId = 0;
+    int32_t userId = 0;
+    int64_t radarDbId = 0;
+    int64_t stationDbId = 0;
+    std::string radarExternalId;
+    std::optional<std::string> stationExternalId;
+};
+
+struct SleepRuntime
+{
+    SleepRoomConfig config;
+    std::unique_ptr<nn::SleepPipeline> pipeline;
+    uint64_t lastFrameIndex = 0;
+    SecondAggregator secondAgg;
+    MinuteAggregator minuteAgg;
+    ThirtyMinAggregator thirtyMinAgg;
+    SessionFsm sessionFsm;
+    std::string activeSecondStart;
+    std::string activeMinuteStart;
+    std::string activeThirtyMinStart;
+    bool secondInitialized = false;
+    bool minuteInitialized = false;
+    bool thirtyMinInitialized = false;
+    VitalTargetPicker vitalPicker;
+    VitalSignsProcessor vitalProcessor;
+    VitalEstimate lastVitals;
+    int32_t asleepMinutesBeforeWindow = 0;
+    std::vector<StageSynthResult> sessionStageWindows;
+};
+
+enum class SleepJobKind
+{
+    Summary30m,
+    DailyReport,
+    WeeklyReport,
+};
+
+struct SleepJob
+{
+    SleepJobKind kind = SleepJobKind::Summary30m;
+    int32_t userId = 0;
+    int32_t roomId = 0;
+    int64_t statId = 0;
+    int64_t sessionId = 0;
+    std::string period;
+    std::string periodStart;
+    json payload;
+};
+
+class SleepManager
+{
+public:
+    static SleepManager& get();
+
+    void start();
+    void stop();
+    void reconcile();
+
+private:
+    SleepManager() = default;
+    ~SleepManager();
+    SleepManager(const SleepManager&) = delete;
+    SleepManager& operator=(const SleepManager&) = delete;
+
+    void runLoop();
+    void runJobLoop();
+    void tickRuntime(SleepRuntime& runtime);
+    void consumePointCloud(SleepRuntime& runtime);
+    void ingestResult(SleepRuntime& runtime, const nn::SleepResult& result);
+    void flushSecondBoundary(SleepRuntime& runtime, const std::string& now_ts);
+    void flushMinuteBoundary(SleepRuntime& runtime, const std::string& now_ts);
+    void flushThirtyMinBoundary(SleepRuntime& runtime, const std::string& now_ts);
+    void persistMinuteStat(SleepRuntime& runtime, const MinuteStat& stat);
+    void persistThirtyMinStat(SleepRuntime& runtime, const ThirtyMinStat& stat);
+    void handleSessionClose(SleepRuntime& runtime, const SessionCloseResult& close);
+    void backfillSessionId(int32_t userId, const std::string& onset, const std::string& final_wake, int64_t session_id);
+    void enqueueJob(SleepJob job);
+    void processJob(const SleepJob& job);
+    bool initPipeline(SleepRuntime& runtime, std::string& out_error);
+    std::vector<SleepRoomConfig> loadRoomConfigs();
+    void tickVitals(SleepRuntime& runtime);
+    static bool isSleepEnabledRadar(const std::string& external_id);
+    std::optional<double> queryStationEnv(const std::string& external_id, const char* field);
+    void storeAgentEmbeddings(SleepJobKind kind, int64_t row_id, const std::vector<float>& embedding);
+
+    mutable std::mutex m_mutex;
+    std::unordered_map<int32_t, SleepRuntime> m_runtimes;
+
+    std::mutex m_jobMutex;
+    std::condition_variable m_jobCv;
+    std::deque<SleepJob> m_jobs;
+
+    std::atomic<bool> m_running{false};
+    std::thread m_worker;
+    std::thread m_jobWorker;
+    std::mutex m_stopMutex;
+    std::condition_variable m_stopCv;
+    bool m_modelReady = false;
+};
+
+SERVICE_NAMESPACE_END
+WAVE_NAMESPACE_END

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <future>
@@ -10,6 +11,7 @@
 
 #include "../device.h"
 #include "../interface/audio.h"
+#include "../interface/infrared.h"
 #include "../protocol/wave_station.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -24,7 +26,9 @@ class RadaiWs :
     public Queryable,
     public Actionable,
     public IAudioSource,
-    public IAudioSink
+    public IAudioSink,
+    public IIrReceiver,
+    public IIrTransmitter
 {
     struct Impl;
     friend struct Impl;
@@ -77,6 +81,7 @@ public:
     {
         bool micPcm = false;
         bool micOpus = false;
+        bool irReceive = false;
         bool ambientLight = false;
         bool temperature = false;
         bool humidity = false;
@@ -112,6 +117,7 @@ public:
     const SubscriptionState& getSubscriptionState() const;
     ConnectionState getConnectionState() const;
     bool isLinkConnected() const;
+    bool isIoActive() const;
 
     // Device
     int init(const json& config) override;
@@ -140,6 +146,22 @@ public:
     std::future<bool> playFrameAsync(const AudioFrame& frame) override;
     void stopPlayback() override;
 
+    // IIrTransmitter
+    int transmitTimings(
+        const std::vector<uint16_t>& timingsUs,
+        uint32_t carrierHz = 38000,
+        uint16_t repeat = 0) override;
+    std::future<int> transmitTimingsAsync(
+        const std::vector<uint16_t>& timingsUs,
+        uint32_t carrierHz = 38000,
+        uint16_t repeat = 0) override;
+
+    // IIrReceiver
+    bool getLatestIr(IrTimingFrame& outFrame) override;
+    bool waitForIr(IrTimingFrame& outFrame, uint32_t timeoutMs) override;
+    std::future<bool> getLatestIrAsync(IrTimingFrame& outFrame) override;
+    std::future<bool> waitForIrAsync(IrTimingFrame& outFrame, uint32_t timeoutMs) override;
+
 private:
     void registerActionsAndQueries();
 
@@ -149,6 +171,7 @@ private:
     int subscribe(wsp::Type targetType, uint16_t intervalMs, uint32_t options);
     int unsubscribe(wsp::Type targetType);
     int ensureMicSubscription();
+    int ensureIrSubscription();
 
     int sendHeartbeat();
     int sendIrRaw(const std::vector<uint16_t>& rawUs, uint32_t carrierHz, uint16_t repeat);
@@ -163,6 +186,7 @@ private:
     void updateEnv(const EnvSnapshot& env);
     void onClientConnected();
     void onSensor(wsp::Type type, const wsp::SensorBody& sensor);
+    void onIrReceived(const wsp::IrReceiveBody& body, const std::vector<uint16_t>& timings);
 
     std::unique_ptr<Impl> m_impl;
     InterfaceConfig m_interface;
@@ -171,34 +195,54 @@ private:
     Capabilities m_capabilities;
     SubscriptionState m_subscriptions;
     EnvSnapshot m_env;
+    IrTimingFrame m_lastIr;
+    uint64_t m_irGeneration = 0;
     float m_micLevel = 0.0f;
     ConnectionState m_connectionState = ConnectionState::Disconnected;
+    std::atomic<bool> m_ioActive{false};
     mutable std::mutex m_mutex;
 };
 
 /*
 Queries:
-  capabilities, session, status
-  mic_level   — recent microphone level (0..1)
-  env         — lux / temperature / humidity snapshot
+  capabilities  — mic/speaker/IR/sensor flags
+  session       — host, port, TCP link state, audio format
+  status        — connection, subscriptions, mic queue/level
+  mic_level     — recent microphone RMS level (0..1)
+  env           — lux / temperature / humidity snapshot
+  last_ir       — most recent IrReceive: timings, matched commandId, overflow
 
 Actions:
-  send_ir     { "commandId": "<ir_list.json entry>" }
-  speak       { "text": "..." }  — TTS pipeline → IAudioSink / SpkComp (planned)
-  subscribe   { "target": "mic_opus"|"mic_pcm"|"ambient_light"|..., "intervalMs": 0 }
-  unsubscribe { "target": "mic_opus"|... }
+  send_ir       { "commandId": "<ir_list.json id>", "repeat": 0 }
+                — IrTransmit (host → device → IR LED)
+  subscribe     { "target": "mic_opus"|"mic_pcm"|"ir_receive"|"ambient_light"|...,
+                  "intervalMs": 0, "compressed": false, "on_change_only": false }
+  unsubscribe   { "target": "mic_opus"|"ir_receive"|... }
+  speak         { "text": "..." }  — TTS → IAudioSink / SpkComp (planned)
 
-Audio:
-  IAudioSource — MicPCM / MicComp decoded to PCM; queue sized via setAudioQueueSize
-  IAudioSink   — playFrame encodes to SpkPCM or SpkComp per AudioConfig
+Audio (IAudioSource / IAudioSink):
+  Source — MicPCM or MicComp (Opus→PCM); lazy subscribe on getLatestFrame
+  Sink   — playFrame → SpkComp or SpkPCM; stopPlayback → LastFrame marker
 
-WSP1 (host → device):
-  Subscribe / Unsubscribe / Heartbeat
-  SpkPCM / SpkComp, IrTransmit
+IR (IIrReceiver / IIrTransmitter):
+  Receiver — getLatestIr / waitForIr; lazy subscribe on first use
+  Transmitter — transmitTimings (raw μs mark/space array)
 
-WSP1 (device → host):
-  MicPCM / MicComp, IrReceive, AmbientLight / Temperature / Humidity
-  Ack / Error
+IR receive (device → host, WSP1 IrReceive):
+  ESP32 pushes raw mark/space timings (μs) when a remote is detected.
+  On connect, auto-subscribes IrReceive when capabilities.ir_receive is true.
+  Timings are matched against settings.ir_list_path (default bin/device/ir_list.json).
+  Matched commandId is exposed via last_ir; when wave-server automation is
+  running, ir_recv rule triggers are fired via TriggerManager.
+
+IR transmit (host → device, WSP1 IrTransmit):
+  send_ir loads timings from ir_list.json and sends IrTransmitBody + rawData.
+
+WSP1 control (host → device):
+  Subscribe, Unsubscribe, Heartbeat
+
+WSP1 data (device → host):
+  MicPCM, MicComp, IrReceive, AmbientLight, Temperature, Humidity, Ack, Error
 */
 
 DEVICE_NAMESPACE_END

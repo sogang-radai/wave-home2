@@ -21,6 +21,7 @@
             "name": "침실 하방 레이더",
             "room_id": "3a7f2c9d10b4e85f",
             "settings": {
+                "sleep": true,
                 "angle_y": 0.0,
                 "angle_z": 0.0,
                 "max_x": 5.0,
@@ -33,13 +34,45 @@
             "vendor": "SRS"
         },
         {
+            "class": "srs_r4sn",
+            "description": "SRS R4SN mmWave 레이더 (책상, 제스처 감지용)",
+            "enabled": true,
+            "id": "8d4f2a7c93b105e6",
+            "interface": {
+                "host": "192.168.0.163",
+                "iq": {
+                    "enabled": true,
+                    "port": 29171
+                },
+                "mac": "68:96:6A:4C:6B:12",
+                "point_cloud": {
+                    "enabled": true,
+                    "port": 29172
+                }
+            },
+            "model": "Retina-4SN",
+            "name": "침실 책상 레이더",
+            "room_id": "8d4f2a7c93b105e6",
+            "settings": {
+                "angle_y": 0.0,
+                "angle_z": 0.0,
+                "max_x": 3.0,
+                "max_y": 3.0,
+                "max_z": 1.5,
+                "min_x": -3.0,
+                "min_y": 0.0,
+                "min_z": -1.5
+            },
+            "vendor": "SRS"
+        },
+        {
             "class": "wave_station",
             "description": "침실 Wave Station",
             "enabled": true,
             "id": "5c1e8b6402fda973",
             "interface": {
-                "host": "192.168.0.150",
-                "port": 8765
+                "host": "192.168.0.56",
+                "port": 41737
             },
             "model": "Wave Station",
             "name": "Wave Station",
@@ -49,6 +82,20 @@
                 "sample_size": 16
             },
             "vendor": "RADAI"
+        },
+        {
+            "class": "droid_cam",
+            "description": "DroidCam 폰 카메라",
+            "enabled": true,
+            "id": "a3d7c91e2f0486b5",
+            "interface": {
+                "host": "192.168.0.23",
+                "mac": "6A:49:10:A2:0C:EC",
+                "port": 4747
+            },
+            "model": "DroidCam WiFi",
+            "name": "폰 카메라",
+            "vendor": "Dev47Apps"
         },
         {
             "class": "reolink_e1_pro",
@@ -69,7 +116,7 @@
         },
         {
             "class": "tuya_ep2h",
-            "description": "거실 스마트 플러그1 - 에어컨",
+            "description": "거실 선풍기 스마트 플러그",
             "enabled": true,
             "id": "6b0f3e8a92c47d15",
             "interface": {
@@ -80,55 +127,55 @@
                 "version": "3.3"
             },
             "model": "EP2-H",
-            "name": "플러그1",
+            "name": "플러그1 - 선풍기",
             "vendor": "Tenpl"
         },
         {
             "class": "tuya_ep2h",
-            "description": "거실 스마트 플러그2 - 선풍기",
+            "description": "침실 컴퓨터 스마트 플러그",
             "enabled": true,
             "id": "1f8c5a2e7b93064d",
             "interface": {
-                "device_id": "eb81849da1465e6d64luja",
-                "host": "192.168.0.38",
-                "local_key": "s^q2?;Ur|q{SlG(>",
-                "mac": "50:8B:B9:9F:6E:83",
+                "device_id": "ebf361525181a5fe4e6rcp",
+                "host": "192.168.0.54",
+                "local_key": "fVvBspSXY5oEhtJE",
+                "mac": "50:8B:B9:9E:88:3C",
                 "version": "3.3"
             },
             "model": "EP2-H",
-            "name": "플러그2",
+            "name": "플러그2 - 컴퓨터",
             "vendor": "Tenpl"
         },
         {
             "class": "tuya_ep2h",
-            "description": "침실 스마트 플러그 - 컴퓨터",
+            "description": "침실 에어컨 스마트 플러그",
             "enabled": true,
             "id": "4a2d9c7f1e60b358",
             "interface": {
                 "device_id": "eb3646ff62e21274bbee9v",
-                "host": "192.168.0.39",
-                "local_key": "s^q2?;Ur|q{SlG(>",
-                "mac": "50:8B:B9:9F:6E:83",
+                "host": "192.168.0.53",
+                "local_key": "/2W'DMzaGa?1&e>L",
+                "mac": "50:8B:B9:A2:7B:A6",
                 "version": "3.3"
             },
             "model": "EP2-H",
-            "name": "플러그3",
+            "name": "플러그3 - 에어컨",
             "vendor": "Tenpl"
         },
         {
             "class": "tuya_ep2h",
-            "description": "부엌 스마트 플러그 - 선풍기",
+            "description": "부엌 인덕션 스마트 플러그",
             "enabled": true,
             "id": "7e3b1d8a5f02c964",
             "interface": {
-                "device_id": "ebf361525181a5fe4e6rcp",
-                "host": "192.168.0.40",
-                "local_key": "s^q2?;Ur|q{SlG(>",
-                "mac": "50:8B:B9:9F:6E:83",
+                "device_id": "eb81849da1465e6d64luja",
+                "host": "192.168.0.52",
+                "local_key": "Ua|r'`.u=]>$pIqP",
+                "mac": "50:8B:B9:A6:42:5F",
                 "version": "3.3"
             },
             "model": "EP2-H",
-            "name": "플러그4",
+            "name": "플러그4 - 인덕션",
             "vendor": "Tenpl"
         },
         {
@@ -142,7 +189,7 @@
                 "token": "13135473"
             },
             "model": "G7 G70D S32DG700",
-            "name": "TV",
+            "name": "침실 TV",
             "room_id": "3f91c6e52ad047b8",
             "vendor": "Samsung"
         },

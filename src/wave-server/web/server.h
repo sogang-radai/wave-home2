@@ -14,7 +14,7 @@ public:
     Server();
     ~Server();
 
-    bool init(const json& config, bool test_mode = false);
+    bool init(const json& config, bool test_mode, bool demo_mode = false);
     void shutdown();
 
     // run server on background thread

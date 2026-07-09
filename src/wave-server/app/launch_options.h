@@ -11,9 +11,9 @@ WAVE_NAMESPACE_BEGIN
 struct LaunchOptions
 {
     std::string config_path = "config.json";
+    std::string profile = "real";
     std::optional<uint16_t> port;
     std::optional<std::string> document_root;
-    bool test_mode = false;
     bool no_devices = false;
 };
 

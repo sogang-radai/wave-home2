@@ -16,6 +16,7 @@ struct Migration
 };
 
 bool runMigrations(const drogon::orm::DbClientPtr& client);
+bool validateDatabaseSchema(const drogon::orm::DbClientPtr& client);
 
 } // namespace db
 

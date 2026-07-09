@@ -13,6 +13,7 @@
 
 #include <fcntl.h>
 #include <netdb.h>
+#include <poll.h>
 #include <signal.h>
 #include <spawn.h>
 #include <sys/socket.h>
@@ -109,7 +110,7 @@ namespace
         return fallback;
     }
 
-    int connect_tcp(const std::string& host, uint16_t port)
+    int connect_tcp(const std::string& host, uint16_t port, int timeout_ms = 5000)
     {
         addrinfo hints {};
         hints.ai_family = AF_UNSPEC;
@@ -126,10 +127,45 @@ namespace
             fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
             if (fd < 0)
                 continue;
-            if (::connect(fd, ai->ai_addr, ai->ai_addrlen) == 0)
+
+            const int flags = ::fcntl(fd, F_GETFL, 0);
+            if (flags >= 0)
+                ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+            const int connect_rc = ::connect(fd, ai->ai_addr, ai->ai_addrlen);
+            if (connect_rc == 0)
                 break;
-            ::close(fd);
-            fd = -1;
+
+            if (connect_rc < 0 && errno != EINPROGRESS)
+            {
+                ::close(fd);
+                fd = -1;
+                continue;
+            }
+
+            pollfd pfd {};
+            pfd.fd = fd;
+            pfd.events = POLLOUT;
+            const int poll_rc = ::poll(&pfd, 1, timeout_ms);
+            if (poll_rc <= 0)
+            {
+                ::close(fd);
+                fd = -1;
+                continue;
+            }
+
+            int socket_error = 0;
+            socklen_t error_len = sizeof(socket_error);
+            if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_len) != 0 || socket_error != 0)
+            {
+                ::close(fd);
+                fd = -1;
+                continue;
+            }
+
+            if (flags >= 0)
+                ::fcntl(fd, F_SETFL, flags);
+            break;
         }
         freeaddrinfo(result);
         return fd;
@@ -779,39 +815,72 @@ bool Go2RtcService::LiveMp4Stream::open(const std::string& name)
     if (!Go2RtcService::get().getStreamEndpoint(name, host, port))
         return false;
 
-    const int fd = connect_tcp(host, port);
-    if (fd < 0)
-        return false;
+    constexpr int kMaxAttempts = 8;
+    constexpr auto kRetryDelay = std::chrono::milliseconds(250);
 
-    const std::string path = "/api/stream.mp4?src=" + url_encode(name);
-    std::string request;
-    request += "GET " + path + " HTTP/1.1\r\n";
-    request += "Host: " + host + ":" + std::to_string(port) + "\r\n";
-    request += "Connection: keep-alive\r\n";
-    request += "\r\n";
-
-    size_t sent = 0;
-    while (sent < request.size())
+    for (int attempt = 0; attempt < kMaxAttempts; ++attempt)
     {
-        const ssize_t n = ::send(fd, request.data() + sent, request.size() - sent, 0);
-        if (n <= 0)
+        const int fd = connect_tcp(host, port);
+        if (fd < 0)
         {
-            ::close(fd);
-            return false;
+            if (attempt + 1 < kMaxAttempts)
+                std::this_thread::sleep_for(kRetryDelay);
+            continue;
         }
-        sent += static_cast<size_t>(n);
+
+        const std::string path = "/api/stream.mp4?src=" + url_encode(name);
+        std::string request;
+        request += "GET " + path + " HTTP/1.1\r\n";
+        request += "Host: " + host + ":" + std::to_string(port) + "\r\n";
+        request += "Connection: keep-alive\r\n";
+        request += "\r\n";
+
+        size_t sent = 0;
+        while (sent < request.size())
+        {
+            const ssize_t n = ::send(fd, request.data() + sent, request.size() - sent, 0);
+            if (n <= 0)
+            {
+                ::close(fd);
+                break;
+            }
+            sent += static_cast<size_t>(n);
+        }
+
+        if (sent < request.size())
+        {
+            if (attempt + 1 < kMaxAttempts)
+                std::this_thread::sleep_for(kRetryDelay);
+            continue;
+        }
+
+        int status_code = 0;
+        m_impl->raw.clear();
+        if (!parse_http_response(fd, m_impl->raw, status_code))
+        {
+            LOG_ERROR(
+                "Go2RtcService: stream.mp4 for '{}' failed (http {}, attempt {}/{})",
+                name,
+                status_code,
+                attempt + 1,
+                kMaxAttempts);
+            ::close(fd);
+            if (attempt + 1 < kMaxAttempts)
+                std::this_thread::sleep_for(kRetryDelay);
+            continue;
+        }
+
+        m_impl->fd = fd;
+
+        timeval tv {};
+        tv.tv_sec = 5;
+        tv.tv_usec = 0;
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        return true;
     }
 
-    int status_code = 0;
-    if (!parse_http_response(fd, m_impl->raw, status_code))
-    {
-        LOG_ERROR("Go2RtcService: stream.mp4 for '{}' failed (http {})", name, status_code);
-        ::close(fd);
-        return false;
-    }
-
-    m_impl->fd = fd;
-    return true;
+    return false;
 }
 
 ssize_t Go2RtcService::LiveMp4Stream::read(char* buffer, size_t capacity)

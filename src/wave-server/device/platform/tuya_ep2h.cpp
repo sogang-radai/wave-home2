@@ -98,11 +98,26 @@ namespace
         if (response.empty())
             throw std::runtime_error("empty tuya response");
 
-        json parsed = json::parse(response);
-        if (!parsed.contains("dps") || !parsed["dps"].is_object())
-            throw std::runtime_error("tuya response missing dps object");
+        auto parse_dps = [](const json& parsed) -> json {
+            if (!parsed.contains("dps") || !parsed["dps"].is_object())
+                throw std::runtime_error("tuya response missing dps object");
+            return parsed["dps"];
+        };
 
-        return parsed["dps"];
+        try
+        {
+            return parse_dps(json::parse(response));
+        }
+        catch (const json::exception&)
+        {
+            // Some firmware replies concatenate multiple JSON objects; keep the first one.
+            const auto start = response.find('{');
+            const auto end = response.rfind('}');
+            if (start == std::string::npos || end == std::string::npos || end <= start)
+                throw std::runtime_error("tuya response is not valid JSON");
+
+            return parse_dps(json::parse(response.substr(start, end - start + 1)));
+        }
     }
 
     bool readSwitchState(const json& dps)

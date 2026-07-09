@@ -5,8 +5,8 @@
 
 #include "../app/app_state.h"
 #include "../core/logger.h"
-#include "../web/http/v1/iot_store.h"
 #include "platform/philips_wiz_e29.h"
+#include "platform/droid_cam.h"
 #include "platform/radai_ws.h"
 #include "platform/reolink_e1pro.h"
 #include "platform/samsung_tizen.h"
@@ -26,6 +26,8 @@ namespace
             return std::make_unique<SRSR4SN>();
         if (className == "wave_station")
             return std::make_unique<RadaiWs>();
+        if (className == "droid_cam")
+            return std::make_unique<DroidCam>();
         if (className == "reolink_e1_pro")
             return std::make_unique<ReolinkE1Pro>();
         if (className == "tuya_ep2h")
@@ -62,7 +64,7 @@ namespace
                 detail["errorMessage"] = error_message;
         }
 
-        web::v1::logIotEvent(
+        AppState::get().iot.logEvent(
             "connection",
             device_id,
             device_name,
@@ -160,8 +162,8 @@ bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
     {
         if (auto* existing = findDevice(device_id))
         {
-            if (className == "reolink_e1_pro")
-                web::v1::resetCameraStreamSession(external_id);
+            if (className == "reolink_e1_pro" || className == "droid_cam")
+                AppState::get().iot.resetCameraStreamSession(external_id);
             existing->shutdown();
             unregisterDevice(device_id);
         }

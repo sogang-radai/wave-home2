@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
 #include <deque>
 #include <fstream>
 #include <stdexcept>
+#include <thread>
 #include <unordered_map>
 
 #include <asio.hpp>
@@ -14,8 +16,10 @@
 #include <opus/opus.h>
 #endif
 
-#include "../../app/app_state.h"
 #include "../../core/logger.h"
+#ifndef WAVE_STANDALONE_DEVICE_TEST
+#include "../../service/ir_trigger_bridge.h"
+#endif
 #include "network/net_util.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -76,9 +80,21 @@ namespace
             outType = wsp::Type::Temperature;
         else if (name == "humidity")
             outType = wsp::Type::Humidity;
+        else if (name == "ir_receive" || name == "ir")
+            outType = wsp::Type::IrReceive;
         else
             return false;
         return true;
+    }
+
+    bool ioLoopShouldRun(const RadaiWs& owner)
+    {
+        return owner.isIoActive();
+    }
+
+    void copyIrTimingFrame(const IrTimingFrame& src, IrTimingFrame& dst)
+    {
+        dst = src;
     }
 
     void validateRadaiWsConfig(const json& config)
@@ -193,6 +209,20 @@ namespace
 #else
         return "device/ir_list.json";
 #endif
+    }
+
+    double timingDistance(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b)
+    {
+        const size_t count = std::min(a.size(), b.size());
+        if (count == 0)
+            return 1e9;
+
+        double sum = 0.0;
+        for (size_t i = 0; i < count; ++i)
+            sum += std::abs(static_cast<int>(a[i]) - static_cast<int>(b[i]));
+
+        sum += static_cast<double>(std::max(a.size(), b.size()) - count) * 1000.0;
+        return sum / static_cast<double>(count);
     }
 
     int verifyMac(const std::string& expected, const std::string& host)
@@ -420,14 +450,17 @@ struct RadaiWs::Impl
 #endif
     }
 
-    void start()
+    void start(bool waitForInitialConnect)
     {
         if (m_work)
             return;
 
+        m_initConnectPending.store(waitForInitialConnect, std::memory_order_release);
+
         m_work = std::make_unique<workGuard>(asio::make_work_guard(m_io));
         m_ioThread = std::thread([this]()
         {
+            m_ioThreadId = std::this_thread::get_id();
             m_io.run();
         });
 
@@ -437,6 +470,23 @@ struct RadaiWs::Impl
             if (m_work)
                 openConnection();
         });
+    }
+
+    bool waitForInitialConnect(uint32_t timeoutMs)
+    {
+        if (m_connected.load(std::memory_order_acquire))
+            return true;
+
+        std::unique_lock lock(m_initConnectMutex);
+        m_initConnectCv.wait_for(
+            lock,
+            std::chrono::milliseconds(timeoutMs),
+            [this]()
+            {
+                return !m_initConnectPending.load(std::memory_order_acquire)
+                    || m_connected.load(std::memory_order_acquire);
+            });
+        return m_connected.load(std::memory_order_acquire);
     }
 
     void stop()
@@ -456,8 +506,10 @@ struct RadaiWs::Impl
         if (m_ioThread.joinable())
             m_ioThread.join();
 
+        m_ioThreadId = {};
         m_connected.store(false);
         m_connecting.store(false);
+        m_initConnectPending.store(false, std::memory_order_release);
     }
 
     bool isConnected() const
@@ -465,24 +517,36 @@ struct RadaiWs::Impl
         return m_connected.load();
     }
 
+    bool onIoThread() const
+    {
+        return m_ioThread.joinable() && std::this_thread::get_id() == m_ioThreadId;
+    }
+
+    int writePacketNow(const std::vector<uint8_t>& packet)
+    {
+        if (!m_connected.load())
+            return -5;
+
+        std::error_code ec;
+        asio::write(m_socket, asio::buffer(packet), ec);
+        return ec ? -5 : 0;
+    }
+
+    // Never block the IO thread waiting for a posted write (or Ack). That
+    // deadlocks asio::io_context and stalls IrReceive / all packet reads.
     int postSend(std::vector<uint8_t> packet)
     {
         if (!m_work)
             return -5;
 
+        if (onIoThread())
+            return writePacketNow(packet);
+
         auto prom = std::make_shared<std::promise<int>>();
         auto fut = prom->get_future();
         asio::post(m_io, [this, packet = std::move(packet), prom]()
         {
-            if (!m_connected.load())
-            {
-                prom->set_value(-5);
-                return;
-            }
-
-            std::error_code ec;
-            asio::write(m_socket, asio::buffer(packet), ec);
-            prom->set_value(ec ? -5 : 0);
+            prom->set_value(writePacketNow(packet));
         });
 
         if (fut.wait_for(std::chrono::milliseconds(m_session.requestTimeoutMs)) != std::future_status::ready)
@@ -508,8 +572,17 @@ struct RadaiWs::Impl
         if (bodySize > 0 && body)
             std::memcpy(packet.data() + sizeof(header), body, bodySize);
 
+        // Waiting for Ack on the IO thread would prevent doRead from delivering it.
+        const bool waitForAck = waitAck && !onIoThread();
+        if (waitAck && !waitForAck)
+        {
+            LOG_WARN(
+                "RadaiWs: sending type=0x{:04X} without Ack wait (called from IO thread)",
+                static_cast<unsigned>(static_cast<uint16_t>(type)));
+        }
+
         std::shared_ptr<std::promise<int>> ackPromise;
-        if (waitAck)
+        if (waitForAck)
         {
             ackPromise = std::make_shared<std::promise<int>>();
             std::lock_guard<std::mutex> lock(m_pendingMutex);
@@ -674,6 +747,45 @@ struct RadaiWs::Impl
 
         LOG_ERROR("RadaiWs: IR command '{}' not found in {}", commandId, m_irListPath);
         return false;
+    }
+
+    std::string matchIrCommandId(const std::vector<uint16_t>& timings) const
+    {
+        if (timings.empty())
+            return {};
+
+        std::ifstream in(m_irListPath);
+        if (!in)
+            return {};
+
+        json root;
+        in >> root;
+        if (!root.contains("commands") || !root["commands"].is_array())
+            return {};
+
+        std::string bestId;
+        double bestDistance = 1e9;
+        for (const auto& entry : root["commands"])
+        {
+            if (!entry.contains("id") || !entry.contains("timings") || !entry["timings"].is_array())
+                continue;
+
+            std::vector<uint16_t> known;
+            for (const auto& value : entry["timings"])
+            {
+                if (value.is_number_unsigned())
+                    known.push_back(value.get<uint16_t>());
+            }
+
+            const double distance = timingDistance(timings, known);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestId = entry["id"].get<std::string>();
+            }
+        }
+
+        return bestDistance <= 250.0 ? bestId : std::string {};
     }
 
     void enqueueMicFrame(AudioFrame frame)
@@ -841,6 +953,18 @@ struct RadaiWs::Impl
             break;
 
         case wsp::Type::IrReceive:
+            if (bodySize >= wsp::kIrReceiveBodySize)
+            {
+                wsp::IrReceiveBody irBody {};
+                std::memcpy(&irBody, body, sizeof(irBody));
+                const size_t rawBytes = static_cast<size_t>(irBody.length) * sizeof(uint16_t);
+                if (bodySize >= wsp::kIrReceiveBodySize + rawBytes && irBody.length > 0)
+                {
+                    std::vector<uint16_t> timings(irBody.length);
+                    std::memcpy(timings.data(), body + wsp::kIrReceiveBodySize, rawBytes);
+                    m_owner.onIrReceived(irBody, timings);
+                }
+            }
             break;
 
         case wsp::Type::AmbientLight:
@@ -888,9 +1012,27 @@ struct RadaiWs::Impl
         return !m_work || ec == asio::error::operation_aborted;
     }
 
+    void resolveInitialConnect()
+    {
+        if (!m_initConnectPending.exchange(false, std::memory_order_acq_rel))
+            return;
+
+        std::lock_guard lock(m_initConnectMutex);
+        m_initConnectCv.notify_all();
+    }
+
+    bool failInitialConnectIfPending()
+    {
+        if (!m_initConnectPending.load(std::memory_order_acquire))
+            return false;
+
+        resolveInitialConnect();
+        return true;
+    }
+
     void openConnection()
     {
-        if (!m_work || !ws::AppState::get().running.load(std::memory_order_acquire))
+        if (!m_work || !ioLoopShouldRun(m_owner))
             return;
 
         m_connecting.store(true);
@@ -915,7 +1057,8 @@ struct RadaiWs::Impl
             m_socket.close(cancelEc);
             m_connecting.store(false);
             LOG_WARN("RadaiWs connect timed out after {} ms", m_session.connectTimeoutMs);
-            scheduleReconnect("connect_timeout");
+            if (!failInitialConnectIfPending())
+                scheduleReconnect("connect_timeout");
         });
 
         m_resolver.async_resolve(
@@ -933,7 +1076,8 @@ struct RadaiWs::Impl
                 {
                     m_connecting.store(false);
                     LOG_ERROR("RadaiWs resolve failed: {}", resolveEc.message());
-                    scheduleReconnect("resolve_failed");
+                    if (!failInitialConnectIfPending())
+                        scheduleReconnect("resolve_failed");
                     return;
                 }
 
@@ -953,7 +1097,8 @@ struct RadaiWs::Impl
                         if (connectEc)
                         {
                             m_connecting.store(false);
-                            scheduleReconnect("connect_failed");
+                            if (!failInitialConnectIfPending())
+                                scheduleReconnect("connect_failed");
                             return;
                         }
 
@@ -970,6 +1115,7 @@ struct RadaiWs::Impl
                             endpoint.address().to_string(),
                             endpoint.port());
 
+                        resolveInitialConnect();
                         onConnected();
                         m_readBuf.resize(8192);
                         doRead();
@@ -979,7 +1125,7 @@ struct RadaiWs::Impl
 
     void scheduleReconnect(const char* reason)
     {
-        if (!m_work || !ws::AppState::get().running.load(std::memory_order_acquire))
+        if (!m_work || !ioLoopShouldRun(m_owner))
             return;
 
         m_connected.store(false);
@@ -1001,7 +1147,7 @@ struct RadaiWs::Impl
         m_reconnectTimer.expires_after(std::chrono::milliseconds(delay));
         m_reconnectTimer.async_wait([this, delay](const std::error_code& timerEc)
         {
-            if (timerEc || !m_work || !ws::AppState::get().running.load(std::memory_order_acquire))
+            if (timerEc || !m_work || !ioLoopShouldRun(m_owner))
                 return;
 
             LOG_INFO("RadaiWs reconnecting (delay was {} ms)", delay);
@@ -1050,6 +1196,7 @@ struct RadaiWs::Impl
     asio::io_context m_io;
     std::unique_ptr<workGuard> m_work;
     std::thread m_ioThread;
+    std::thread::id m_ioThreadId {};
     tcp::resolver m_resolver;
     tcp::socket m_socket;
     asio::steady_timer m_reconnectTimer{m_io};
@@ -1058,6 +1205,9 @@ struct RadaiWs::Impl
 
     std::atomic<bool> m_connected{false};
     std::atomic<bool> m_connecting{false};
+    std::atomic<bool> m_initConnectPending{false};
+    std::mutex m_initConnectMutex;
+    std::condition_variable m_initConnectCv;
     uint32_t m_reconnectDelayMs = 1000;
     uint32_t m_reconnectAttempts = 0;
     std::atomic<uint32_t> m_requestId{0};
@@ -1102,6 +1252,11 @@ bool RadaiWs::isLinkConnected() const
     return m_impl && m_impl->isConnected();
 }
 
+bool RadaiWs::isIoActive() const
+{
+    return m_ioActive.load(std::memory_order_acquire);
+}
+
 int RadaiWs::init(const json& config)
 {
     validateRadaiWsConfig(config);
@@ -1118,16 +1273,43 @@ int RadaiWs::init(const json& config)
     if (m_state == DeviceState::Running)
         return 0;
 
+    if (m_state != DeviceState::Uninitialized && m_state != DeviceState::Stopped)
+        return -3;
+
+    m_state = DeviceState::Initializing;
+
     const int macRc = verifyMac(m_interface.mac, m_interface.host);
     if (macRc != 0)
+    {
+        m_state = DeviceState::Stopped;
         return macRc;
+    }
+
+    if (!m_errorJson.contains("-4"))
+        m_errorJson["-4"] = "connection failed";
+    if (!m_errorJson.contains("-7"))
+        m_errorJson["-7"] = "MAC mismatch";
 
     std::string irListPath = defaultIrListPath();
     if (config.contains("settings") && config["settings"].is_object())
         irListPath = config["settings"].value("ir_list_path", irListPath);
 
     m_impl->configure(m_interface, m_session, m_audio, irListPath);
-    m_impl->start();
+    m_ioActive.store(true, std::memory_order_release);
+    m_impl->start(true);
+
+    if (!m_impl->waitForInitialConnect(m_session.connectTimeoutMs))
+    {
+        m_ioActive.store(false, std::memory_order_release);
+        m_impl->stop();
+        m_connectionState = ConnectionState::Disconnected;
+        m_state = DeviceState::Stopped;
+        LOG_ERROR(
+            "RadaiWs init failed: could not connect to {}:{}",
+            m_interface.host,
+            m_interface.port);
+        return -4;
+    }
 
     m_state = DeviceState::Running;
     LOG_INFO("RadaiWs initialized for {}:{}", m_interface.host, m_interface.port);
@@ -1140,6 +1322,7 @@ void RadaiWs::shutdown()
         return;
 
     m_state = DeviceState::ShuttingDown;
+    m_ioActive.store(false, std::memory_order_release);
     m_impl->stop();
     m_connectionState = ConnectionState::Disconnected;
     m_state = DeviceState::Stopped;
@@ -1184,6 +1367,13 @@ json RadaiWs::query(std::string_view name, const json& params)
 
     if (name == "status")
     {
+        std::string lastIrCommandId;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_lastIr.valid)
+                lastIrCommandId = m_lastIr.matchedCommandId;
+        }
+
         return json{
             {"connected", m_impl->isConnected()},
             {"state", connectionStateToString(m_connectionState)},
@@ -1192,11 +1382,28 @@ json RadaiWs::query(std::string_view name, const json& params)
             {"subscriptions", {
                 {"mic_pcm", m_subscriptions.micPcm},
                 {"mic_opus", m_subscriptions.micOpus},
+                {"ir_receive", m_subscriptions.irReceive},
                 {"ambient_light", m_subscriptions.ambientLight},
                 {"temperature", m_subscriptions.temperature},
                 {"humidity", m_subscriptions.humidity},
             }},
+            {"last_ir_command_id", lastIrCommandId},
         };
+    }
+
+    if (name == "last_ir")
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_lastIr.valid)
+            return json::object();
+
+        json out = json::object();
+        out["overflow"] = m_lastIr.overflow;
+        out["length"] = m_lastIr.timingsUs.size();
+        out["timings"] = m_lastIr.timingsUs;
+        if (!m_lastIr.matchedCommandId.empty())
+            out["commandId"] = m_lastIr.matchedCommandId;
+        return out;
     }
 
     if (name == "mic_level")
@@ -1369,6 +1576,85 @@ void RadaiWs::stopPlayback()
     (void)m_impl->sendData(wsp::Type::SpkPCM, wsp::HeaderFlag_LastFrameBit, &body, sizeof(body), nullptr, 0);
 }
 
+int RadaiWs::transmitTimings(
+    const std::vector<uint16_t>& timingsUs,
+    uint32_t carrierHz,
+    uint16_t repeat)
+{
+    if (timingsUs.empty())
+        return -1;
+
+    return sendIrRaw(timingsUs, carrierHz, repeat);
+}
+
+std::future<int> RadaiWs::transmitTimingsAsync(
+    const std::vector<uint16_t>& timingsUs,
+    uint32_t carrierHz,
+    uint16_t repeat)
+{
+    return std::async(std::launch::async, [this, timingsUs, carrierHz, repeat]()
+    {
+        return transmitTimings(timingsUs, carrierHz, repeat);
+    });
+}
+
+bool RadaiWs::getLatestIr(IrTimingFrame& outFrame)
+{
+    if (ensureIrSubscription() != 0)
+        return false;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_lastIr.valid)
+        return false;
+
+    copyIrTimingFrame(m_lastIr, outFrame);
+    return true;
+}
+
+bool RadaiWs::waitForIr(IrTimingFrame& outFrame, uint32_t timeoutMs)
+{
+    if (ensureIrSubscription() != 0)
+        return false;
+
+    uint64_t generationBefore = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        generationBefore = m_irGeneration;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_lastIr.valid && m_irGeneration != generationBefore)
+            {
+                copyIrTimingFrame(m_lastIr, outFrame);
+                return true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    return false;
+}
+
+std::future<bool> RadaiWs::getLatestIrAsync(IrTimingFrame& outFrame)
+{
+    return std::async(std::launch::async, [this, &outFrame]()
+    {
+        return getLatestIr(outFrame);
+    });
+}
+
+std::future<bool> RadaiWs::waitForIrAsync(IrTimingFrame& outFrame, uint32_t timeoutMs)
+{
+    return std::async(std::launch::async, [this, &outFrame, timeoutMs]()
+    {
+        return waitForIr(outFrame, timeoutMs);
+    });
+}
+
 void RadaiWs::registerActionsAndQueries()
 {
     m_actions = {
@@ -1418,6 +1704,7 @@ void RadaiWs::registerActionsAndQueries()
         {Query::Json, "status", "Connection and subscription status", json::object()},
         {Query::Json, "mic_level", "Recent microphone level (0..1)", json::object()},
         {Query::Json, "env", "Ambient lux / temperature / humidity snapshot", json::object()},
+        {Query::Json, "last_ir", "Most recent IR receive (timings + matched commandId)", json::object()},
     };
 
     m_actionMap.clear();
@@ -1429,7 +1716,7 @@ void RadaiWs::registerActionsAndQueries()
         m_queryMap[query.name] = &query;
 }
 
-int RadaiWs::startClient() { m_impl->start(); return 0; }
+int RadaiWs::startClient() { m_impl->start(false); return 0; }
 void RadaiWs::stopClient() { m_impl->stop(); }
 
 int RadaiWs::subscribe(wsp::Type targetType, uint16_t intervalMs, uint32_t options)
@@ -1442,6 +1729,7 @@ int RadaiWs::subscribe(wsp::Type targetType, uint16_t intervalMs, uint32_t optio
     {
     case wsp::Type::MicPCM: m_subscriptions.micPcm = true; break;
     case wsp::Type::MicComp: m_subscriptions.micOpus = true; break;
+    case wsp::Type::IrReceive: m_subscriptions.irReceive = true; break;
     case wsp::Type::AmbientLight:
         m_subscriptions.ambientLight = true;
         m_subscriptions.sensorIntervalMs = intervalMs;
@@ -1469,6 +1757,7 @@ int RadaiWs::unsubscribe(wsp::Type targetType)
     {
     case wsp::Type::MicPCM: m_subscriptions.micPcm = false; break;
     case wsp::Type::MicComp: m_subscriptions.micOpus = false; break;
+    case wsp::Type::IrReceive: m_subscriptions.irReceive = false; break;
     case wsp::Type::AmbientLight: m_subscriptions.ambientLight = false; break;
     case wsp::Type::Temperature: m_subscriptions.temperature = false; break;
     case wsp::Type::Humidity: m_subscriptions.humidity = false; break;
@@ -1491,6 +1780,17 @@ int RadaiWs::ensureMicSubscription()
         return subscribe(wsp::Type::MicPCM, 0, wsp::SubscribeOptionFlag_None);
 
     return -5;
+}
+
+int RadaiWs::ensureIrSubscription()
+{
+    if (m_subscriptions.irReceive)
+        return 0;
+
+    if (!m_capabilities.irReceive)
+        return -5;
+
+    return subscribe(wsp::Type::IrReceive, 0, wsp::SubscribeOptionFlag_None);
 }
 
 int RadaiWs::sendHeartbeat() { return m_impl->sendHeartbeat(); }
@@ -1571,6 +1871,9 @@ void RadaiWs::updateEnv(const EnvSnapshot& env)
 
 void RadaiWs::onClientConnected()
 {
+    if (m_capabilities.irReceive)
+        subscribe(wsp::Type::IrReceive, 0, wsp::SubscribeOptionFlag_None);
+
     if (m_capabilities.ambientLight)
     {
         subscribe(
@@ -1625,6 +1928,33 @@ void RadaiWs::onSensor(wsp::Type type, const wsp::SensorBody& sensor)
     }
 
     updateEnv(env);
+}
+
+void RadaiWs::onIrReceived(const wsp::IrReceiveBody& body, const std::vector<uint16_t>& timings)
+{
+    IrTimingFrame snapshot;
+    snapshot.valid = true;
+    snapshot.overflow = body.overflow != 0;
+    snapshot.timingsUs = timings;
+    snapshot.matchedCommandId = m_impl->matchIrCommandId(timings);
+    snapshot.receivedAt = std::chrono::steady_clock::now();
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastIr = snapshot;
+        ++m_irGeneration;
+    }
+
+    if (!snapshot.matchedCommandId.empty())
+        LOG_INFO("RadaiWs: IR received matched command '{}'", snapshot.matchedCommandId);
+    else if (snapshot.overflow)
+        LOG_WARN("RadaiWs: IR received with overflow ({} pulses)", snapshot.timingsUs.size());
+    else
+        LOG_INFO("RadaiWs: IR received ({} pulses, no ir_list match)", snapshot.timingsUs.size());
+
+#ifndef WAVE_STANDALONE_DEVICE_TEST
+    service::notifyIrReceived(dev::deviceIDToString(getId()), timings);
+#endif
 }
 
 DEVICE_NAMESPACE_END

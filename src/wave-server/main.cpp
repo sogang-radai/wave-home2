@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include <util/arg_parser.h>
@@ -45,11 +46,16 @@ namespace
         sigaction(SIGTERM, &action, nullptr);
     }
 
+    bool isValidProfile(const std::string& profile)
+    {
+        return profile == "real" || profile == "demo" || profile == "test";
+    }
+
     ws::LaunchOptions parseLaunchOptions(int argc, const char* argv[])
     {
         ArgParser parser(
             "wave-server",
-            "Wave Home server (8500: real backend, 8502: team share — see --help)");
+            "Wave Home server (real :8500, demo :8502, test :8503 — see --help)");
         parser.addArgument("--config", "-c")
             .help("config file path")
             .defaultValue("config.json");
@@ -57,25 +63,28 @@ namespace
             .help("HTTP listen port (overrides config)");
         parser.addArgument("--site", "-s")
             .help("static site directory (overrides config document_root)");
-        parser.addArgument("--test", "")
-            .help("static mock only: no DB/devices/API (site-test default)")
-            .actionFlag();
         parser.addArgument("--no-devices", "")
             .help("skip device manager (API+DB stay on; use when appliances are offline)")
             .actionFlag();
+        parser.addArgument("--profile", "")
+            .help("config profile: real | demo | test (default: real)")
+            .defaultValue("real");
 
         parser.parseArgs(argc, argv);
 
         ws::LaunchOptions launch;
         launch.config_path = parser.get<std::string>("config");
+        launch.profile = parser.get<std::string>("profile");
+        if (!isValidProfile(launch.profile))
+        {
+            throw std::runtime_error(
+                "Invalid --profile \"" + launch.profile + "\": use real, demo, or test");
+        }
         if (parser.has("port"))
             launch.port = parser.get<uint16_t>("port");
         if (parser.has("site"))
             launch.document_root = parser.get<std::string>("site");
-        launch.test_mode = parser.has("test");
         launch.no_devices = parser.has("no-devices");
-        if (launch.test_mode && !parser.has("site"))
-            launch.document_root = "../site-test";
 
         return launch;
     }

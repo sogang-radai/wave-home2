@@ -14,9 +14,6 @@
 
 #include "../core/coredefs.h"
 
-#define SERVICE_NAMESPACE_BEGIN namespace service {
-#define SERVICE_NAMESPACE_END }
-
 WAVE_NAMESPACE_BEGIN
 SERVICE_NAMESPACE_BEGIN
 

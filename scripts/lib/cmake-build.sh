@@ -41,6 +41,14 @@ wave_cmake_configure() {
 
     wave_enable_ccache
     mkdir -p "$build_dir"
+
+    # Skip re-configure when the build tree is already set up (incremental builds).
+    # Set WAVE_FORCE_CMAKE=1 to force a fresh cmake -S -B (e.g. after CMake option changes).
+    if [[ -f "$build_dir/CMakeCache.txt" ]] && [[ "${WAVE_FORCE_CMAKE:-0}" != "1" ]]; then
+        return 0
+    fi
+
+    echo "Running CMake configure ($build_dir)..."
     cmake -S "$root" -B "$build_dir" -DCMAKE_BUILD_TYPE="${BUILD_TYPE:-Release}" "${@:3}"
 }
 

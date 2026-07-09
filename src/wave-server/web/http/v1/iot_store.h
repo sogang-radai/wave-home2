@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -14,6 +16,8 @@
 WAVE_NAMESPACE_BEGIN
 namespace dev {
 class ReolinkE1Pro;
+class DroidCam;
+class RadaiWs;
 }
 namespace web {
 namespace v1 {
@@ -72,7 +76,16 @@ public:
         float speed,
         std::string& code);
 
+    Json::Value snapshotWaveStationTelemetry(const std::string& external_id, std::string& code) const;
+    Json::Value learnIr(const std::string& external_id, uint32_t timeout_ms, std::string& code);
+
     bool openCameraMp4Stream(const std::string& external_id, std::string& stream_name, std::string& code);
+    bool openCameraMjpegStream(
+        const std::string& external_id,
+        std::string& host,
+        uint16_t& port,
+        std::string& path,
+        std::string& code);
 
     dev::Device* findDevice(const std::string& external_id) const;
     std::string connectionStatusForEntry(const dev::DeviceManifestEntry& entry) const;
@@ -81,47 +94,36 @@ private:
     dev::DeviceManager& m_devices;
 
     bool isConnected(const dev::Device* device) const;
+    std::string connectionStatus(const dev::DeviceManifestEntry& entry, const dev::Device* device) const;
     std::string connectionStatus(const dev::DeviceManifestEntry& entry) const;
     Json::Value normalizeState(const dev::Device* device, const nlohmann::json& raw) const;
     std::string stateSummary(
         const dev::DeviceManifestEntry& entry,
         const dev::Device* device,
-        const Json::Value& state) const;
+        const Json::Value& state,
+        const std::string& status) const;
     std::string panelForClass(const std::string& class_name) const;
     std::string classLabel(const std::string& class_name) const;
 
     dev::ReolinkE1Pro* requireReolinkCamera(const std::string& external_id, std::string& code);
     const dev::ReolinkE1Pro* requireReolinkCamera(const std::string& external_id, std::string& code) const;
+    dev::Device* requireGo2RtcCamera(const std::string& external_id, std::string& code);
+    const dev::Device* requireGo2RtcCamera(const std::string& external_id, std::string& code) const;
+    dev::DroidCam* requireDroidCam(const std::string& external_id, std::string& code);
+    const dev::DroidCam* requireDroidCam(const std::string& external_id, std::string& code) const;
+    dev::RadaiWs* requireRadaiWs(const std::string& external_id, std::string& code);
+    const dev::RadaiWs* requireRadaiWs(const std::string& external_id, std::string& code) const;
 
     static Json::Value toJsonValue(const nlohmann::json& value);
     static bool isQueryError(const nlohmann::json& value);
 };
 
-void logIotEvent(
-    const std::string& type,
-    const std::string& device_id,
-    const std::string& device_name,
-    const std::string& message,
-    const std::string& triggered_by = "manual",
-    const Json::Value& detail = Json::Value(Json::objectValue));
-
-// Clears browser stream viewer state when a camera device is re-initialized.
-void resetCameraStreamSession(const std::string& external_id);
-
-// Loads TTS models at startup; safe to call repeatedly.
-bool warmUpTtsService(std::string& error);
-
-bool isTtsServiceReady();
-
-// Runs synthesis + camera playback on the background task queue.
+// Runs synthesis + device playback on the background task queue.
 void queueDeviceTts(
     const std::string& external_id,
     const std::string& text,
     int speaker_id,
     float speed);
-
-// Releases camera streams, TTS runtime, and go2rtc before process exit.
-void shutdownBackgroundServices();
 
 } // namespace v1
 } // namespace web

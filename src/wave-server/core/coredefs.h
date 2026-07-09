@@ -15,3 +15,7 @@
 // Web ::ws::web
 #define WEB_NAMESPACE_BEGIN namespace web {
 #define WEB_NAMESPACE_END }
+
+// Service ::ws::service
+#define SERVICE_NAMESPACE_BEGIN namespace service {
+#define SERVICE_NAMESPACE_END }

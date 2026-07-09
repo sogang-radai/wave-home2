@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -89,7 +89,59 @@ MODEL_STYLES = {
 }
 
 
-def plot_single_model(key: str, rows: List[Row], out_dir: Path) -> None:
+def infer_session_label(paths: Sequence[Path]) -> str:
+    for path in paths:
+        stem = path.stem  # sleep_20260708-0-0
+        parts = stem.split("_")
+        if len(parts) >= 2 and parts[1][:8].isdigit():
+            tag = parts[1][:8]
+            return f"{tag[:4]}-{tag[4:6]}-{tag[6:8]}"
+    return "unknown"
+
+
+def hour_labels_from_series(series: Dict[str, List[Row]]) -> List[str]:
+    hours = set()
+    for rows in series.values():
+        for r in valid_rows(rows):
+            hours.add(r.ts.strftime("%H"))
+    return sorted(hours)
+
+
+def pick_zoom_hour(series: Dict[str, List[Row]], session_label: str) -> Tuple[datetime, datetime]:
+    """Pick the hour with the largest 0-0 vs 0-1 absent-rate gap."""
+    if "0-0" not in series or "0-1" not in series:
+        ref = valid_rows(next(iter(series.values())))
+        if not ref:
+            y, m, d = (int(session_label.split("-")[i]) for i in range(3))
+            t0 = datetime(y, m, d, 8, 0, 0)
+            return t0, t0.replace(hour=9)
+
+    hourly: Dict[str, Dict[str, Counter]] = defaultdict(lambda: defaultdict(Counter))
+    for key in ("0-0", "0-1"):
+        for r in valid_rows(series[key]):
+            hourly[r.ts.strftime("%H")][key][r.status] += 1
+
+    best_hour = "08"
+    best_gap = -1.0
+    for hour, by_model in hourly.items():
+        def absent_pct(model: str) -> float:
+            counts = by_model.get(model, Counter())
+            total = sum(counts.values()) or 1
+            return counts["absent"] / total
+
+        gap = abs(absent_pct("0-0") - absent_pct("0-1"))
+        if gap > best_gap:
+            best_gap = gap
+            best_hour = hour
+
+    y, m, d = (int(session_label.split("-")[i]) for i in range(3))
+    hour_i = int(best_hour)
+    t0 = datetime(y, m, d, hour_i, 0, 0)
+    t1 = t0.replace(hour=hour_i + 1) if hour_i < 23 else t0.replace(day=d + 1, hour=0)
+    return t0, t1
+
+
+def plot_single_model(key: str, rows: List[Row], out_dir: Path, *, hour_labels: Sequence[str], zoom: Tuple[datetime, datetime]) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     style = MODEL_STYLES.get(key, {"color": "#333333", "label": key})
     color = style["color"]
@@ -167,7 +219,7 @@ def plot_single_model(key: str, rows: List[Row], out_dir: Path) -> None:
         fig.savefig(out_dir / "toss_distribution.png", dpi=150)
         plt.close(fig)
 
-    hours = [f"{h:02d}" for h in range(3, 12)]
+    hours = list(hour_labels)
     hourly = {h: Counter() for h in hours}
     for r in data:
         h = r.ts.strftime("%H")
@@ -199,12 +251,11 @@ def plot_single_model(key: str, rows: List[Row], out_dir: Path) -> None:
     fig.savefig(out_dir / "hourly_status.png", dpi=150)
     plt.close(fig)
 
-    t0 = datetime(2026, 7, 7, 8, 0, 0)
-    t1 = datetime(2026, 7, 7, 9, 0, 0)
+    t0, t1 = zoom
     window = [r for r in data if t0 <= r.ts < t1]
     if window:
         fig, axes = plt.subplots(2, 1, figsize=(14, 6), sharex=True, constrained_layout=True)
-        fig.suptitle(f"08:00–09:00 — {label}", fontsize=12, fontweight="bold")
+        fig.suptitle(f"{t0:%H:%M}–{t1:%H:%M} — {label}", fontsize=12, fontweight="bold")
         w_times = [r.ts for r in window]
         axes[0].step(w_times, [STATUS_TO_Y.get(r.status, np.nan) for r in window], where="post", color=color)
         axes[1].plot(w_times, [r.toss_index if r.toss_valid else np.nan for r in window], color=color, lw=1)
@@ -221,19 +272,21 @@ def plot_single_model(key: str, rows: List[Row], out_dir: Path) -> None:
         plt.close(fig)
 
 
-def plot_per_model(series: Dict[str, List[Row]], base_out_dir: Path) -> None:
+def plot_per_model(series: Dict[str, List[Row]], base_out_dir: Path, *, hour_labels: Sequence[str], zoom: Tuple[datetime, datetime]) -> None:
     for key, rows in series.items():
         model_dir = base_out_dir / key
-        plot_single_model(key, rows, model_dir)
+        plot_single_model(key, rows, model_dir, hour_labels=hour_labels, zoom=zoom)
         print(f"  {key}/")
 
 
 def plot_overview(
     series: Dict[str, List[Row]],
     out_dir: Path,
+    *,
+    session_label: str,
 ) -> None:
     fig, axes = plt.subplots(3, 1, figsize=(16, 10), sharex=True, constrained_layout=True)
-    fig.suptitle("SleepNet overnight comparison (2026-07-07)", fontsize=14, fontweight="bold")
+    fig.suptitle(f"SleepNet overnight comparison ({session_label})", fontsize=14, fontweight="bold")
 
     model_styles = MODEL_STYLES
 
@@ -288,15 +341,15 @@ def plot_overview(
     plt.close(fig)
 
 
-def plot_zoom_08(
+def plot_zoom_window(
     series: Dict[str, List[Row]],
     out_dir: Path,
+    *,
+    zoom: Tuple[datetime, datetime],
 ) -> None:
+    t0, t1 = zoom
     fig, axes = plt.subplots(2, 1, figsize=(16, 7), sharex=True, constrained_layout=True)
-    fig.suptitle("08:00–09:00 zoom (0-0 absent spike vs LSTM)", fontsize=13, fontweight="bold")
-
-    t0 = datetime(2026, 7, 7, 8, 0, 0)
-    t1 = datetime(2026, 7, 7, 9, 0, 0)
+    fig.suptitle(f"{t0:%H:%M}–{t1:%H:%M} zoom (0-0 vs LSTM)", fontsize=13, fontweight="bold")
     styles = {
         "0-0": ("#59a14f", "0-0 CNN"),
         "0-1": ("#edc948", "0-1 LSTM"),
@@ -375,11 +428,11 @@ def plot_toss_distributions(series: Dict[str, List[Row]], out_dir: Path) -> None
     plt.close(fig)
 
 
-def plot_status_hours(series: Dict[str, List[Row]], out_dir: Path) -> None:
+def plot_status_hours(series: Dict[str, List[Row]], out_dir: Path, *, hour_labels: Sequence[str]) -> None:
     fig, ax = plt.subplots(figsize=(14, 5), constrained_layout=True)
     fig.suptitle("Hourly status composition", fontsize=13, fontweight="bold")
 
-    hours = [f"{h:02d}" for h in range(3, 12)]
+    hours = list(hour_labels)
     x = np.arange(len(hours))
     width = 0.25
     colors = {"0-0": "#59a14f", "0-1": "#edc948", "0-2": "#b07aa1"}
@@ -432,8 +485,8 @@ def plot_gap_timeline(series: Dict[str, List[Row]], out_dir: Path) -> None:
     plt.close(fig)
 
 
-def write_summary(series: Dict[str, List[Row]], out_dir: Path) -> None:
-    lines = ["# Sleep log analysis summary", ""]
+def write_summary(series: Dict[str, List[Row]], out_dir: Path, *, session_label: str, zoom: Tuple[datetime, datetime]) -> None:
+    lines = [f"# Sleep log analysis summary ({session_label})", ""]
     for key, rows in series.items():
         data = valid_rows(rows)
         n = len(data)
@@ -451,6 +504,17 @@ def write_summary(series: Dict[str, List[Row]], out_dir: Path) -> None:
                 f"p90={np.quantile(toss,0.9):.3f}"
             )
         lines.append("")
+    t0, t1 = zoom
+    lines.append(f"## Notes")
+    lines.append(f"- capture window: see first/last valid row timestamps in CSV")
+    lines.append(f"- zoom hour (max 0-0 vs 0-1 absent gap): {t0:%H:%M}–{t1:%H:%M}")
+    if len(series) >= 3:
+        maps = [{r.ts: r.status for r in valid_rows(series[k])} for k in series]
+        keys = list(series.keys())
+        common = sorted(set.intersection(*(set(m) for m in maps)))
+        agree = sum(1 for ts in common if len({m[ts] for m in maps}) == 1)
+        lines.append(f"- 3-model status agreement: {100*agree/max(len(common),1):.1f}%")
+    lines.append("")
     (out_dir / "summary.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -460,25 +524,33 @@ def main() -> None:
         "csvs",
         nargs="*",
         type=Path,
-        help="CSV paths (default: sleep-net/test/sleep_20260707-0-*.csv)",
+        help="CSV paths (default: latest sleep_YYYYMMDD-0-*.csv in test/)",
     )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parent.parent / "test" / "plots" / "20260707",
+        default=None,
     )
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     default_dir = script_dir.parent / "test"
     if not args.csvs:
-        paths = sorted(default_dir.glob("sleep_20260707-0-*.csv"))
+        candidates = sorted(default_dir.glob("sleep_*-0-*.csv"))
+        if not candidates:
+            raise SystemExit("no CSV files found")
+        latest_tag = candidates[-1].stem.split("_")[1][:8]
+        paths = sorted(default_dir.glob(f"sleep_{latest_tag}-0-*.csv"))
     else:
         paths = args.csvs
 
     if not paths:
         raise SystemExit("no CSV files found")
+
+    session_label = infer_session_label(paths)
+    if args.output is None:
+        args.output = default_dir / "plots" / session_label.replace("-", "")
 
     series: Dict[str, List[Row]] = {}
     for path in paths:
@@ -494,14 +566,16 @@ def main() -> None:
         series[key] = parse_csv(path)
 
     args.output.mkdir(parents=True, exist_ok=True)
-    plot_overview(series, args.output)
-    plot_zoom_08(series, args.output)
+    hour_labels = hour_labels_from_series(series)
+    zoom = pick_zoom_hour(series, session_label)
+    plot_overview(series, args.output, session_label=session_label)
+    plot_zoom_window(series, args.output, zoom=zoom)
     plot_toss_distributions(series, args.output)
-    plot_status_hours(series, args.output)
+    plot_status_hours(series, args.output, hour_labels=hour_labels)
     plot_gap_timeline(series, args.output)
-    write_summary(series, args.output)
+    write_summary(series, args.output, session_label=session_label, zoom=zoom)
     print("Per-model plots:")
-    plot_per_model(series, args.output)
+    plot_per_model(series, args.output, hour_labels=hour_labels, zoom=zoom)
 
     print(f"\nWrote plots to {args.output}")
     for name in sorted(args.output.glob("*.png")):
