@@ -196,24 +196,34 @@ void SleepController::weeklyReport(
     auto week_start = req->getParameter("weekStart");
     if (week_start.empty())
     {
-        auto rows = client->execSqlSync(
-            "SELECT night_date FROM sleep_session WHERE user_id = ? ORDER BY night_date DESC LIMIT 1",
-            *user_id);
-        if (!rows.empty())
+        const auto& state = AppState::get();
+        std::string ref_date;
+        if (state.demo_mode && !state.anchor_date.empty())
         {
-            const std::string night = rows[0]["night_date"].as<std::string>();
-            auto monday_rows = client->execSqlSync(
-                "SELECT date(?, '-' || ((strftime('%w', ?) + 6) % 7) || ' day') AS week_start",
-                night,
-                night);
-            if (!monday_rows.empty())
-                week_start = monday_rows[0]["week_start"].as<std::string>();
+            ref_date = state.anchor_date;
+        }
+        else
+        {
+            auto rows = client->execSqlSync(
+                "SELECT night_date FROM sleep_session WHERE user_id = ? ORDER BY night_date DESC LIMIT 1",
+                *user_id);
+            if (!rows.empty())
+                ref_date = rows[0]["night_date"].as<std::string>();
+        }
+
+        if (!ref_date.empty())
+        {
+            auto start_rows = client->execSqlSync(
+                "SELECT date(?, '-6 day') AS week_start",
+                ref_date);
+            if (!start_rows.empty())
+                week_start = start_rows[0]["week_start"].as<std::string>();
         }
     }
 
     if (week_start.empty())
     {
-        respondError(callback, 400, "INVALID_WEEK_START", "weekStart는 해당 주의 월요일 날짜여야 합니다.", "weekStart");
+        respondError(callback, 400, "INVALID_WEEK_START", "weekStart는 YYYY-MM-DD 형식이어야 합니다.", "weekStart");
         return;
     }
 

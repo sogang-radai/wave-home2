@@ -748,7 +748,7 @@ void IotController::streamWaveStationTelemetry(
                     const std::string payload = Json::writeString(builder, snapshot);
                     if (!response->send("data: " + payload + "\n\n"))
                         break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 }
                 if (response)
                     response->close();

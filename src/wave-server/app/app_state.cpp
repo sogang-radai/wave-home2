@@ -8,6 +8,7 @@
 #include "../core/task_queue.h"
 #include "../service/power_manager.h"
 #include "../service/sleep/sleep_manager.h"
+#include "../service/alarm_manager.h"
 #include "../service/go2rtc_service.h"
 #include "../core/time_util.h"
 #include "../device/device.h"
@@ -383,7 +384,7 @@ std::filesystem::path AppState::resolvePath(const std::string& relative) const
 
 drogon::orm::DbClientPtr AppState::db() const
 {
-    if (!m_initialized)
+    if (test_mode || !m_dbReady.load(std::memory_order_acquire))
         return nullptr;
     return drogon::app().getDbClient();
 }
@@ -494,7 +495,12 @@ void AppState::onDatabaseReady(const drogon::orm::DbClientPtr& client)
         service::SleepManager::get().reconcile();
         service::SleepManager::get().start();
         LOG_INFO("SleepManager started");
+
+        service::AlarmManager::get().start();
+        LOG_INFO("AlarmManager started");
     }
+
+    m_dbReady.store(true, std::memory_order_release);
 }
 
 void AppState::startTriggerRuntime()
@@ -612,11 +618,13 @@ void AppState::shutdown()
 
     LOG_INFO("Shutting down app...");
     running.store(false, std::memory_order_release);
+    m_dbReady.store(false, std::memory_order_release);
 
     stopAutomationServices();
     deviceManager.shutdown();
     ws::service::PowerManager::get().stop();
     service::SleepManager::get().stop();
+    service::AlarmManager::get().stop();
 
     iot.shutdown();
     tts.shutdown();

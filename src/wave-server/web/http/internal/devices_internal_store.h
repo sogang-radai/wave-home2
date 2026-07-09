@@ -69,6 +69,10 @@ public:
         std::optional<int64_t> user_id,
         std::string& code) const;
 
+    static std::optional<std::string> resolveWireDeviceId(
+        const drogon::orm::DbClientPtr& client,
+        const std::string& device_id_param);
+
 private:
     drogon::orm::DbClientPtr m_client;
 

@@ -9,9 +9,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from .sleep_scenario import SCENARIO
-from .timeutil import MONTH_START, june_dates
+from .timeutil import MONTH_START, june_dates, sliding_week_starts, fmt_date
 
 SCENARIO_BY_DATE = {row[0]: row for row in SCENARIO}
 
@@ -231,6 +232,87 @@ def gen_power_1h_reports(conn: sqlite3.Connection, now: str) -> list[dict]:
             "created_at": now,
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# sleep_report weekly (롤링 7일 창 — period_start = 창 첫날)
+# ---------------------------------------------------------------------------
+def gen_rolling_sleep_weekly_reports(conn: sqlite3.Connection) -> list[dict]:
+    """DB 세션·효율을 집계해 롤링 주간 수면 리포트 본문을 만든다(에이전트 미호출 템플릿)."""
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    out: list[dict] = []
+
+    for start_d in sliding_week_starts(june_dates()):
+        week_start = fmt_date(start_d)
+        week_end = fmt_date(start_d + timedelta(days=7))
+        end_d = start_d + timedelta(days=6)
+        sessions = cur.execute(
+            "SELECT * FROM sleep_session WHERE user_id = 1 AND night_date >= ? AND night_date < ? ORDER BY night_date",
+            (week_start, week_end),
+        ).fetchall()
+        if not sessions:
+            continue
+
+        asleep_list = [s["asleep_total_s"] for s in sessions if s["asleep_total_s"] is not None]
+        eff_list = [s["efficiency"] for s in sessions if s["efficiency"] is not None]
+        nights = len(sessions)
+        avg_hours = (sum(asleep_list) / len(asleep_list) / 3600.0) if asleep_list else 0.0
+        avg_eff = (sum(eff_list) / len(eff_list)) if eff_list else 0.0
+
+        window_dates = [fmt_date(start_d + timedelta(days=i)) for i in range(7)]
+        notes = _notes_in_window(window_dates)
+
+        report_text = (
+            f"{start_d.month}월 {start_d.day}일~{end_d.month}월 {end_d.day}일 최근 7일 동안 "
+            f"총 {nights}회의 수면이 기록되었습니다. "
+            f"평균 수면 시간은 약 {avg_hours:.1f}시간, 수면 효율은 {avg_eff * 100:.0f}% 수준이었습니다."
+        )
+        if notes:
+            report_text += " " + " · ".join(notes[:2])
+
+        out.append({
+            "period": "weekly",
+            "period_start": week_start,
+            "session_id": None,
+            "metrics": {
+                "nights": nights,
+                "avgAsleepS": round(sum(asleep_list) / len(asleep_list)) if asleep_list else None,
+                "avgEfficiency": round(avg_eff, 3) if eff_list else None,
+            },
+            "report_text": report_text,
+        })
+
+    return out
+
+
+def merge_sleep_reports_rolling_weekly(conn: sqlite3.Connection, reports_path: Path) -> int:
+    """sleep_reports.json 의 weekly 를 롤링 7일 창 기준으로 갱신한다( daily·에이전트 embedding 은 유지)."""
+    existing: list[dict] = []
+    if reports_path.exists():
+        try:
+            existing = json.loads(reports_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing = []
+
+    daily = [r for r in existing if r.get("period") == "daily"]
+    old_weekly = {r["period_start"]: r for r in existing if r.get("period") == "weekly"}
+    rolling = gen_rolling_sleep_weekly_reports(conn)
+
+    for row in rolling:
+        prev = old_weekly.get(row["period_start"])
+        if prev:
+            if prev.get("embedding"):
+                row["embedding"] = prev["embedding"]
+            if prev.get("report_text") and prev.get("model"):
+                row["report_text"] = prev["report_text"]
+                row["model"] = prev.get("model")
+                row["embedding_model"] = prev.get("embedding_model")
+
+    merged = daily + rolling
+    reports_path.parent.mkdir(parents=True, exist_ok=True)
+    reports_path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    return len(rolling)
 
 
 def gen_sleep_30m_summaries(conn: sqlite3.Connection) -> list[dict]:

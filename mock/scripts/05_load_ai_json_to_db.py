@@ -164,6 +164,39 @@ def load_weekly_plan_reports(conn: sqlite3.Connection, vec_ready: bool) -> int:
     return n
 
 
+def ensure_calendar_monthly_power_reports(conn: sqlite3.Connection) -> int:
+    """월간(1mo) 리포트가 1~6월 각각의 달 1일 period_start 를 갖도록 정리한다."""
+    cur = conn.cursor()
+    june = cur.execute(
+        "SELECT energy_id, metrics, report_text, created_at FROM power_report "
+        "WHERE period='1mo' AND device_id IS NULL AND period_start LIKE '2026-06%' "
+        "ORDER BY period_start DESC LIMIT 1"
+    ).fetchone()
+    if not june:
+        return 0
+
+    energy_id, june_metrics, june_text, created_at = june
+    cur.execute("DELETE FROM power_report WHERE period='1mo' AND device_id IS NULL")
+    n = 0
+    for month in range(1, 7):
+        period_start = f"2026-{month:02d}-01"
+        if month == 6:
+            cur.execute(
+                "INSERT INTO power_report (energy_id, device_id, period, period_start, metrics, report_text, created_at) "
+                "VALUES (?, NULL, '1mo', ?, ?, ?, ?)",
+                (energy_id, period_start, june_metrics, june_text, created_at),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO power_report (energy_id, device_id, period, period_start, metrics, report_text, created_at) "
+                "VALUES (?, NULL, '1mo', ?, '{}', '리포트 준비 중입니다.', ?)",
+                (energy_id, period_start, created_at),
+            )
+        n += 1
+    conn.commit()
+    return n
+
+
 def main() -> None:
     conn = sqlite3.connect(DB_PATH)
     vec_ready = try_load_vec_extension(conn)
@@ -171,6 +204,7 @@ def main() -> None:
         print("경고: sqlite-vec 확장을 로드할 수 없어 vec_* 테이블 반영을 건너뜁니다.")
 
     print(f"power_report: {load_power_reports(conn, vec_ready)}건")
+    print(f"power_report(1mo calendar): {ensure_calendar_monthly_power_reports(conn)}건")
     print(f"sleep_report: {load_sleep_reports(conn, vec_ready)}건")
     print(f"sleep_stat(30m summary): {load_sleep_30m_summaries(conn, vec_ready)}건")
     print(f"insight: {load_insights(conn, vec_ready)}건")

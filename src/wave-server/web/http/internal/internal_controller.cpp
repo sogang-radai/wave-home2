@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../../../app/app_state.h"
+#include "../../../service/alarm_manager.h"
 #include "../v1/iot_store.h"
 #include "../v1/session_store.h"
 #include "alarms_internal_store.h"
@@ -72,6 +73,13 @@ namespace
         if (code == "RULE_DISABLED" || code == "COOLDOWN_ACTIVE")
             return 409;
         return 500;
+    }
+
+    std::optional<std::string> resolveDevicePathId(
+        const drogon::orm::DbClientPtr& client,
+        const std::string& device_id)
+    {
+        return DevicesInternalStore::resolveWireDeviceId(client, device_id);
     }
 
     void respondDeviceError(
@@ -317,13 +325,24 @@ void InternalController::getPtzCapabilities(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
+    const auto client = requireDb(callback);
+    if (!client)
+        return;
+
+    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    if (!manifest_id)
+    {
+        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        return;
+    }
+
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
     if (!requireIotDevices(callback, store))
         return;
 
     std::string code;
-    const auto body = store.getPtzCapabilities(deviceId, code);
+    const auto body = store.getPtzCapabilities(*manifest_id, code);
     if (!code.empty())
         v1::respondError(callback, mapCameraErrorStatus(code), code, "PTZ 기능을 조회할 수 없습니다.");
     else
@@ -335,6 +354,17 @@ void InternalController::movePtz(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
+    const auto client = requireDb(callback);
+    if (!client)
+        return;
+
+    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    if (!manifest_id)
+    {
+        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        return;
+    }
+
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
     if (!requireIotDevices(callback, store))
@@ -346,7 +376,7 @@ void InternalController::movePtz(
         vector = *json;
 
     std::string code;
-    if (!store.moveCameraPtz(deviceId, vector, code))
+    if (!store.moveCameraPtz(*manifest_id, vector, code))
         v1::respondError(callback, mapCameraErrorStatus(code), code, "PTZ 이동에 실패했습니다.");
     else
     {
@@ -361,13 +391,24 @@ void InternalController::stopPtz(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
+    const auto client = requireDb(callback);
+    if (!client)
+        return;
+
+    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    if (!manifest_id)
+    {
+        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        return;
+    }
+
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
     if (!requireIotDevices(callback, store))
         return;
 
     std::string code;
-    if (!store.stopCameraPtz(deviceId, code))
+    if (!store.stopCameraPtz(*manifest_id, code))
         v1::respondError(callback, mapCameraErrorStatus(code), code, "PTZ 정지에 실패했습니다.");
     else
     {
@@ -382,6 +423,17 @@ void InternalController::zoomPtz(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
+    const auto client = requireDb(callback);
+    if (!client)
+        return;
+
+    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    if (!manifest_id)
+    {
+        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        return;
+    }
+
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
     if (!requireIotDevices(callback, store))
@@ -391,7 +443,7 @@ void InternalController::zoomPtz(
     const int delta = json && json->isMember("delta") ? (*json)["delta"].asInt() : 0;
 
     std::string code;
-    const auto body = store.zoomCameraPtz(deviceId, delta, code);
+    const auto body = store.zoomCameraPtz(*manifest_id, delta, code);
     if (!code.empty())
         v1::respondError(callback, mapCameraErrorStatus(code), code, "줌 조정에 실패했습니다.");
     else
@@ -403,13 +455,24 @@ void InternalController::getCameraStream(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
+    const auto client = requireDb(callback);
+    if (!client)
+        return;
+
+    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    if (!manifest_id)
+    {
+        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        return;
+    }
+
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
     if (!requireIotDevices(callback, store))
         return;
 
     std::string code;
-    const auto body = store.getCameraStream(deviceId, code);
+    const auto body = store.getCameraStream(*manifest_id, code);
     if (!code.empty())
         v1::respondError(callback, mapCameraErrorStatus(code), code, "스트림 정보를 가져올 수 없습니다.");
     else
@@ -421,6 +484,17 @@ void InternalController::setCameraStream(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
+    const auto client = requireDb(callback);
+    if (!client)
+        return;
+
+    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    if (!manifest_id)
+    {
+        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        return;
+    }
+
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
     if (!requireIotDevices(callback, store))
@@ -434,7 +508,7 @@ void InternalController::setCameraStream(
     }
 
     std::string code;
-    const auto body = store.setCameraStream(deviceId, (*json)["streaming"].asBool(), code);
+    const auto body = store.setCameraStream(*manifest_id, (*json)["streaming"].asBool(), code);
     if (!code.empty())
         v1::respondError(callback, mapCameraErrorStatus(code), code, "스트림을 시작할 수 없습니다.");
     else
@@ -446,18 +520,29 @@ void InternalController::captureSnapshot(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
+    const auto client = requireDb(callback);
+    if (!client)
+        return;
+
+    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    if (!manifest_id)
+    {
+        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        return;
+    }
+
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
     if (!requireIotDevices(callback, store))
         return;
 
-    std::thread([deviceId, callback = std::move(callback), &state]() mutable
+    std::thread([manifest_id = *manifest_id, callback = std::move(callback), &state]() mutable
     {
         v1::IotStore worker(state.deviceManager);
         std::vector<uint8_t> jpeg;
         std::string occurred_at;
         std::string code;
-        if (!worker.captureCameraSnapshot(deviceId, jpeg, occurred_at, code))
+        if (!worker.captureCameraSnapshot(manifest_id, jpeg, occurred_at, code))
         {
             v1::respondError(callback, mapCameraErrorStatus(code), code, "스냅샷 캡처에 실패했습니다.");
             return;
@@ -476,6 +561,17 @@ void InternalController::sendTts(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
+    const auto client = requireDb(callback);
+    if (!client)
+        return;
+
+    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    if (!manifest_id)
+    {
+        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        return;
+    }
+
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
     if (!requireIotDevices(callback, store))
@@ -492,7 +588,7 @@ void InternalController::sendTts(
     const int speaker_id = json->isMember("speakerId") ? (*json)["speakerId"].asInt() : 0;
     const float speed = json->isMember("speed") ? static_cast<float>((*json)["speed"].asDouble()) : 1.0f;
 
-    v1::queueDeviceTts(deviceId, text, speaker_id, speed);
+    v1::queueDeviceTts(*manifest_id, text, speaker_id, speed);
     Json::Value body;
     body["ok"] = true;
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
@@ -899,6 +995,7 @@ void InternalController::createAlarm(
         v1::respondError(callback, 400, "VALIDATION_ERROR", error, field);
     else
     {
+        service::AlarmManager::get().reconcile();
         auto resp = drogon::HttpResponse::newHttpJsonResponse(created);
         resp->setStatusCode(drogon::k201Created);
         callback(resp);
@@ -944,7 +1041,10 @@ void InternalController::updateAlarm(
         v1::respondError(callback, status, status == 404 ? "NOT_FOUND" : "VALIDATION_ERROR", error, field);
     }
     else
+    {
+        service::AlarmManager::get().reconcile();
         callback(drogon::HttpResponse::newHttpJsonResponse(updated));
+    }
 }
 
 void InternalController::deleteAlarm(
@@ -975,7 +1075,10 @@ void InternalController::deleteAlarm(
     if (removed.isNull())
         v1::respondError(callback, 404, "NOT_FOUND", error);
     else
+    {
+        service::AlarmManager::get().reconcile();
         callback(drogon::HttpResponse::newHttpJsonResponse(removed));
+    }
 }
 
 void InternalController::listScheduleTasks(

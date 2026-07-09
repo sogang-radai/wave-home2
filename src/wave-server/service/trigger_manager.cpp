@@ -137,6 +137,8 @@ void TriggerManager::reconcile()
     const auto index = m_rules->snapshot();
     std::lock_guard lock(m_stateMutex);
     m_index = index;
+    if (!index)
+        return;
 
     for (const auto& [key, bindings] : index->gesture)
     {

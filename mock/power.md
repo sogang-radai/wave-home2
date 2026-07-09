@@ -81,9 +81,20 @@
 
 ## 리포트 (`power_report`)
 
-- `24h`/`1w`/`1mo`는 `POST /power/v1/reports` **실호출**(에이전트가 실제 구현한 job API)로 `report_text`+`embedding`을 받는다. `metrics`는 스크립트가 직접 계산해 Body에 실어 보낸다(에이전트는 텍스트/임베딩만 생성).
-- `1h`(하루 24개 × 30일 = 720개)는 실호출 대신 **템플릿 텍스트**로 채운 뒤, `nomic-embed-text`로 직접 임베딩한다(호출량이 지나치게 많아 실호출 범위에서 제외 — 사용자 확인됨).
-- `energy_id`로 원본 `power_energy`(같은 `device_id`/`granularity`/`time_start`)와 1:1 연결.
+- `24h`/`1w`/`1mo`는 `POST /power/v1/reports` **실호출**(에이전트)로 `report_text`+`embedding`을 받는다.
+- `1h`(720건)는 템플릿 텍스트 + 직접 임베딩(`03_gen_manual_ai_texts.py`).
+- **일간(24h) 리포트**: 6월 30일만 (`power_energy` 24h 30건 기준).
+- **월간(1mo) 리포트**: 달력 1~6월(`period_start=2026-01-01` … `2026-06-01`). 6월만 에이전트 본문, 1~5월은 `05_load_ai_json_to_db.py` placeholder.
+
+### 알려진 이슈 / 재생성 체크리스트 (2026-07-09)
+
+| 증상 | 원인 | DB 실제 | 수정 |
+|---|---|---|---|
+| 전체 연간: 6월만 값 | **정상** — `power_energy`는 6월만 생성 | 합산 6월 166kWh | — |
+| 선풍기/PC/에어컨: 1~12월 표시 | `device.external_id` 누락 + 데모 `plug-fan` 등 가짜 ID → API 실패 → 프론트 더미 12개월 폴백 | DB는 6월만 | `01_gen_raw_data` external_id 시드, `powerProfiles.js` hex ID |
+| 인덕션: 연간 전부 0 | 동일 폴백 + 데모 `powerW:0` | DB 6월 ~48kWh | hex ID 매핑 |
+
+재생성: `01_gen_raw_data.py` → `02_call_agent_reports.py` → `03/04` → `05_load_ai_json_to_db.py`
 
 ## 요약 의도 (요약 테스트 기준)
 

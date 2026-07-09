@@ -41,6 +41,174 @@ namespace
         const int minute = std::stoi(time.substr(3, 2));
         return hour * 60 + minute;
     }
+
+    bool parseJsonField(const drogon::orm::Field& field, Json::Value& out)
+    {
+        if (field.isNull())
+            return false;
+        Json::CharReaderBuilder builder;
+        std::string errors;
+        std::istringstream stream(field.as<std::string>());
+        return Json::parseFromStream(builder, stream, &out, &errors);
+    }
+
+    std::string normalizeStageLabel(const std::string& label)
+    {
+        if (label == "deep" || label == "light" || label == "rem")
+            return label;
+        return "awake";
+    }
+
+    std::string resolveStageLabel(const drogon::orm::Row& row)
+    {
+        if (!row["stage_label"].isNull())
+            return normalizeStageLabel(row["stage_label"].as<std::string>());
+
+        Json::Value ratio;
+        if (parseJsonField(row["stage_ratio"], ratio))
+        {
+            std::string best = "awake";
+            double best_value = -1.0;
+            static const char* kStages[] = {"deep", "light", "rem", "awake"};
+            for (const char* stage : kStages)
+            {
+                const double value = ratio.get(stage, 0.0).asDouble();
+                if (value > best_value)
+                {
+                    best_value = value;
+                    best = stage;
+                }
+            }
+            return best;
+        }
+
+        Json::Value status;
+        if (parseJsonField(row["status_ratio"], status))
+        {
+            const double asleep = status.get("asleep", 0.0).asDouble();
+            return asleep >= 0.5 ? "light" : "awake";
+        }
+
+        return "awake";
+    }
+
+    int movementLevelFromRow(const drogon::orm::Row& row)
+    {
+        const double toss_mean = row["toss_mean"].isNull() ? 0.0 : row["toss_mean"].as<double>();
+        const int toss_events = row["toss_events"].isNull() ? 0 : row["toss_events"].as<int>();
+        const double level = std::min(100.0, toss_mean * 700.0 + toss_events * 14.0);
+        return static_cast<int>(std::round(level));
+    }
+
+    std::string formatDurationText(int total_seconds)
+    {
+        const int minutes = static_cast<int>(std::round(total_seconds / 60.0));
+        const int hours = minutes / 60;
+        const int remainder = minutes % 60;
+        if (hours > 0 && remainder > 0)
+            return std::to_string(hours) + "시간 " + std::to_string(remainder) + "분";
+        if (hours > 0)
+            return std::to_string(hours) + "시간";
+        return std::to_string(remainder) + "분";
+    }
+
+    std::string formatClockLabel(const std::string& timestamp)
+    {
+        if (timestamp.size() < 16)
+            return timestamp;
+        const int hour = std::stoi(timestamp.substr(11, 2));
+        const int minute = std::stoi(timestamp.substr(14, 2));
+        const bool pm = hour >= 12;
+        const int hour12 = hour % 12 == 0 ? 12 : hour % 12;
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%d:%02d %s", hour12, minute, pm ? "PM" : "AM");
+        return buf;
+    }
+
+    Json::Value buildStageBreakdown(const drogon::orm::Field& stage_totals_field)
+    {
+        Json::Value breakdown(Json::arrayValue);
+        Json::Value totals;
+        if (!parseJsonField(stage_totals_field, totals))
+            return breakdown;
+
+        static const struct
+        {
+            const char* key;
+            const char* label;
+            const char* tone;
+            int typical_start;
+            int typical_end;
+        } kStages[] = {
+            {"deep", "깊은 수면", "deep", 15, 25},
+            {"light", "얕은 수면", "light", 45, 55},
+            {"rem", "REM 수면", "rem", 20, 25},
+            {"awake", "각성", "awake", 5, 10},
+        };
+
+        int asleep_total_s = 0;
+        for (const auto& stage : kStages)
+            asleep_total_s += totals.get(stage.key, 0).asInt();
+
+        if (asleep_total_s <= 0)
+            return breakdown;
+
+        for (const auto& stage : kStages)
+        {
+            const int seconds = totals.get(stage.key, 0).asInt();
+            if (seconds <= 0)
+                continue;
+
+            Json::Value item;
+            item["label"] = stage.label;
+            item["tone"] = stage.tone;
+            item["percent"] = static_cast<int>(std::round((seconds * 100.0) / asleep_total_s));
+            item["durationText"] = formatDurationText(seconds);
+            Json::Value typical(Json::arrayValue);
+            typical.append(stage.typical_start);
+            typical.append(stage.typical_end);
+            item["typicalPercentRange"] = typical;
+            breakdown.append(item);
+        }
+
+        return breakdown;
+    }
+
+    Json::Value buildStageLog(const drogon::orm::Result& stats)
+    {
+        Json::Value stage_log(Json::arrayValue);
+        for (size_t i = 0; i < stats.size(); ++i)
+        {
+            const auto& row = stats[i];
+            if (row["hr_mean"].isNull() && row["br_mean"].isNull())
+                continue;
+
+            Json::Value point;
+            point["time"] = formatClockLabel(row["time_start"].as<std::string>());
+            point["heartRate"] = row["hr_mean"].isNull() ? 0.0 : row["hr_mean"].as<double>();
+            point["breathRate"] = row["br_mean"].isNull() ? 0.0 : row["br_mean"].as<double>();
+            stage_log.append(point);
+        }
+        return stage_log;
+    }
+
+    Json::Value buildSnoringEpisodes(const drogon::orm::Result& stats)
+    {
+        Json::Value episodes(Json::arrayValue);
+        for (size_t i = 0; i < stats.size(); ++i)
+        {
+            const auto& row = stats[i];
+            const double snore_ratio = row["snore_ratio"].isNull() ? 0.0 : row["snore_ratio"].as<double>();
+            if (snore_ratio < 0.12)
+                continue;
+
+            Json::Value episode;
+            episode["time"] = formatClockLabel(row["time_start"].as<std::string>());
+            episode["durationMinutes"] = static_cast<int>(std::round(snore_ratio * 30.0));
+            episodes.append(episode);
+        }
+        return episodes;
+    }
 }
 
 SleepStore::SleepStore(drogon::orm::DbClientPtr client) :
@@ -214,31 +382,10 @@ Json::Value SleepStore::buildHypnogram(
     {
         const auto& row = stats[i];
         Json::Value segment;
-        std::string stage = "awake";
-        if (!row["status_ratio"].isNull())
-        {
-            Json::Value ratio;
-            Json::CharReaderBuilder builder;
-            std::string errors;
-            std::istringstream stream(row["status_ratio"].as<std::string>());
-            if (Json::parseFromStream(builder, stream, &ratio, &errors))
-            {
-                const double asleep = ratio.get("asleep", 0.0).asDouble();
-                const double absent = ratio.get("absent", 0.0).asDouble();
-                if (asleep >= 0.5)
-                    stage = "light";
-                else if (absent >= 0.5)
-                    stage = "awake";
-                else
-                    stage = "awake";
-            }
-        }
-        segment["stage"] = stage;
+        segment["stage"] = resolveStageLabel(row);
         segment["durationMinutes"] = 1;
         segments.append(segment);
-
-        const double toss = row["toss_mean"].isNull() ? 0.0 : row["toss_mean"].as<double>();
-        movement.append(static_cast<int>(std::round(std::min(1.0, toss) * 100.0)));
+        movement.append(movementLevelFromRow(row));
     }
     hypno["segments"] = segments;
     hypno["movementLevels"] = movement;
@@ -329,11 +476,21 @@ ORDER BY time_start ASC
         factors.append(factor);
     }
     out["scoreFactors"] = factors;
-    out["stageBreakdown"] = Json::Value(Json::arrayValue);
+    out["stageBreakdown"] = buildStageBreakdown(session_row["stage_totals"]);
 
     out["hypnogram"] = buildHypnogram(stat_rows, onset, final_wake);
-    out["stageLog"] = Json::Value(Json::arrayValue);
-    out["snoringEpisodes"] = Json::Value(Json::arrayValue);
+
+    auto stat_30m_rows = m_client->execSqlSync(
+        R"SQL(
+SELECT * FROM sleep_stat
+WHERE user_id = ? AND session_id = ? AND granularity = '30m'
+ORDER BY time_start ASC
+)SQL",
+        user_id,
+        session_id);
+
+    out["stageLog"] = buildStageLog(stat_30m_rows);
+    out["snoringEpisodes"] = buildSnoringEpisodes(stat_30m_rows);
     out["analysis"] = Json::Value(Json::arrayValue);
 
     auto report_rows = m_client->execSqlSync(
@@ -354,22 +511,29 @@ ORDER BY time_start ASC
 
 Json::Value SleepStore::getWeeklyReport(int64_t user_id, const std::string& week_start) const
 {
-    auto week_end_rows = m_client->execSqlSync(
+    auto week_end_exclusive_rows = m_client->execSqlSync(
         "SELECT date(?, '+7 day') AS week_end",
         week_start);
-    const std::string week_end = week_end_rows.empty()
+    const std::string week_end_exclusive = week_end_exclusive_rows.empty()
         ? week_start
-        : week_end_rows[0]["week_end"].as<std::string>();
+        : week_end_exclusive_rows[0]["week_end"].as<std::string>();
+
+    auto week_end_inclusive_rows = m_client->execSqlSync(
+        "SELECT date(?, '+6 day') AS week_end",
+        week_start);
+    const std::string week_end_inclusive = week_end_inclusive_rows.empty()
+        ? week_start
+        : week_end_inclusive_rows[0]["week_end"].as<std::string>();
 
     auto session_rows = m_client->execSqlSync(
         "SELECT * FROM sleep_session WHERE user_id = ? AND night_date >= ? AND night_date < ? ORDER BY night_date",
         user_id,
         week_start,
-        week_end);
+        week_end_exclusive);
 
     Json::Value out;
     out["weekStart"] = week_start;
-    out["weekEnd"] = week_end.substr(0, 10);
+    out["weekEnd"] = week_end_inclusive;
 
     Json::Value trend(Json::arrayValue);
     int score_sum = 0;
@@ -424,7 +588,7 @@ Json::Value SleepStore::getWeeklyReport(int64_t user_id, const std::string& week
         user_id,
         week_start);
     out["summary"] = report_rows.empty() || report_rows[0]["report_text"].isNull()
-        ? "이번 주 수면 데이터를 기반으로 한 주간 요약입니다."
+        ? ""
         : report_rows[0]["report_text"].as<std::string>();
 
     return out;

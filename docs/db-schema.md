@@ -335,7 +335,7 @@ CREATE TABLE sleep_report (
     id           INTEGER     PRIMARY KEY,
     user_id      INTEGER     NOT NULL,
     period       VARCHAR(10) NOT NULL,    -- 'daily' | 'weekly'
-    period_start VARCHAR(50) NOT NULL,    -- daily: 'YYYY-MM-DD', weekly: 주 시작일(월요일) 'YYYY-MM-DD'
+    period_start VARCHAR(50) NOT NULL,    -- daily: 'YYYY-MM-DD', weekly: 롤링 7일 창 첫날 'YYYY-MM-DD'
     session_id   INTEGER,                 -- daily 한정
     metrics      TEXT,                    -- json: 구조화 지표
     report_text  TEXT,                    -- LLM 생성 리포트

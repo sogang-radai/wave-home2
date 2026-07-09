@@ -80,6 +80,18 @@ namespace
         return "unknown";
     }
 
+    int keyPressCount(const json& params)
+    {
+        if (!params.is_object() || !params.contains("count"))
+            return 1;
+
+        if (params["count"].is_number_integer())
+            return std::clamp(params["count"].get<int>(), 1, 32);
+        if (params["count"].is_number())
+            return std::clamp(static_cast<int>(params["count"].get<double>()), 1, 32);
+        return 1;
+    }
+
     const char* inputToRemoteKey(std::string_view source)
     {
         if (source == "hdmi1") return "KEY_HDMI1";
@@ -1402,6 +1414,20 @@ int SamsungTizen::sendRemoteKey(const std::string& key)
     return 0;
 }
 
+int SamsungTizen::sendRemoteKeyRepeated(const std::string& key, int count)
+{
+    count = std::clamp(count, 1, 32);
+    for (int i = 0; i < count; ++i)
+    {
+        const int rc = sendRemoteKey(key);
+        if (rc != 0)
+            return rc;
+        if (i + 1 < count)
+            std::this_thread::sleep_for(std::chrono::milliseconds(120));
+    }
+    return 0;
+}
+
 int SamsungTizen::setInput(std::string_view source)
 {
     const char* key = inputToRemoteKey(source);
@@ -1537,7 +1563,7 @@ json SamsungTizen::query(std::string_view name, const json& params)
         return {
             {"on", powerState == "on"},
             {"power_state", powerState},
-            {"connected", m_sessionState == SessionState::Connected},
+            {"sessionConnected", m_sessionState == SessionState::Connected},
             {"input", m_lastInput},
         };
     }
@@ -1569,13 +1595,13 @@ int SamsungTizen::invoke(std::string_view name, const json& params)
     if (name == "mute")
         return sendRemoteKey("KEY_MUTE");
     if (name == "volume_up")
-        return sendRemoteKey("KEY_VOLUP");
+        return sendRemoteKeyRepeated("KEY_VOLUP", keyPressCount(params));
     if (name == "volume_down")
-        return sendRemoteKey("KEY_VOLDOWN");
+        return sendRemoteKeyRepeated("KEY_VOLDOWN", keyPressCount(params));
     if (name == "channel_up")
-        return sendRemoteKey("KEY_CHUP");
+        return sendRemoteKeyRepeated("KEY_CHUP", keyPressCount(params));
     if (name == "channel_down")
-        return sendRemoteKey("KEY_CHDOWN");
+        return sendRemoteKeyRepeated("KEY_CHDOWN", keyPressCount(params));
 
     if (name == "input")
     {
@@ -1622,16 +1648,16 @@ int SamsungTizen::invoke(std::string_view name, const json& params)
         return 0;
     }
     if (name == "input_source")
-        return sendRemoteKey("KEY_SOURCE");
+        return sendRemoteKeyRepeated("KEY_SOURCE", keyPressCount(params));
     if (name == "play_pause")
-        return sendRemoteKey("KEY_PLAY");
-    if (name == "nav_up") return sendRemoteKey("KEY_UP");
-    if (name == "nav_down") return sendRemoteKey("KEY_DOWN");
-    if (name == "nav_left") return sendRemoteKey("KEY_LEFT");
-    if (name == "nav_right") return sendRemoteKey("KEY_RIGHT");
-    if (name == "select") return sendRemoteKey("KEY_ENTER");
-    if (name == "home") return sendRemoteKey("KEY_HOME");
-    if (name == "back") return sendRemoteKey("KEY_RETURN");
+        return sendRemoteKeyRepeated("KEY_PLAY", keyPressCount(params));
+    if (name == "nav_up") return sendRemoteKeyRepeated("KEY_UP", keyPressCount(params));
+    if (name == "nav_down") return sendRemoteKeyRepeated("KEY_DOWN", keyPressCount(params));
+    if (name == "nav_left") return sendRemoteKeyRepeated("KEY_LEFT", keyPressCount(params));
+    if (name == "nav_right") return sendRemoteKeyRepeated("KEY_RIGHT", keyPressCount(params));
+    if (name == "select") return sendRemoteKeyRepeated("KEY_ENTER", keyPressCount(params));
+    if (name == "home") return sendRemoteKeyRepeated("KEY_HOME", keyPressCount(params));
+    if (name == "back") return sendRemoteKeyRepeated("KEY_RETURN", keyPressCount(params));
 
     return -8;
 }

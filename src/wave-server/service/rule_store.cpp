@@ -98,7 +98,16 @@ namespace
             return false;
         }
 
-        if (!value.is_object())
+        if (value.is_array())
+        {
+            if (value.empty() || !value[0].is_object())
+            {
+                out_error = "actions_json array must contain an action object";
+                return false;
+            }
+            value = value[0];
+        }
+        else if (!value.is_object())
         {
             out_error = "actions_json must be an object";
             return false;
@@ -336,6 +345,7 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
     std::unique_lock lock(m_mutex);
     m_rules.clear();
     m_triggers.clear();
+    rebuildIndex();
 
     if (!m_db)
     {
@@ -350,7 +360,11 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
         {
             lock.unlock();
             if (!importLegacyRulesFile(out_error))
+            {
+                lock.lock();
+                rebuildIndex();
                 return false;
+            }
             lock.lock();
         }
 
@@ -362,10 +376,31 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
         {
             Rule rule;
             if (!rowToRule(row, rule, out_error))
-                return false;
+            {
+                LOG_WARN(
+                    "Skipping automation_rule {}: {}",
+                    row["external_id"].as<std::string>(),
+                    out_error);
+                out_error.clear();
+                continue;
+            }
 
-            if (!hydrateTriggersFromRule(rule, m_triggers, out_error))
-                return false;
+            if (rule.triggerJson.is_object() && !rule.triggerJson.empty())
+            {
+                std::string trigger_error;
+                if (!hydrateTriggersFromRule(rule, m_triggers, trigger_error))
+                {
+                    LOG_WARN("Rule {} has unsupported legacy trigger, trigger ignored: {}", rule.id, trigger_error);
+                    rule.triggerJson = json();
+                    rule.triggerId.clear();
+                }
+            }
+
+            if (!rule.schedule && rule.triggerId.empty())
+            {
+                LOG_WARN("Skipping automation_rule {}: no valid trigger or schedule", rule.id);
+                continue;
+            }
 
             m_rules.push_back(std::move(rule));
         }
@@ -376,6 +411,9 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
     catch (const std::exception& e)
     {
         out_error = e.what();
+        m_rules.clear();
+        m_triggers.clear();
+        rebuildIndex();
         return false;
     }
 }
@@ -562,19 +600,37 @@ void RuleStore::rebuildIndex()
 std::string RuleStore::nextRuleId() const
 {
     uint64_t max_num = 0;
-    for (const auto& rule : m_rules)
+    const auto consider_id = [&](const std::string& id)
     {
-        const auto pos = rule.id.find_last_of('_');
+        const auto pos = id.find_last_of('_');
         if (pos == std::string::npos)
-            continue;
+            return;
         try
         {
-            max_num = std::max(max_num, std::stoull(rule.id.substr(pos + 1)));
+            max_num = std::max(max_num, std::stoull(id.substr(pos + 1)));
+        }
+        catch (...)
+        {
+        }
+    };
+
+    for (const auto& rule : m_rules)
+        consider_id(rule.id);
+
+    if (m_db)
+    {
+        try
+        {
+            const auto rows = m_db->execSqlSync(
+                "SELECT external_id FROM automation_rule WHERE external_id LIKE 'rule_%'");
+            for (const auto& row : rows)
+                consider_id(row["external_id"].as<std::string>());
         }
         catch (...)
         {
         }
     }
+
     return "rule_" + std::to_string(max_num + 1);
 }
 

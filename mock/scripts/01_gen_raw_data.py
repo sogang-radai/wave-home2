@@ -33,6 +33,11 @@ def main() -> None:
 
     # --- 계정 / 방 ---------------------------------------------------------
     cur.executemany("INSERT INTO user (id, name, created_at) VALUES (?, ?, ?)", devices.USERS)
+    cur.execute(
+        "INSERT INTO user_session (id, active_user_id, access_token_hash, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (1, 1, "wavehome-dev-token", CREATED_AT, CREATED_AT),
+    )
     cur.executemany("INSERT INTO room (id, name, description) VALUES (?, ?, ?)", devices.ROOMS)
     cur.executemany("INSERT INTO room_user_map (room_id, user_id) VALUES (?, ?)", devices.ROOM_USER_MAP)
 
@@ -40,7 +45,9 @@ def main() -> None:
     device_list = devices.load_devices()
     device_rows, hex_to_pk = devices.build_device_rows(device_list)
     cur.executemany(
-        "INSERT INTO device (id, name, description, class, archived) VALUES (?, ?, ?, ?, ?)", device_rows
+        "INSERT INTO device (id, external_id, name, description, class, archived, enabled, interface_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        device_rows,
     )
 
     room_users: dict[int, list[int]] = {}

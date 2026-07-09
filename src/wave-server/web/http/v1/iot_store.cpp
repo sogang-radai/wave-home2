@@ -621,7 +621,23 @@ Json::Value IotStore::listDevices() const
         item["connected"] = status == "online";
         item["available"] = true;
         item["enabled"] = cfg.value("enabled", true);
-        item["stateSummary"] = stateSummary(entry, device, Json::Value(), status);
+        Json::Value summary_state(Json::objectValue);
+        if (status == "online" && device)
+        {
+            const std::string query_name =
+                (class_name == "samsung_g7" || class_name == "tizen_tv")
+                    ? "state"
+                    : (class_name.rfind("philips_wiz_e29", 0) == 0 || class_name == "reolink_e1_pro"
+                       || class_name == dev::DroidCam::kClass || class_name == "wave_station")
+                        ? "status"
+                        : std::string();
+            if (!query_name.empty())
+            {
+                std::string ignored;
+                summary_state = queryDevice(external_id, query_name, ignored);
+            }
+        }
+        item["stateSummary"] = stateSummary(entry, device, summary_state, status);
 
         if (entry.initResult != 0 || !entry.initError.empty())
         {

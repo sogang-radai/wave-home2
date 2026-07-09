@@ -125,6 +125,7 @@ private:
     int connectSession();
     void disconnectSession(bool remoteHangup);
     int sendRemoteKey(const std::string& key);
+    int sendRemoteKeyRepeated(const std::string& key, int count);
     int setInput(std::string_view source);
     int wakeDisplay();
     int powerOn();

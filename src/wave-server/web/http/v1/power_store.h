@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
+#include <drogon/orm/DbClient.h>
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -20,6 +22,18 @@ public:
 
     Json::Value listPlugs();
     Json::Value comboTrend(const std::string& device_id, const std::string& range, const std::string& metric);
+
+    static Json::Value periodTrend(
+        drogon::orm::DbClientPtr client,
+        const std::string& device_external_id,
+        const std::string& ui_period,
+        const std::string& ref_date_hint);
+
+    static Json::Value queryReport(
+        drogon::orm::DbClientPtr client,
+        const std::string& device_external_id,
+        const std::string& ui_period,
+        const std::string& period_start_hint);
 
 private:
     IotStore& m_iot;

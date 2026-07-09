@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <future>
 
 #include <drogon/drogon.h>
 
@@ -121,26 +120,12 @@ void PowerManager::sampleAllPlugs()
     if (plug_ids.empty())
         return;
 
-    std::vector<std::future<void>> jobs;
-    jobs.reserve(plug_ids.size());
     for (const auto& plug_id : plug_ids)
     {
         if (!m_running.load(std::memory_order_acquire))
             return;
 
-        jobs.push_back(std::async(std::launch::async, [this, plug_id]()
-        {
-            samplePlug(plug_id);
-        }));
-    }
-
-    for (auto& job : jobs)
-    {
-        if (!m_running.load(std::memory_order_acquire))
-            break;
-
-        if (job.wait_for(std::chrono::milliseconds(800)) == std::future_status::ready)
-            job.get();
+        samplePlug(plug_id);
     }
 
     if (m_running.load(std::memory_order_acquire))
@@ -228,29 +213,40 @@ std::string PowerManager::bucketTimeStart(int64_t ts_ms)
 void PowerManager::accumulateEnergy(const std::string& external_id, const PlugReading& reading)
 {
     const std::string bucket_key = bucketTimeStart(reading.ts_ms);
+    std::optional<EnergyBucket> due_bucket;
+    std::string due_key;
 
-    std::lock_guard lock(m_mutex);
-    auto& bucket = m_buckets[external_id];
-    if (bucket.time_start.empty())
-        bucket.time_start = bucket_key;
-
-    if (bucket.time_start != bucket_key)
     {
-        flushBucket(external_id, bucket, resolveDbDeviceId(external_id));
-        bucket = EnergyBucket{};
-        bucket.time_start = bucket_key;
+        std::lock_guard lock(m_mutex);
+        auto& bucket = m_buckets[external_id];
+        if (bucket.time_start.empty())
+            bucket.time_start = bucket_key;
+
+        if (bucket.time_start != bucket_key)
+        {
+            due_key = external_id;
+            due_bucket = bucket;
+            bucket = EnergyBucket{};
+            bucket.time_start = bucket_key;
+        }
+
+        if (bucket.last_ts_ms > 0 && reading.ts_ms > bucket.last_ts_ms)
+        {
+            const double delta_h = static_cast<double>(reading.ts_ms - bucket.last_ts_ms) / 3600000.0;
+            const double avg_w = (bucket.last_power_w + reading.power_w) * 0.5;
+            bucket.energy_wh += avg_w * delta_h;
+        }
+
+        bucket.last_ts_ms = reading.ts_ms;
+        bucket.last_power_w = reading.switch_on ? reading.power_w : 0.0;
+        ++bucket.sample_count;
     }
 
-    if (bucket.last_ts_ms > 0 && reading.ts_ms > bucket.last_ts_ms)
+    if (due_bucket)
     {
-        const double delta_h = static_cast<double>(reading.ts_ms - bucket.last_ts_ms) / 3600000.0;
-        const double avg_w = (bucket.last_power_w + reading.power_w) * 0.5;
-        bucket.energy_wh += avg_w * delta_h;
+        const auto db_id = resolveDbDeviceId(due_key);
+        flushBucket(due_key, *due_bucket, db_id);
     }
-
-    bucket.last_ts_ms = reading.ts_ms;
-    bucket.last_power_w = reading.switch_on ? reading.power_w : 0.0;
-    ++bucket.sample_count;
 }
 
 void PowerManager::flushDueBuckets(int64_t now_ms)

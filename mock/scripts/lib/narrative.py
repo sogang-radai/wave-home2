@@ -58,33 +58,53 @@ def gen_gesture_log(desk_radar_pk: int, tv_pk: int, light_pk: int, rng: random.R
 def gen_automation_rules(hex_ids: dict[str, str], now: str) -> list[tuple]:
     def actions(device_hex: str, name: str, params: dict | None = None) -> str:
         return json.dumps(
-            [{"deviceId": device_hex, "name": name, "params": params or {}, "execMode": "once", "repeatIntervalMs": 0}],
+            {
+                "deviceId": device_hex,
+                "name": name,
+                "params": params or {},
+                "execMode": "once",
+                "repeatIntervalMs": 0,
+            },
             ensure_ascii=False,
         )
 
     rows = [
         (
             1, "rule_schedule_bedroom_light_off", "취침 시간 자동 소등", 1, 0,
-            None, json.dumps({"cron": "0 23 * * *"}, ensure_ascii=False),
+            None, json.dumps({"repeat": "daily", "time": "23:00"}, ensure_ascii=False),
             actions(hex_ids["bedroom_light"], "off"),
             now, now,
         ),
         (
             1, "rule_trigger_aircon_off_away", "외출 시 침실 에어컨 자동 정지", 1, 300000,
-            json.dumps({"deviceQuery": "presence", "condition": "absent"}, ensure_ascii=False), None,
+            json.dumps(
+                {
+                    "kind": "device_state",
+                    "deviceId": hex_ids["bed_radar"],
+                    "query": "presence",
+                    "op": "==",
+                    "value": 0,
+                },
+                ensure_ascii=False,
+            ),
+            None,
             actions(hex_ids["aircon_plug"], "off"),
             now, now,
         ),
         (
             1, "rule_schedule_wake_light_ramp", "기상 조명 서서히 밝히기", 1, 0,
-            None, json.dumps({"cron": "30 6 * * 1-5"}, ensure_ascii=False),
-            actions(hex_ids["bedroom_light"], "ramp_on", {"durationMs": 1800000}),
+            None,
+            json.dumps(
+                {"repeat": "weekly", "time": "06:30", "daysOfWeek": ["mon", "tue", "wed", "thu", "fri"]},
+                ensure_ascii=False,
+            ),
+            actions(hex_ids["bedroom_light"], "on"),
             now, now,
         ),
         (
             2, "rule_schedule_induction_safety_off", "인덕션 안전 타이머", 1, 0,
-            json.dumps({"afterDeviceOn": hex_ids["induction_plug"]}, ensure_ascii=False),
-            json.dumps({"relativeMinutes": 30}, ensure_ascii=False),
+            None,
+            json.dumps({"repeat": "once", "delayMinutes": 30}, ensure_ascii=False),
             actions(hex_ids["induction_plug"], "off"),
             now, now,
         ),
@@ -164,12 +184,44 @@ def gen_schedule_tasks(created_at: str) -> list[tuple]:
 
     weekdays = ["mon", "tue", "wed", "thu", "fri"]
     weekend = ["sat", "sun"]
-    all_days = weekdays + weekend
 
-    # 김건강 - 수면/멘탈 루틴
-    weekly(1, "아침 스트레칭", "posture", weekdays, 7, 0, 7, 15)
-    weekly(1, "취침 전 독서", "mental", all_days, 22, 30, 23, 0)
-    weekly(1, "주말 명상", "mental", weekend, 9, 0, 9, 20)
+    # 김건강 — weeklyPlanData.js initialTodos 와 동기화
+    user1_plan = [
+        ("기상 후 목 스트레칭 20초", "mon", "posture", 7 * 60, 7 * 60 + 20),
+        ("아침 샐러드", "mon", "diet", 8 * 60, 8 * 60 + 30),
+        ("5분 명상", "mon", "mental", 9 * 60, 9 * 60 + 5),
+        ("자정 전 취침", "mon", "sleep", 23 * 60, 23 * 60 + 30),
+        ("어깨 스트레칭 10분", "tue", "posture", 7 * 60 + 30, 7 * 60 + 40),
+        ("점심 채소 위주", "tue", "diet", 12 * 60, 12 * 60 + 30),
+        ("저널링 10분", "tue", "mental", 20 * 60, 20 * 60 + 10),
+        ("스마트폰 디톡스 1시간", "tue", "sleep", 22 * 60, 23 * 60),
+        ("오후 4시 목 스트레칭", "wed", "posture", 16 * 60, 16 * 60 + 5),
+        ("저녁 스트레칭 10분", "wed", "posture", 19 * 60, 19 * 60 + 10),
+        ("수분 섭취 2L 체크", "wed", "diet", 12 * 60 + 30, 13 * 60),
+        ("화면 밝기 줄이기", "wed", "sleep", 22 * 60, 22 * 60 + 10),
+        ("자정 전 취침", "wed", "sleep", 23 * 60, 23 * 60 + 30),
+        ("기지개 스트레칭", "thu", "posture", 7 * 60, 7 * 60 + 10),
+        ("걷기 명상 20분", "thu", "mental", 15 * 60, 15 * 60 + 20),
+        ("저녁 가볍게 먹기", "thu", "diet", 18 * 60, 18 * 60 + 30),
+        ("음악 들으며 취침 준비", "thu", "sleep", 22 * 60 + 30, 23 * 60),
+        ("스쿼트 10회", "fri", "posture", 7 * 60 + 30, 7 * 60 + 40),
+        ("과일 간식 챙기기", "fri", "diet", 15 * 60, 15 * 60 + 10),
+        ("독서 30분", "fri", "mental", 20 * 60, 20 * 60 + 30),
+        ("22:30 전 취침", "fri", "sleep", 22 * 60 + 30, 23 * 60),
+        ("요가 30분", "sat", "posture", 8 * 60, 8 * 60 + 30),
+        ("건강 브런치", "sat", "diet", 10 * 60, 10 * 60 + 30),
+        ("낮잠 30분", "sat", "sleep", 14 * 60, 14 * 60 + 30),
+        ("자연 산책", "sat", "mental", 17 * 60, 18 * 60),
+        ("스트레칭 루틴 15분", "sun", "posture", 9 * 60, 9 * 60 + 15),
+        ("주간 영양 식단 계획", "sun", "diet", 11 * 60, 11 * 60 + 30),
+        ("주간 수면 리뷰", "sun", "sleep", 15 * 60, 15 * 60 + 30),
+        ("주간 회고 작성", "sun", "mental", 19 * 60, 19 * 60 + 30),
+    ]
+    for title, dow, category, start_min, end_min in user1_plan:
+        rows.append((
+            1, title, created_at, "user", category, "weekly", dow, None,
+            start_min, end_min, 0, None,
+        ))
     once(1, "치과 정기검진", "life", "2026-06-16", "tue", 14, 0, 15, 0)
     once(1, "여름 옷 정리", "life", "2026-06-20", "sat", 10, 0, 11, 30)
 
@@ -189,29 +241,71 @@ def gen_alarms(pks: dict[str, int], created_at: str) -> list[tuple]:
     """user_id, name, time_minute, days_of_week(json), smart_wake, radar_device_id, device_id,
     method(json), enabled, created_at, updated_at"""
 
-    def method(sound_id: str, volume: int = 65) -> str:
-        return json.dumps({"type": "sound", "soundId": sound_id, "volume": volume}, ensure_ascii=False)
+    def method_light_on(brightness: int = 70) -> str:
+        return json.dumps({"type": "light_on", "brightness": brightness}, ensure_ascii=False)
+
+    def method_light_blink(brightness: int = 70, interval_sec: int = 2) -> str:
+        return json.dumps(
+            {"type": "light_blink", "brightness": brightness, "intervalSec": interval_sec},
+            ensure_ascii=False,
+        )
+
+    def method_plug_on() -> str:
+        return json.dumps({"type": "plug_on"}, ensure_ascii=False)
+
+    def method_tts(
+        text: str,
+        speaker_id: int = 0,
+        repeat_count: int = 3,
+        interval_sec: int = 20,
+    ) -> str:
+        return json.dumps(
+            {
+                "type": "tts",
+                "speakerId": speaker_id,
+                "text": text,
+                "repeatCount": repeat_count,
+                "intervalSec": interval_sec,
+            },
+            ensure_ascii=False,
+        )
 
     rows = [
+        # 김건강(1) — 침실 레이더·조명 중심
         (
             1, "평일 기상", 7 * 60, json.dumps(["mon", "tue", "wed", "thu", "fri"]), 1,
-            pks["bed_radar"], pks["bedroom_light"], method("morning-breeze"), 1, created_at, created_at,
+            pks["bed_radar"], pks["bedroom_light"], method_light_on(75), 1, created_at, created_at,
         ),
         (
             1, "주말 늦은 기상", 8 * 60 + 30, json.dumps(["sat", "sun"]), 1,
-            pks["bed_radar"], pks["bedroom_light"], method("gentle-piano"), 1, created_at, created_at,
+            pks["bed_radar"], pks["bedroom_light"], method_light_blink(60, 3), 1, created_at, created_at,
+        ),
+        (
+            1, "Wave Station 음성 기상", 7 * 60, json.dumps(["mon", "tue", "wed", "thu", "fri"]), 0,
+            None, pks["wave_station"],
+            method_tts("좋은 아침이에요! 일어날 시간입니다."),
+            1, created_at, created_at,
+        ),
+        (
+            1, "거실 아침 조명", 8 * 60, json.dumps(["sat", "sun"]), 0,
+            None, pks["living_light"], method_light_on(50), 1, created_at, created_at,
         ),
         (
             1, "여행 조기 기상", 5 * 60 + 30, json.dumps([]), 0,
-            None, None, method("alarm-classic", 80), 0, created_at, created_at,
+            None, pks["bedroom_light"], method_light_on(100), 0, created_at, created_at,
         ),
+        # 박헬스(2) — 거실·부엌 장치
         (
             2, "헬스장 가는 날 기상", 6 * 60 + 30, json.dumps(["mon", "wed", "fri"]), 0,
-            None, None, method("energetic-beat", 75), 1, created_at, created_at,
+            None, pks["living_light"], method_light_on(80), 1, created_at, created_at,
         ),
         (
             2, "주말 아침 알람", 8 * 60, json.dumps(["sat"]), 0,
-            None, None, method("gentle-piano"), 1, created_at, created_at,
+            None, pks["kitchen_light"], method_light_blink(70, 2), 1, created_at, created_at,
+        ),
+        (
+            2, "일요일 선풍기 예열", 7 * 60 + 30, json.dumps(["sun"]), 0,
+            None, pks["fan_plug"], method_plug_on(), 0, created_at, created_at,
         ),
     ]
     return rows

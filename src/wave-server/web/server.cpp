@@ -183,18 +183,31 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     {
         drogon::orm::Sqlite3Config db_config;
         db_config.connectionNumber = thread_num > 0 ? thread_num : 1;
-        std::string db_filename = resolved_database_path.string();
-        if (read_only)
-            db_filename += "?mode=ro";
-        db_config.filename = std::move(db_filename);
+        // Drogon uses sqlite3_open(); "?mode=ro" without the file: URI scheme opens a wrong path.
+        db_config.filename = resolved_database_path.string();
         db_config.name = "default";
         db_config.timeout = -1.0;
         app.addDbClient(db_config);
 
         const bool skip_db = skip_migrations;
-        app.registerBeginningAdvice([skip_db]()
+        app.registerBeginningAdvice([skip_db, read_only]()
         {
             auto client = drogon::app().getDbClient();
+            if (read_only)
+            {
+                try
+                {
+                    client->execSqlSync("PRAGMA query_only = ON");
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_WARN("PRAGMA query_only failed: {}", e.what());
+                }
+            }
+            else
+            {
+                db::configureConnectionSettings(client);
+            }
             const bool ok = skip_db
                 ? db::validateDatabaseSchema(client)
                 : db::runMigrations(client);

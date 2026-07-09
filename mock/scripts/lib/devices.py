@@ -91,12 +91,21 @@ def classify_appliance(description: str) -> str | None:
     return None
 
 
-def build_device_rows(devices: list[dict]) -> tuple[list[tuple[int, str, str, str, int]], dict[str, int]]:
+def build_device_rows(devices: list[dict]) -> tuple[list[tuple[int, str, str, str, str, int, int, str]], dict[str, int]]:
     """device 테이블 행과 hex_id -> integer PK 매핑을 만든다(JSON 순서 = PK 순서)."""
-    rows: list[tuple[int, str, str, str, int]] = []
+    rows: list[tuple[int, str, str, str, str, int, int, str]] = []
     hex_to_pk: dict[str, int] = {}
     for i, dev in enumerate(devices, start=1):
-        rows.append((i, dev["name"], dev["description"], dev["class"], 0))
+        rows.append((
+            i,
+            dev["id"],
+            dev["name"],
+            dev["description"],
+            dev["class"],
+            0,
+            1 if dev.get("enabled", True) else 0,
+            "{}",
+        ))
         hex_to_pk[dev["id"]] = i
     return rows, hex_to_pk
 

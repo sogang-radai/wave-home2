@@ -401,6 +401,39 @@ CREATE TABLE IF NOT EXISTS sleep_report_embedding (
 ))SQL",
             },
         },
+        {
+            12,
+            "alarm settings",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS alarm (
+    id              INTEGER      PRIMARY KEY,
+    user_id         INTEGER      NOT NULL,
+    name            VARCHAR(100) NOT NULL,
+    time_minute     INTEGER      NOT NULL,
+    days_of_week    TEXT         NOT NULL,
+    smart_wake      INTEGER      NOT NULL,
+    radar_device_id INTEGER,
+    device_id       INTEGER,
+    method          TEXT         NOT NULL,
+    enabled         INTEGER      NOT NULL,
+    created_at      VARCHAR(50)  NOT NULL,
+    updated_at      VARCHAR(50)  NOT NULL,
+    CHECK (time_minute >= 0 AND time_minute <= 1439),
+    CHECK (smart_wake IN (0, 1)),
+    CHECK (enabled IN (0, 1)),
+    FOREIGN KEY (user_id) REFERENCES user(id),
+    FOREIGN KEY (radar_device_id) REFERENCES device(id),
+    FOREIGN KEY (device_id) REFERENCES device(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_alarm_user_enabled ON alarm (user_id, enabled)
+)SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_alarm_user_time ON alarm (user_id, time_minute)
+)SQL",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)
@@ -536,6 +569,25 @@ INSERT INTO device_room_map (device_id, room_id) VALUES
         {
             LOG_WARN("Room/device seed skipped: {}", e.what());
         }
+    }
+}
+
+void configureConnectionSettings(const drogon::orm::DbClientPtr& client)
+{
+    if (!client)
+        return;
+
+    try
+    {
+        // WAL lets readers proceed while PowerManager/SleepManager write; busy_timeout
+        // avoids wedging every Drogon worker thread on SQLITE_BUSY forever.
+        client->execSqlSync("PRAGMA journal_mode=WAL");
+        client->execSqlSync("PRAGMA busy_timeout=5000");
+        client->execSqlSync("PRAGMA synchronous=NORMAL");
+    }
+    catch (const std::exception& e)
+    {
+        LOG_WARN("SQLite PRAGMA setup failed: {}", e.what());
     }
 }
 

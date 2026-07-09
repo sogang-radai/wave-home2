@@ -3,7 +3,7 @@
 
 DB에는 쓰지 않고 결과를 mock/ai_reports/*.json 으로만 남긴다(05_load_ai_json_to_db.py가 반영).
 전력은 계측 플러그 합산(device_id=NULL)만 실호출한다(약속된 축소 범위: 24h 30 + 1w 24 + 1mo 1 = 55건).
-수면은 daily 30 + weekly 5(마지막 주는 2박) = 35건.
+수면은 daily 30 + weekly 24(롤링 7일 창, period_start=창 첫날) = 54건.
 
 실행 전: agent 서버(:8501)가 떠 있어야 한다.
     uvicorn app.main:app --port 8501   (wave-home-agent/)
@@ -293,7 +293,9 @@ def main() -> None:
 
     all_power_targets = gather_power_targets(conn)
     all_sleep_daily_dates = [row[0] for row in SCENARIO]
-    all_sleep_weekly_starts = [timeutil.fmt_date(d) for d in timeutil.june_dates() if d.weekday() == 0]
+    all_sleep_weekly_starts = [
+        timeutil.fmt_date(d) for d in timeutil.sliding_week_starts(timeutil.june_dates())
+    ]
 
     power_targets = [r for r in all_power_targets if r["id"] not in done_power_ids]
     sleep_daily_dates = [d for d in all_sleep_daily_dates if ("daily", d) not in done_sleep_keys]

@@ -11,6 +11,7 @@ set(_wave_server_sources
     service/agent_client.cpp
     service/go2rtc_service.cpp
     service/power_manager.cpp
+    service/alarm_manager.cpp
     service/trigger_types.cpp
     service/action_queue.cpp
     service/rule_store.cpp
@@ -34,6 +35,7 @@ set(_wave_server_sources
     web/http/v1/notifications_controller.cpp
     web/http/v1/notifications_store.cpp
     web/http/v1/schedule_tasks_controller.cpp
+    web/http/v1/alarms_controller.cpp
     web/http/v1/chat_controller.cpp
     web/http/v1/chat_store.cpp
     web/http/internal/internal_controller.cpp
@@ -53,6 +55,11 @@ set(_wave_server_sources
     web/http/v1/power_store.cpp
     web/http/v1/sleep_controller.cpp
     web/http/v1/sleep_store.cpp
+    web/http/v1/insights_store.cpp
+    web/http/v1/insights_controller.cpp
+    web/http/v1/dashboard_controller.cpp
+    web/http/v1/weekly_plan_store.cpp
+    web/http/v1/weekly_plan_controller.cpp
     web/http/push_notification.cpp
     web/push/web_push.cpp
     web/push/push_store.cpp

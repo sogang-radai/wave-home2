@@ -7,6 +7,9 @@
 [submodule "wave-home-front"]
 	path = wave-home-front
 	url = https://github.com/sogang-radai/wave-home-front.git
+[submodule "wave-home-agent"]
+	path = wave-home-agent
+	url = https://github.com/sogang-radai/wave-home-agent.git
 [submodule "thirdparty/asio"]
 	path = thirdparty/asio
 	url = https://github.com/chriskohlhoff/asio.git

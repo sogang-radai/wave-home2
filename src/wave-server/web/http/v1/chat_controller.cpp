@@ -10,6 +10,7 @@
 #include <json/json.h>
 
 #include "../../../app/app_state.h"
+#include "../../../core/json.h"
 #include "../../../core/logger.h"
 #include "../../../core/time_util.h"
 #include "../../../service/agent_client.h"
@@ -96,7 +97,7 @@ namespace
         return stream->send("data: " + payload + "\n\n");
     }
 
-    std::string toolLabel(const std::string& name, bool running)
+    std::string toolLabel(const std::string& name, bool running, bool failed = false)
     {
         static const std::unordered_map<std::string, std::string> labels = {
             {"query_db", "DB 조회"},
@@ -109,7 +110,11 @@ namespace
 
         const auto it = labels.find(name);
         const std::string base = it != labels.end() ? it->second : name;
-        return running ? base + " 중" : base + " 완료";
+        if (running)
+            return base + " 중";
+        if (failed)
+            return base + " 실패";
+        return base + " 완료";
     }
 
     std::string summarizeToolResult(const json& result)
@@ -132,15 +137,50 @@ namespace
         return {};
     }
 
-    Json::Value makeToolEvent(const std::string& name, bool running, const std::string& result_summary = {})
+    Json::Value makeToolEvent(
+        const std::string& name,
+        bool running,
+        const std::string& result_summary = {},
+        bool failed = false)
     {
         Json::Value event;
         event["name"] = name;
-        event["status"] = running ? "running" : "done";
-        event["label"] = toolLabel(name, running);
+        event["status"] = running ? "running" : (failed ? "failed" : "done");
+        event["label"] = toolLabel(name, running, failed);
         if (!result_summary.empty())
             event["resultSummary"] = result_summary;
         return event;
+    }
+
+    std::string buildAgentNow()
+    {
+        const auto& state = AppState::get();
+        if (state.demo_mode && !state.anchor_date.empty())
+        {
+            const auto now = std::chrono::system_clock::now();
+            const std::time_t t = std::chrono::system_clock::to_time_t(now);
+            std::tm local_tm {};
+#if defined(_WIN32)
+            localtime_s(&local_tm, &t);
+#else
+            localtime_r(&t, &local_tm);
+#endif
+            char time_buf[16];
+            std::snprintf(
+                time_buf,
+                sizeof(time_buf),
+                "%02d:%02d:%02d",
+                local_tm.tm_hour,
+                local_tm.tm_min,
+                local_tm.tm_sec);
+            return state.anchor_date + " " + time_buf;
+        }
+        return formatTimestamp();
+    }
+
+    void setAgentTurnNow(service::AgentChatTurnRequest& request)
+    {
+        request.now = buildAgentNow();
     }
 
     service::AgentClientResult callAgentSync(
@@ -155,7 +195,7 @@ namespace
         request.chat_history_id = chat_history_id;
         request.user_id = user_id;
         request.messages = messages;
-        request.now = formatTimestamp();
+        setAgentTurnNow(request);
         request.stream = false;
 
         return service::runChatTurnSync(
@@ -166,46 +206,62 @@ namespace
             out_error);
     }
 
-    void runStreamingTurn(
-        std::shared_ptr<drogon::ResponseStream> stream,
+    std::vector<service::AgentChatMessage> buildAgentMessagesFromJson(const Json::Value& messages)
+    {
+        std::vector<service::AgentChatMessage> out;
+        if (!messages.isArray())
+            return out;
+
+        for (const auto& message : messages)
+        {
+            if (!message.isMember("role") || !message["role"].isString())
+                continue;
+            if (!message.isMember("text") || !message["text"].isString())
+                continue;
+
+            const std::string role = message["role"].asString();
+            if (role != "user" && role != "assistant")
+                continue;
+
+            const std::string text = message["text"].asString();
+            if (text.empty())
+                continue;
+
+            out.push_back({role, text});
+        }
+        return out;
+    }
+
+    std::optional<int64_t> parseRequiredInt64(
+        const Json::Value& json,
+        const char* field,
+        std::string& error)
+    {
+        if (!json.isMember(field) || !json[field].isInt64())
+        {
+            error = std::string("필수 필드가 없습니다: ") + field;
+            return std::nullopt;
+        }
+        return json[field].asInt64();
+    }
+
+    bool runAgentStreamCore(
+        const std::shared_ptr<drogon::ResponseStream>& stream,
         int64_t user_id,
         int64_t conversation_id,
-        const Json::Value& user_message,
-        Json::Value conversation_for_event,
-        bool is_new_conversation)
+        int64_t assistant_id,
+        const std::vector<service::AgentChatMessage>& agent_messages,
+        std::string& accumulated_text,
+        std::string& accumulated_reasoning,
+        Json::Value& tool_events)
     {
-        ChatStore store(AppState::get().db());
-        const auto messages = conversation_for_event["messages"];
-        const int64_t assistant_id = store.nextMessageId(messages);
-        const std::string assistant_created_at = formatTimestamp();
-        const Json::Value assistant_shell = store.makeAssistantShell(assistant_id, assistant_created_at);
-
-        Json::Value user_added;
-        user_added["type"] = "user_added";
-        user_added["conversationId"] = static_cast<Json::Int64>(conversation_id);
-        user_added["message"] = user_message;
-        if (is_new_conversation)
-            user_added["conversation"] = conversation_for_event;
-        if (!sendSseEvent(stream, user_added))
-            return;
-
-        Json::Value assistant_start;
-        assistant_start["type"] = "assistant_start";
-        assistant_start["conversationId"] = static_cast<Json::Int64>(conversation_id);
-        assistant_start["message"] = assistant_shell;
-        if (!sendSseEvent(stream, assistant_start))
-            return;
-
         service::AgentChatTurnRequest agent_request;
         agent_request.chat_history_id = conversation_id;
         agent_request.user_id = user_id;
-        agent_request.messages = store.buildAgentMessages(messages);
-        agent_request.now = formatTimestamp();
+        agent_request.messages = agent_messages;
+        setAgentTurnNow(agent_request);
         agent_request.stream = true;
 
-        std::string accumulated_text;
-        std::string accumulated_reasoning;
-        Json::Value tool_events(Json::arrayValue);
         std::unordered_map<std::string, Json::ArrayIndex> tool_index;
 
         std::string agent_error;
@@ -243,6 +299,7 @@ namespace
                 if (type == "tool.end")
                 {
                     const std::string name = event.value("name", "");
+                    const bool failed = event.contains("ok") && event["ok"].is_boolean() && !event["ok"].get<bool>();
                     const std::string result_summary = event.contains("result")
                         ? summarizeToolResult(event["result"])
                         : std::string();
@@ -250,11 +307,11 @@ namespace
                     payload["type"] = "tool_end";
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
-                    payload["toolEvent"] = makeToolEvent(name, false, result_summary);
+                    payload["toolEvent"] = makeToolEvent(name, false, result_summary, failed);
                     if (!sendSseEvent(stream, payload))
                         return false;
 
-                    Json::Value stored = makeToolEvent(name, false, result_summary);
+                    Json::Value stored = makeToolEvent(name, false, result_summary, failed);
                     if (tool_index.count(name) > 0)
                         tool_events[tool_index[name]] = stored;
                     else
@@ -349,6 +406,53 @@ namespace
             accumulated_text = "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.";
         }
 
+        return true;
+    }
+
+    void runStreamingTurn(
+        std::shared_ptr<drogon::ResponseStream> stream,
+        int64_t user_id,
+        int64_t conversation_id,
+        const Json::Value& user_message,
+        Json::Value conversation_for_event,
+        bool is_new_conversation)
+    {
+        ChatStore store(AppState::get().db());
+        const auto messages = conversation_for_event["messages"];
+        const int64_t assistant_id = store.nextMessageId(messages);
+        const std::string assistant_created_at = formatTimestamp();
+        const Json::Value assistant_shell = store.makeAssistantShell(assistant_id, assistant_created_at);
+
+        Json::Value user_added;
+        user_added["type"] = "user_added";
+        user_added["conversationId"] = static_cast<Json::Int64>(conversation_id);
+        user_added["message"] = user_message;
+        if (is_new_conversation)
+            user_added["conversation"] = conversation_for_event;
+        if (!sendSseEvent(stream, user_added))
+            return;
+
+        Json::Value assistant_start;
+        assistant_start["type"] = "assistant_start";
+        assistant_start["conversationId"] = static_cast<Json::Int64>(conversation_id);
+        assistant_start["message"] = assistant_shell;
+        if (!sendSseEvent(stream, assistant_start))
+            return;
+
+        std::string accumulated_text;
+        std::string accumulated_reasoning;
+        Json::Value tool_events(Json::arrayValue);
+
+        runAgentStreamCore(
+            stream,
+            user_id,
+            conversation_id,
+            assistant_id,
+            store.buildAgentMessages(messages),
+            accumulated_text,
+            accumulated_reasoning,
+            tool_events);
+
         store.appendAssistantMessage(
             user_id,
             conversation_id,
@@ -435,6 +539,103 @@ namespace
         resp->addHeader("Cache-Control", "no-cache, no-store");
         resp->addHeader("Connection", "keep-alive");
         callback(resp);
+    }
+
+    void startEphemeralStreamResponse(
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+        int64_t user_id,
+        int64_t conversation_id,
+        int64_t assistant_message_id,
+        const Json::Value& messages_json)
+    {
+        const auto agent_messages = buildAgentMessagesFromJson(messages_json);
+        if (agent_messages.empty())
+        {
+            respondError(callback, 400, "INVALID_MESSAGE", "메시지 기록이 비어 있습니다.", "messages");
+            return;
+        }
+
+        auto resp = drogon::HttpResponse::newAsyncStreamResponse(
+            [user_id, conversation_id, assistant_message_id, agent_messages](drogon::ResponseStreamPtr response_stream)
+            {
+                std::thread([user_id, conversation_id, assistant_message_id, agent_messages, response = std::shared_ptr<drogon::ResponseStream>{
+                                 std::move(response_stream)}]() mutable
+                {
+                    std::string accumulated_text;
+                    std::string accumulated_reasoning;
+                    Json::Value tool_events(Json::arrayValue);
+
+                    runAgentStreamCore(
+                        response,
+                        user_id,
+                        conversation_id,
+                        assistant_message_id,
+                        agent_messages,
+                        accumulated_text,
+                        accumulated_reasoning,
+                        tool_events);
+
+                    Json::Value message_done;
+                    message_done["type"] = "message_done";
+                    message_done["conversationId"] = static_cast<Json::Int64>(conversation_id);
+                    message_done["messageId"] = static_cast<Json::Int64>(assistant_message_id);
+                    message_done["text"] = accumulated_text;
+                    sendSseEvent(response, message_done);
+
+                    if (response)
+                        response->close();
+                }).detach();
+            },
+            true);
+
+        resp->setContentTypeString("text/event-stream");
+        resp->addHeader("Cache-Control", "no-cache, no-store");
+        resp->addHeader("Connection", "keep-alive");
+        callback(resp);
+    }
+
+    void handleStreamEphemeral(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+    {
+        const auto user_id = resolveUserId(req, callback);
+        if (!user_id)
+            return;
+
+        const auto json = req->getJsonObject();
+        if (!json)
+        {
+            respondError(callback, 400, "INVALID_REQUEST", "요청 본문이 필요합니다.");
+            return;
+        }
+
+        std::string error;
+        const auto conversation_id = parseRequiredInt64(*json, "conversationId", error);
+        if (!conversation_id)
+        {
+            respondError(callback, 400, "INVALID_REQUEST", error);
+            return;
+        }
+
+        const auto assistant_message_id = parseRequiredInt64(*json, "assistantMessageId", error);
+        if (!assistant_message_id)
+        {
+            respondError(callback, 400, "INVALID_REQUEST", error);
+            return;
+        }
+
+        if (!json->isMember("messages") || !(*json)["messages"].isArray())
+        {
+            respondError(callback, 400, "INVALID_REQUEST", "messages 배열이 필요합니다.", "messages");
+            return;
+        }
+
+        startEphemeralStreamResponse(
+            std::move(callback),
+            *user_id,
+            *conversation_id,
+            *assistant_message_id,
+            (*json)["messages"]);
     }
 }
 
@@ -750,6 +951,13 @@ void ChatController::streamNewConversation(
     }
 
     startStreamResponse(std::move(callback), *user_id, std::nullopt, text);
+}
+
+void ChatController::streamEphemeral(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+{
+    handleStreamEphemeral(req, std::move(callback));
 }
 
 void ChatController::getSuggestions(

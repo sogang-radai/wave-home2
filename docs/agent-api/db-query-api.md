@@ -343,7 +343,7 @@ type DbQueryResult = {
 | `userId` | **필수** | 사용자 id |
 | `id` | — | 리포트 id |
 | `period` | — | `'daily'` \| `'weekly'` |
-| `periodStart` | — | exact — daily: `'YYYY-MM-DD'`, weekly: 주 시작일(월요일) |
+| `periodStart` | — | exact — daily: `'YYYY-MM-DD'`, weekly: 롤링 7일 창 **첫날** `'YYYY-MM-DD'` |
 | `from` / `to` | — | `periodStart` 기준 `[from, to)` |
 
 기본 정렬: `periodStart` desc.

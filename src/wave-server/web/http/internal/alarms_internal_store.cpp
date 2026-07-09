@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iomanip>
 #include <sstream>
 
 #include "../../../app/app_state.h"
@@ -37,6 +38,25 @@ namespace
         Json::StreamWriterBuilder builder;
         builder["indentation"] = "";
         return Json::writeString(builder, days.isArray() ? days : Json::Value(Json::arrayValue));
+    }
+
+    Json::Value normalizeAlarmMethod(const Json::Value& method)
+    {
+        if (!method.isObject() || !method.isMember("type") || !method["type"].isString())
+            return method;
+
+        if (method["type"].asString() != "sound")
+            return method;
+
+        // mock.db 레거시 sound 형식 → alarms-api.md 의 tts 로 변환 (에이전트 파싱 호환)
+        Json::Value normalized;
+        normalized["type"] = "tts";
+        normalized["speakerId"] = 0;
+        const std::string sound_id = method.get("soundId", "").asString();
+        normalized["text"] = sound_id.empty() ? "알람" : sound_id;
+        normalized["repeatCount"] = 1;
+        normalized["intervalSec"] = 5;
+        return normalized;
     }
 }
 
@@ -103,9 +123,16 @@ std::string AlarmsInternalStore::externalDeviceId(int64_t internal_id) const
     for (const auto& entry : AppState::get().deviceManager.manifestEntries())
     {
         if (entry.config.value("name", "") == name)
-            return entry.config.value("id", "");
+        {
+            const auto manifest_id = entry.config.value("id", "");
+            if (!manifest_id.empty())
+                return manifest_id;
+        }
     }
-    return {};
+
+    std::ostringstream stream;
+    stream << std::hex << std::nouppercase << std::setw(16) << std::setfill('0') << internal_id;
+    return stream.str();
 }
 
 Json::Value AlarmsInternalStore::rowToJson(const drogon::orm::Row& row) const
@@ -120,18 +147,24 @@ Json::Value AlarmsInternalStore::rowToJson(const drogon::orm::Row& row) const
     if (row["radar_device_id"].isNull())
         item["radarDeviceId"] = Json::nullValue;
     else
-        item["radarDeviceId"] = externalDeviceId(row["radar_device_id"].as<int64_t>());
+    {
+        const auto wire_id = externalDeviceId(row["radar_device_id"].as<int64_t>());
+        item["radarDeviceId"] = wire_id.empty() ? Json::nullValue : Json::Value(wire_id);
+    }
     if (row["device_id"].isNull())
         item["deviceId"] = Json::nullValue;
     else
-        item["deviceId"] = externalDeviceId(row["device_id"].as<int64_t>());
+    {
+        const auto wire_id = externalDeviceId(row["device_id"].as<int64_t>());
+        item["deviceId"] = wire_id.empty() ? Json::nullValue : Json::Value(wire_id);
+    }
 
     Json::CharReaderBuilder reader;
     Json::Value method;
     std::string errors;
     std::istringstream stream(row["method"].as<std::string>());
     if (Json::parseFromStream(reader, stream, &method, &errors) && !method.isNull())
-        item["method"] = method;
+        item["method"] = normalizeAlarmMethod(method);
     else
         item["method"] = Json::nullValue;
 
@@ -248,9 +281,9 @@ Json::Value AlarmsInternalStore::createAlarm(
 
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";
-    const std::string method_json = body.isMember("method")
+    const std::string method_json = body.isMember("method") && !body["method"].isNull()
         ? Json::writeString(builder, body["method"])
-        : "null";
+        : "{}";
 
     auto rows = m_client->execSqlSync(
         "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM alarm");

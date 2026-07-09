@@ -122,6 +122,7 @@ public:
     service::ActionQueue& actionQueue();
     service::RuleStore& ruleStore();
     service::TriggerManager& triggerManager();
+    // Alarm scheduling runtime: service::AlarmManager::get()
     web::v1::GestureStore& gestureStore();
     web::v1::IrStore& irStore();
 
@@ -168,6 +169,7 @@ private:
 
     bool m_triggerRuntimeStarted = false;
     bool m_initialized = false;
+    std::atomic<bool> m_dbReady{false};
 };
 
 WAVE_NAMESPACE_END

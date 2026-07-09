@@ -15,6 +15,7 @@ struct Migration
     std::vector<const char*> statements;
 };
 
+void configureConnectionSettings(const drogon::orm::DbClientPtr& client);
 bool runMigrations(const drogon::orm::DbClientPtr& client);
 bool validateDatabaseSchema(const drogon::orm::DbClientPtr& client);
 

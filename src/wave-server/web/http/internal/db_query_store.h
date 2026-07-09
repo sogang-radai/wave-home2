@@ -22,6 +22,7 @@ private:
     drogon::orm::DbClientPtr m_client;
 
     Json::Value executeOne(const Json::Value& query) const;
+    Json::Value executeOneUnchecked(const Json::Value& query, const std::string& table) const;
 };
 
 } // namespace internal

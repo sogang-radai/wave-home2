@@ -1,5 +1,6 @@
 #include "trigger_types.h"
 
+#include <cstdio>
 #include <sstream>
 
 WAVE_NAMESPACE_BEGIN
@@ -156,30 +157,94 @@ bool parseTriggerFromJson(const json& value, Trigger& out_trigger, std::string& 
     return true;
 }
 
+namespace
+{
+    json normalizeLegacyScheduleJson(const json& value)
+    {
+        if (!value.is_object())
+            return value;
+
+        if (value.contains("repeat") && value["repeat"].is_string())
+            return value;
+
+        if (value.contains("relativeMinutes"))
+        {
+            json out = json::object();
+            out["repeat"] = "once";
+            out["delayMinutes"] = value["relativeMinutes"];
+            return out;
+        }
+
+        if (value.contains("delayMinutes") && !value["delayMinutes"].is_null())
+        {
+            json out = json::object();
+            out["repeat"] = "once";
+            out["delayMinutes"] = value["delayMinutes"];
+            return out;
+        }
+
+        if (!value.contains("cron") || !value["cron"].is_string())
+            return value;
+
+        const auto cron = value["cron"].get<std::string>();
+        int minute = 0;
+        int hour = 0;
+        char dom[8] = {};
+        char month[8] = {};
+        char dow[16] = {};
+        if (std::sscanf(cron.c_str(), "%d %d %7s %7s %15s", &minute, &hour, dom, month, dow) < 2)
+            return value;
+
+        json out = json::object();
+        char time_buf[6];
+        std::snprintf(time_buf, sizeof(time_buf), "%02d:%02d", hour, minute);
+        out["time"] = time_buf;
+
+        const std::string dow_text(dow);
+        if (dow_text == "*")
+            out["repeat"] = "daily";
+        else if (dow_text == "1-5")
+        {
+            out["repeat"] = "weekly";
+            out["daysOfWeek"] = json::array({"mon", "tue", "wed", "thu", "fri"});
+        }
+        else
+            out["repeat"] = "daily";
+
+        return out;
+    }
+}
+
 bool parseRuleScheduleFromJson(const json& value, RuleSchedule& out_schedule, std::string& out_error)
 {
-    if (!value.is_object())
+    const json normalized = normalizeLegacyScheduleJson(value);
+    if (!normalized.is_object())
     {
         out_error = "schedule must be an object";
         return false;
     }
 
-    if (!value.contains("repeat") || !value["repeat"].is_string())
+    if (!normalized.contains("repeat") || !normalized["repeat"].is_string())
     {
         out_error = "schedule.repeat is required";
         return false;
     }
 
     out_schedule = RuleSchedule{};
-    out_schedule.repeat = value["repeat"].get<std::string>();
+    out_schedule.repeat = normalized["repeat"].get<std::string>();
 
-    if (value.contains("delayMinutes") && !value["delayMinutes"].is_null())
-        out_schedule.delayMinutes = value["delayMinutes"].get<uint32_t>();
-    if (value.contains("time") && value["time"].is_string())
-        out_schedule.time = value["time"].get<std::string>();
-    if (value.contains("daysOfWeek") && value["daysOfWeek"].is_array())
+    if (normalized.contains("delayMinutes") && !normalized["delayMinutes"].is_null())
     {
-        for (const auto& day : value["daysOfWeek"])
+        if (normalized["delayMinutes"].is_number_integer())
+            out_schedule.delayMinutes = normalized["delayMinutes"].get<uint32_t>();
+        else if (normalized["delayMinutes"].is_number())
+            out_schedule.delayMinutes = static_cast<uint32_t>(normalized["delayMinutes"].get<double>());
+    }
+    if (normalized.contains("time") && normalized["time"].is_string())
+        out_schedule.time = normalized["time"].get<std::string>();
+    if (normalized.contains("daysOfWeek") && normalized["daysOfWeek"].is_array())
+    {
+        for (const auto& day : normalized["daysOfWeek"])
         {
             if (day.is_string())
                 out_schedule.daysOfWeek.push_back(day.get<std::string>());

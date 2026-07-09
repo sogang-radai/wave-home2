@@ -14,6 +14,7 @@ from lib import manual_texts
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = REPO_ROOT / "mock" / "data" / "mock.db"
 OUT_DIR = REPO_ROOT / "mock" / "ai_manual"
+AI_REPORTS_DIR = REPO_ROOT / "mock" / "ai_reports"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 NOW = "2026-07-01 00:00:00"
@@ -26,6 +27,9 @@ def main() -> None:
     weekly_plans = manual_texts.gen_weekly_plan_reports(conn, NOW)
     power_1h = manual_texts.gen_power_1h_reports(conn, NOW)
     sleep_30m = manual_texts.gen_sleep_30m_summaries(conn)
+    rolling_weekly = manual_texts.merge_sleep_reports_rolling_weekly(
+        conn, AI_REPORTS_DIR / "sleep_reports.json"
+    )
 
     (OUT_DIR / "insight.json").write_text(json.dumps(insights, ensure_ascii=False, indent=2), encoding="utf-8")
     (OUT_DIR / "weekly_plan_report.json").write_text(json.dumps(weekly_plans, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -37,6 +41,7 @@ def main() -> None:
     print(f"weekly_plan_report: {len(weekly_plans)}")
     print(f"power_report(1h): {len(power_1h)}")
     print(f"sleep_stat(30m) summaries: {len(sleep_30m)}")
+    print(f"sleep_report weekly (rolling 7d): {rolling_weekly}건 -> {AI_REPORTS_DIR / 'sleep_reports.json'}")
 
     conn.close()
 

@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "../v1/chat_store.h"
+#include "../../../core/logger.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
@@ -135,6 +136,20 @@ Json::Value DbQueryStore::executeOne(const Json::Value& query) const
     }
 
     const std::string table = query["table"].asString();
+
+    try
+    {
+        return executeOneUnchecked(query, table);
+    }
+    catch (const std::exception& e)
+    {
+        LOG_WARN("db_query failed for table {}: {}", table, e.what());
+        return makeQueryError(table, "INTERNAL_ERROR", "조회 중 오류가 발생했습니다.", "table");
+    }
+}
+
+Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const std::string& table) const
+{
     const Json::Value filter = query.isMember("filter") && query["filter"].isObject()
         ? query["filter"]
         : Json::Value(Json::objectValue);
@@ -464,6 +479,59 @@ Json::Value DbQueryStore::executeOne(const Json::Value& query) const
         return makeQuerySuccess(table, std::move(items));
     }
 
+    if (table == "power_report")
+    {
+        const bool report_desc =
+            !query.isMember("order") || !query["order"].isString() || query["order"].asString() == "desc";
+
+        std::ostringstream sql;
+        sql << "SELECT id, energy_id, device_id, period, period_start, metrics, report_text, created_at"
+            << " FROM power_report WHERE 1=1";
+        if (filter.isMember("deviceId"))
+        {
+            if (filter["deviceId"].isNull())
+                sql << " AND device_id IS NULL";
+            else if (const auto device_id = filterInt(filter, "deviceId"))
+                sql << " AND device_id = " << *device_id;
+        }
+        if (const auto id = filterInt(filter, "id"))
+            sql << " AND id = " << *id;
+        if (const auto energy_id = filterInt(filter, "energyId"))
+            sql << " AND energy_id = " << *energy_id;
+        if (const auto period = filterString(filter, "period"))
+            sql << " AND period = '" << *period << "'";
+        if (const auto period_start = filterString(filter, "periodStart"))
+            sql << " AND period_start = '" << *period_start << "'";
+        if (const auto from = filterString(filter, "from"))
+            sql << " AND period_start >= '" << *from << "'";
+        if (const auto to = filterString(filter, "to"))
+            sql << " AND period_start < '" << *to << "'";
+        sql << (report_desc ? " ORDER BY period_start DESC" : " ORDER BY period_start ASC");
+        sql << " LIMIT " << limit;
+
+        Json::Value items(Json::arrayValue);
+        for (const auto& row : m_client->execSqlSync(sql.str()))
+        {
+            Json::Value item;
+            item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
+            item["energyId"] = static_cast<Json::Int64>(row["energy_id"].as<int64_t>());
+            if (row["device_id"].isNull())
+                item["deviceId"] = Json::nullValue;
+            else
+                item["deviceId"] = static_cast<Json::Int64>(row["device_id"].as<int64_t>());
+            item["period"] = row["period"].as<std::string>();
+            item["periodStart"] = row["period_start"].as<std::string>();
+            if (!row["metrics"].isNull())
+                item["metrics"] = row["metrics"].as<std::string>();
+            if (!row["report_text"].isNull())
+                item["reportText"] = row["report_text"].as<std::string>();
+            if (!row["created_at"].isNull())
+                item["createdAt"] = toIsoOrNull(row["created_at"]);
+            items.append(item);
+        }
+        return makeQuerySuccess(table, std::move(items));
+    }
+
     if (table == "schedule_task")
     {
         if (!filterInt(filter, "userId"))
@@ -732,14 +800,62 @@ Json::Value DbQueryStore::executeOne(const Json::Value& query) const
         return makeQuerySuccess(table, std::move(items));
     }
 
+    if (table == "alarm")
+    {
+        if (!filterInt(filter, "userId"))
+            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+
+        std::ostringstream sql;
+        sql << "SELECT id, user_id, name, time_minute, days_of_week, smart_wake, radar_device_id,"
+            << " device_id, method, enabled, created_at, updated_at"
+            << " FROM alarm WHERE user_id = " << *filterInt(filter, "userId");
+        if (const auto id = filterInt(filter, "id"))
+            sql << " AND id = " << *id;
+        if (filter.isMember("enabled"))
+            sql << " AND enabled = " << (filter["enabled"].asBool() ? 1 : 0);
+        if (filter.isMember("smartWake"))
+            sql << " AND smart_wake = " << (filter["smartWake"].asBool() ? 1 : 0);
+        if (const auto device_id = filterInt(filter, "deviceId"))
+            sql << " AND device_id = " << *device_id;
+        if (const auto radar_id = filterInt(filter, "radarDeviceId"))
+            sql << " AND radar_device_id = " << *radar_id;
+        sql << (desc ? " ORDER BY id DESC" : " ORDER BY id ASC");
+        sql << " LIMIT " << limit;
+
+        Json::Value items(Json::arrayValue);
+        for (const auto& row : m_client->execSqlSync(sql.str()))
+        {
+            Json::Value item;
+            item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
+            item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
+            item["name"] = row["name"].as<std::string>();
+            item["timeMinute"] = row["time_minute"].as<int>();
+            item["daysOfWeek"] = row["days_of_week"].as<std::string>();
+            item["smartWake"] = row["smart_wake"].as<int>() != 0;
+            if (row["radar_device_id"].isNull())
+                item["radarDeviceId"] = Json::nullValue;
+            else
+                item["radarDeviceId"] = static_cast<Json::Int64>(row["radar_device_id"].as<int64_t>());
+            if (row["device_id"].isNull())
+                item["deviceId"] = Json::nullValue;
+            else
+                item["deviceId"] = static_cast<Json::Int64>(row["device_id"].as<int64_t>());
+            if (!row["method"].isNull())
+                item["method"] = row["method"].as<std::string>();
+            item["enabled"] = row["enabled"].as<int>() != 0;
+            item["createdAt"] = row["created_at"].as<std::string>();
+            item["updatedAt"] = row["updated_at"].as<std::string>();
+            items.append(item);
+        }
+        return makeQuerySuccess(table, std::move(items));
+    }
+
     static const std::unordered_set<std::string> kUnavailableTables = {
-        "power_report",
         "posture_stat",
         "posture_report",
         "weekly_plan_report",
         "gesture_set",
         "gesture_log",
-        "alarm",
     };
     if (kUnavailableTables.count(table) > 0)
     {

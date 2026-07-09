@@ -239,7 +239,7 @@ type JobStatus<T> = {
 `sleep_report`(및 `vec_sleep_report`)에 저장할 `reportText`·`embedding` 을 반환한다.
 
 - `period="daily"` — `periodStart`=night_date. 그날 `sleep_session`·30m 통계를 `sessions`/`stats30m` 에 담는다.
-- `period="weekly"` — `periodStart`=weekStart(월요일). 그 주 7일치를 `sessions`/`stats30m` 에 담는다.
+- `period="weekly"` — `periodStart`=롤링 7일 창의 **첫날** (`anchor−6일` 등). 해당 7일치 `sessions`/`stats30m` 을 담는다.
 - 추가 세부가 필요하면 에이전트가 DB 조회 API 로 보강한다.
 
 **Request Body** — daily
@@ -301,7 +301,7 @@ type JobStatus<T> = {
 {
   "userId": 1,
   "period": "weekly",
-  "periodStart": "2026-06-29",
+  "periodStart": "2026-06-24",
   "metrics": {
     "avgAsleepS": 20400, "avgEfficiency": 0.73, "bedtimeDriftMin": 30
   },
@@ -322,25 +322,15 @@ type JobStatus<T> = {
 ```json
 {
   "period": "weekly",
-  "periodStart": "2026-06-29",
-  "reportText": "6월 29일~7월 5일 주간 평균 수면은 5시간 40분 수준이었습니다. 주 초반보다 후반으로 갈수록 입면 시간이 짧아지고 깊은 수면 비율이 개선되었습니다. 주말 취침 시각이 30분 늦어진 패턴이 보입니다.",
+  "periodStart": "2026-06-24",
+  "reportText": "6월 24일~30일 최근 7일 평균 수면은 약 7시간 20분 수준이었습니다. 주 초반보다 후반으로 갈수록 입면 시간이 짧아지고 깊은 수면 비율이 개선되었습니다.",
   "embedding": [0.0123, -0.0456, 0.0789],
   "model": "gemma4:12b-mlx",
   "embeddingModel": "nomic-embed-text"
 }
 ```
 
-**Response 400**
-
-```json
-{
-  "error": {
-    "code": "INVALID_WEEK_START",
-    "message": "weekStart는 해당 주의 월요일 날짜여야 합니다.",
-    "field": "periodStart"
-  }
-}
-```
+**Response 400** — `sessions` 가 비어 있을 때 (`NO_SLEEP_DATA`)
 
 ---
 

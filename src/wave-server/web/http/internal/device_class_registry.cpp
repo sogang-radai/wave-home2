@@ -77,27 +77,40 @@ namespace
         return caps;
     }
 
+    Json::Value repeatCountParamsSchema()
+    {
+        Json::Value schema;
+        Json::Value count;
+        count["type"] = "integer";
+        count["minimum"] = 1;
+        count["maximum"] = 32;
+        count["description"] = "키 입력 반복 횟수(기본 1). 예: 볼륨 10칸 → count=10";
+        schema["count"] = count;
+        return schema;
+    }
+
     Json::Value tvActions()
     {
+        const auto repeat_schema = repeatCountParamsSchema();
         Json::Value items(Json::arrayValue);
         items.append(action("on", "전원 켜기", {"Stateful"}));
         items.append(action("off", "전원 끄기", {"Stateful"}));
         items.append(action("toggle", "전원 토글", {"Toggle", "Stateful"}));
-        items.append(action("volume_up", "볼륨 올리기", {"Repeat"}));
-        items.append(action("volume_down", "볼륨 내리기", {"Repeat"}));
+        items.append(action("volume_up", "볼륨 올리기", {"Repeat"}, repeat_schema));
+        items.append(action("volume_down", "볼륨 내리기", {"Repeat"}, repeat_schema));
         items.append(action("mute", "음소거 토글", {"Toggle", "Stateful"}));
-        items.append(action("channel_up", "채널 올리기", {"Repeat"}));
-        items.append(action("channel_down", "채널 내리기", {"Repeat"}));
+        items.append(action("channel_up", "채널 올리기", {"Repeat"}, repeat_schema));
+        items.append(action("channel_down", "채널 내리기", {"Repeat"}, repeat_schema));
         items.append(action("open_app", "앱 실행", {}));
-        items.append(action("nav_up", "방향 위", {}));
-        items.append(action("nav_down", "방향 아래", {}));
-        items.append(action("nav_left", "방향 왼쪽", {}));
-        items.append(action("nav_right", "방향 오른쪽", {}));
-        items.append(action("select", "선택(OK)", {}));
-        items.append(action("back", "뒤로가기", {}));
-        items.append(action("play_pause", "재생/일시정지", {}));
-        items.append(action("home", "홈 화면", {}));
-        items.append(action("input_source", "외부 입력 전환", {}));
+        items.append(action("nav_up", "방향 위", {}, repeat_schema));
+        items.append(action("nav_down", "방향 아래", {}, repeat_schema));
+        items.append(action("nav_left", "방향 왼쪽", {}, repeat_schema));
+        items.append(action("nav_right", "방향 오른쪽", {}, repeat_schema));
+        items.append(action("select", "선택(OK)", {}, repeat_schema));
+        items.append(action("back", "뒤로가기", {}, repeat_schema));
+        items.append(action("play_pause", "재생/일시정지", {}, repeat_schema));
+        items.append(action("home", "홈 화면", {}, repeat_schema));
+        items.append(action("input_source", "외부 입력 전환", {}, repeat_schema));
         return items;
     }
 

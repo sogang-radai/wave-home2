@@ -4,6 +4,7 @@
 #include "iot_store.h"
 #include "power_store.h"
 #include "session_store.h"
+#include "session_store.h"
 
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
@@ -49,6 +50,54 @@ void PowerController::comboTrend(
     PowerStore store(iot);
     callback(drogon::HttpResponse::newHttpJsonResponse(
         store.comboTrend(device_id, range, metric.empty() ? "w" : metric)));
+}
+
+void PowerController::periodTrend(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+{
+    auto client = AppState::get().db();
+    if (!client)
+    {
+        respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+        return;
+    }
+
+    const auto device_id = req->getParameter("deviceId");
+    const auto period = req->getParameter("period");
+    const auto ref_date = req->getParameter("refDate");
+    if (device_id.empty() || period.empty())
+    {
+        respondError(callback, 400, "INVALID_QUERY", "deviceId와 period가 필요합니다.");
+        return;
+    }
+
+    callback(drogon::HttpResponse::newHttpJsonResponse(
+        PowerStore::periodTrend(client, device_id, period, ref_date)));
+}
+
+void PowerController::powerReport(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+{
+    auto client = AppState::get().db();
+    if (!client)
+    {
+        respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+        return;
+    }
+
+    const auto device_id = req->getParameter("deviceId");
+    const auto period = req->getParameter("period");
+    const auto period_start = req->getParameter("periodStart");
+    if (device_id.empty() || period.empty())
+    {
+        respondError(callback, 400, "INVALID_QUERY", "deviceId와 period가 필요합니다.");
+        return;
+    }
+
+    callback(drogon::HttpResponse::newHttpJsonResponse(
+        PowerStore::queryReport(client, device_id, period, period_start)));
 }
 
 } // namespace v1

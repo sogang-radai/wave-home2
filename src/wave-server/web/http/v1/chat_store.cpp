@@ -19,6 +19,50 @@ namespace
         const auto end = value.find_last_not_of(" \t\n\r");
         return value.substr(start, end - start + 1);
     }
+
+    size_t utf8SequenceLength(unsigned char lead)
+    {
+        if (lead < 0x80)
+            return 1;
+        if ((lead & 0xE0) == 0xC0)
+            return 2;
+        if ((lead & 0xF0) == 0xE0)
+            return 3;
+        if ((lead & 0xF8) == 0xF0)
+            return 4;
+        return 0;
+    }
+
+    size_t utf8CodePointCount(const std::string& text)
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < text.size();)
+        {
+            const auto len = utf8SequenceLength(static_cast<unsigned char>(text[i]));
+            if (len == 0 || i + len > text.size())
+                break;
+            i += len;
+            ++count;
+        }
+        return count;
+    }
+
+    std::string truncateUtf8(const std::string& text, size_t max_code_points)
+    {
+        size_t byte_end = 0;
+        size_t count = 0;
+        while (byte_end < text.size() && count < max_code_points)
+        {
+            const auto len = utf8SequenceLength(static_cast<unsigned char>(text[byte_end]));
+            if (len == 0 || byte_end + len > text.size())
+                break;
+            byte_end += len;
+            ++count;
+        }
+        if (byte_end >= text.size())
+            return text;
+        return text.substr(0, byte_end) + "…";
+    }
 }
 
 ChatStore::ChatStore(drogon::orm::DbClientPtr client) :
@@ -35,10 +79,13 @@ std::string ChatStore::toCreatedAtIso(const std::string& db_time)
 
 std::string ChatStore::titleFromText(const std::string& text)
 {
+    constexpr size_t kMaxTitleChars = 22;
     const auto trimmed = trimCopy(text);
-    if (trimmed.size() <= 22)
-        return trimmed.empty() ? "새 대화" : trimmed;
-    return trimmed.substr(0, 22) + "…";
+    if (trimmed.empty())
+        return "새 대화";
+    if (utf8CodePointCount(trimmed) <= kMaxTitleChars)
+        return trimmed;
+    return truncateUtf8(trimmed, kMaxTitleChars);
 }
 
 int64_t ChatStore::nextConversationId() const

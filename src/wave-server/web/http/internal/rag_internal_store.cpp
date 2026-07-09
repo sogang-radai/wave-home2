@@ -6,11 +6,13 @@
 #include <future>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
 
+#include "../../../app/app_state.h"
 #include "../../../core/logger.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -104,7 +106,31 @@ Json::Value RagInternalStore::search(const Json::Value& request, std::string& er
 
     Json::Value results(Json::arrayValue);
     for (const auto& target : request["targets"])
-        results.append(searchTarget(target, embedding_ptr));
+    {
+        Json::Value resolved = target;
+        if (AppState::get().demo_mode && !targetInt(target, "userId"))
+        {
+            const bool has_device = target.isMember("deviceId") && !target["deviceId"].isNull();
+            if (!has_device && target.isMember("collection") && target["collection"].isString())
+            {
+                static const std::unordered_set<std::string> kUserCollections = {
+                    "sleep_stat",
+                    "sleep_report",
+                    "posture_report",
+                    "weekly_plan_report",
+                    "insight_dashboard",
+                    "insight_weekly_plan",
+                    "insight_sleep",
+                    "insight_posture",
+                    "insight_power",
+                    "power_report",
+                };
+                if (kUserCollections.count(target["collection"].asString()) > 0)
+                    resolved["userId"] = static_cast<Json::Int64>(1);
+            }
+        }
+        results.append(searchTarget(resolved, embedding_ptr));
+    }
 
     Json::Value body;
     body["results"] = results;
@@ -124,7 +150,9 @@ bool RagInternalStore::embedQuery(
 
     Json::Value payload;
     payload["model"] = m_config.embedding_model;
-    payload["input"] = query;
+    Json::Value input(Json::arrayValue);
+    input.append(query);
+    payload["input"] = input;
 
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";
@@ -146,6 +174,14 @@ bool RagInternalStore::embedQuery(
         {
             done.set_value({result, response});
         });
+
+    const auto wait = future.wait_for(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::duration<double>(kEmbedTimeoutSeconds)));
+    if (wait != std::future_status::ready)
+    {
+        out_error = "embedding request timed out";
+        return false;
+    }
 
     const auto [result, response] = future.get();
     if (result != drogon::ReqResult::Ok || !response)

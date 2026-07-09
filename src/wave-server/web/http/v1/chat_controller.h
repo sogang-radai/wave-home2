@@ -24,6 +24,7 @@ public:
         "/api/v1/chat/conversations/{conversationId}/messages/stream",
         drogon::Post);
     ADD_METHOD_TO(ChatController::streamNewConversation, "/api/v1/chat/conversations/stream", drogon::Post);
+    ADD_METHOD_TO(ChatController::streamEphemeral, "/api/v1/chat/ephemeral/stream", drogon::Post);
     ADD_METHOD_TO(ChatController::getSuggestions, "/api/v1/chat/suggestions", drogon::Get);
     ADD_METHOD_TO(ChatController::askInsight, "/api/v1/chat/insight-queries", drogon::Post);
     METHOD_LIST_END
@@ -62,6 +63,10 @@ public:
         std::string conversationId);
 
     void streamNewConversation(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+    void streamEphemeral(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 

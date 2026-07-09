@@ -102,6 +102,7 @@ Json::Value SettingsStore::defaultSleepConfig() const
     value["wakeLightRamp"] = true;
     value["wakeMusic"] = true;
     value["wakeTvOrAlarm"] = false;
+    value["goalHours"] = 7.5;
     return value;
 }
 
@@ -295,6 +296,17 @@ bool SettingsStore::putSleepConfig(
         error = "존재하지 않는 알람음입니다.";
         field = "wakeUpSound";
         return false;
+    }
+
+    if (out.isMember("goalHours"))
+    {
+        const double goal = out["goalHours"].asDouble();
+        if (goal < 4.0 || goal > 12.0)
+        {
+            error = "수면 목표는 4~12시간 사이여야 합니다.";
+            field = "goalHours";
+            return false;
+        }
     }
 
     try

@@ -16,6 +16,15 @@ CREATE TABLE user (
     PRIMARY KEY (id)
 );
 
+CREATE TABLE user_session (
+    id                INTEGER     PRIMARY KEY,
+    active_user_id    INTEGER,
+    access_token_hash TEXT        NOT NULL,
+    created_at        VARCHAR(50) NOT NULL,
+    updated_at        VARCHAR(50) NOT NULL,
+    FOREIGN KEY (active_user_id) REFERENCES user(id)
+);
+
 CREATE TABLE room (
     id          INTEGER NOT NULL,
     name        TEXT    NOT NULL,
@@ -32,13 +41,18 @@ CREATE TABLE room_user_map (
 );
 
 CREATE TABLE device (
-    id          INTEGER NOT NULL,
-    name        TEXT    NOT NULL,
-    description TEXT    NOT NULL,
-    class       TEXT    NOT NULL,
-    archived    INTEGER NOT NULL,
+    id              INTEGER NOT NULL,
+    external_id     TEXT,
+    name            TEXT    NOT NULL,
+    description     TEXT    NOT NULL,
+    class           TEXT    NOT NULL,
+    archived        INTEGER NOT NULL,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    interface_json  TEXT    NOT NULL DEFAULT '{}',
+    settings_json   TEXT,
     PRIMARY KEY (id)
 );
+CREATE UNIQUE INDEX idx_device_external_id ON device(external_id) WHERE external_id IS NOT NULL;
 
 CREATE TABLE device_user_map (
     device_id INTEGER NOT NULL,

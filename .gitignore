@@ -8,6 +8,10 @@ bin/models/pose/
 bin/uploads/
 bin/cache/
 bin/data/*.db
+bin/data/*.db-shm
+bin/data/*.db-wal
+bin/data/*.db.backup
+bin/data/*.backup
 
 # Mock DB pipeline (regenerate: mock/scripts/, see mock/mock.md)
 mock/data/
