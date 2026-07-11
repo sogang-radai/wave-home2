@@ -69,6 +69,7 @@ private:
 
     void runLoop();
     void sampleAllPlugs();
+    void maybeGenerateHourlyReport();
     void samplePlug(const std::string& external_id);
     void storeSample(const std::string& external_id, const PlugReading& reading);
     void accumulateEnergy(const std::string& external_id, const PlugReading& reading);
@@ -83,6 +84,7 @@ private:
     std::unordered_map<std::string, std::deque<PowerSample>> m_history;
     std::unordered_map<std::string, EnergyBucket> m_buckets;
     std::unordered_map<std::string, int64_t> m_db_device_cache;
+    std::string m_lastHourlyReportHour;
 
     std::atomic<bool> m_running{false};
     std::thread m_worker;

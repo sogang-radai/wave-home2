@@ -13,6 +13,7 @@
 #include "../device/device.h"
 #include "../device/device_wire_id.hpp"
 #include "../device/platform/tuya_ep2h.h"
+#include "../web/http/v1/power_store.h"
 
 #define SERVICE_NAMESPACE_BEGIN namespace service {
 #define SERVICE_NAMESPACE_END }
@@ -74,6 +75,7 @@ void PowerManager::start()
                 && AppState::get().running.load(std::memory_order_acquire))
             {
                 sampleAllPlugs();
+                maybeGenerateHourlyReport();
             }
 
             const auto elapsed = std::chrono::steady_clock::now() - tick_start;
@@ -131,6 +133,33 @@ void PowerManager::sampleAllPlugs()
 
     if (m_running.load(std::memory_order_acquire))
         flushDueBuckets(nowMs());
+}
+
+void PowerManager::maybeGenerateHourlyReport()
+{
+    auto client = AppState::get().db();
+    if (!client)
+        return;
+
+    const auto now_rows = client->execSqlSync("SELECT datetime('now', 'localtime') AS now");
+    if (now_rows.empty())
+        return;
+    const std::string now_full = now_rows[0]["now"].as<std::string>();
+    const std::string current_hour = now_full.substr(0, 13); // "YYYY-MM-DD HH"
+
+    std::string previous_hour;
+    {
+        std::lock_guard lock(m_mutex);
+        if (current_hour == m_lastHourlyReportHour)
+            return;
+        previous_hour = m_lastHourlyReportHour;
+        m_lastHourlyReportHour = current_hour;
+    }
+
+    if (previous_hour.empty())
+        return; // 서버가 막 떴을 때: 아직 "방금 끝난 시간"이 없다. 다음 시(時) 경계부터 생성.
+
+    web::v1::PowerStore::ensureHourlyReport(client, previous_hour + ":00:00");
 }
 
 void PowerManager::samplePlug(const std::string& external_id)

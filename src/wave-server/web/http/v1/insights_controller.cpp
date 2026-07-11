@@ -4,6 +4,7 @@
 
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
+#include "../../../service/insight_generator.h"
 #include "../../../service/rule_store.h"
 #include "../internal/schedule_tasks_internal_store.h"
 #include "action_log_store.h"
@@ -322,6 +323,47 @@ void InsightsController::updateInsight(
     }
 
     callback(drogon::HttpResponse::newHttpJsonResponse(store.getById(*user_id, insightId)));
+}
+
+void InsightsController::generateInsights(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+{
+    auto client = AppState::get().db();
+    if (!client)
+    {
+        respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+        return;
+    }
+
+    const auto user_id = resolveUserId(req, client);
+    if (!user_id)
+    {
+        respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
+        return;
+    }
+
+    const auto json = req->getJsonObject();
+    if (!json || !json->isObject() || !json->isMember("surface") || !(*json)["surface"].isString()
+        || !json->isMember("date") || !(*json)["date"].isString())
+    {
+        respondError(callback, 400, "INVALID_BODY", "surface, date 가 필요합니다.");
+        return;
+    }
+
+    const auto surface = (*json)["surface"].asString();
+    const auto date = (*json)["date"].asString();
+
+    std::string error;
+    if (!service::generateAndPersistInsights(client, AppState::get().config.agent.base_url, *user_id, surface, date, error))
+    {
+        respondError(callback, 502, "AGENT_UNAVAILABLE", "인사이트 생성에 실패했습니다: " + error);
+        return;
+    }
+
+    InsightsStore store(client);
+    callback(drogon::HttpResponse::newHttpJsonResponse(
+        store.list(*user_id, surface, date, std::nullopt, std::nullopt, std::nullopt)));
 }
 
 } // namespace v1

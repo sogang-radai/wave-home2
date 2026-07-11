@@ -539,6 +539,29 @@ CREATE INDEX IF NOT EXISTS idx_sleep_plan_user_date ON sleep_plan (user_id, plan
 )SQL",
             },
         },
+        {
+            4,
+            "power report embedding fallback storage",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS power_report_embedding (
+    report_id      INTEGER     PRIMARY KEY,
+    dim            INTEGER     NOT NULL,
+    embedding_blob BLOB        NOT NULL,
+    updated_at     VARCHAR(50) NOT NULL,
+    FOREIGN KEY (report_id) REFERENCES power_report(id)
+))SQL",
+            },
+        },
+        {
+            5,
+            "index power_energy for granularity/time_start range scans",
+            {
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_power_energy_gran_time ON power_energy (granularity, time_start, device_id)
+)SQL",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)

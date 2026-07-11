@@ -9,6 +9,7 @@ set(_wave_server_sources
     db/database.cpp
     service/llm_client.cpp
     service/agent_client.cpp
+    service/insight_generator.cpp
     service/go2rtc_service.cpp
     service/power_manager.cpp
     service/alarm_manager.cpp

@@ -1,12 +1,19 @@
 #include "power_store.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <optional>
 #include <sstream>
 
 #include "../../../app/app_state.h"
+#include "../../../core/json.h"
+#include "../../../core/logger.h"
+#include "../../../core/time_util.h"
+#include "../../../service/agent_client.h"
+#include "../../../service/insight_generator.h"
 #include "../../../service/power_manager.h"
 #include "../../../device/device_wire_id.hpp"
 #include "insights_store.h"
@@ -338,6 +345,230 @@ Json::Value PowerStore::periodTrend(
     return series;
 }
 
+void PowerStore::storeReportEmbedding(
+    const drogon::orm::DbClientPtr& client,
+    int64_t report_id,
+    const std::vector<float>& embedding)
+{
+    if (!client || embedding.empty())
+        return;
+
+    auto table_exists = [&](const char* name) {
+        try
+        {
+            return !client->execSqlSync(
+                        "SELECT 1 FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ? LIMIT 1",
+                        name)
+                        .empty();
+        }
+        catch (const std::exception&)
+        {
+            return false;
+        }
+    };
+
+    // std::string 파라미터는 sqlite3_bind_text 경로를 타서 임베딩 바이트 중간의 0x00 에서
+    // 잘릴 수 있다 (실측 확인됨) — SqlBinder.h 의 std::vector<char> 전용 오버로드
+    // (sqlite3_bind_blob 경로)를 써야 바이너리가 안전하게 저장된다.
+    std::vector<char> blob(embedding.size() * sizeof(float));
+    if (!embedding.empty())
+        std::memcpy(blob.data(), embedding.data(), blob.size());
+
+    try
+    {
+        if (table_exists("vec_power_report"))
+        {
+            client->execSqlSync("DELETE FROM vec_power_report WHERE report_id = ?", report_id);
+            client->execSqlSync(
+                "INSERT INTO vec_power_report (report_id, embedding) VALUES (?, ?)", report_id, blob);
+            return;
+        }
+
+        if (table_exists("power_report_embedding"))
+        {
+            client->execSqlSync(
+                R"SQL(
+INSERT INTO power_report_embedding (report_id, dim, embedding_blob, updated_at)
+VALUES (?, ?, ?, datetime('now'))
+ON CONFLICT(report_id) DO UPDATE SET
+    dim = excluded.dim,
+    embedding_blob = excluded.embedding_blob,
+    updated_at = excluded.updated_at
+)SQL",
+                report_id,
+                static_cast<int64_t>(embedding.size()),
+                blob);
+        }
+    }
+    catch (const std::exception& e)
+    {
+        LOG_WARN("power report embedding store failed: {}", e.what());
+    }
+}
+
+std::optional<int64_t> PowerStore::generateReport(
+    const drogon::orm::DbClientPtr& client,
+    const std::string& period,
+    const std::string& period_start,
+    const std::string& window_start,
+    const std::string& window_end,
+    double expected_5m_buckets)
+{
+    const auto existing = client->execSqlSync(
+        "SELECT id FROM power_report WHERE period = ? AND period_start = ? AND device_id IS NULL",
+        period,
+        period_start);
+    if (!existing.empty())
+        return existing[0]["id"].as<int64_t>();
+
+    const auto agg_rows = client->execSqlSync(
+        R"SQL(
+SELECT COALESCE(SUM(energy_wh), 0) AS energy_wh, COALESCE(SUM(sample_count), 0) AS samples, COUNT(*) AS buckets
+FROM power_energy
+WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_start < ?
+)SQL",
+        window_start,
+        window_end);
+    if (agg_rows.empty() || agg_rows[0]["buckets"].as<int64_t>() == 0)
+        return std::nullopt; // 그 구간 5m 데이터가 아예 없음 — 리포트를 만들 근거가 없다.
+
+    const double energy_wh = std::round(agg_rows[0]["energy_wh"].as<double>() * 10000.0) / 10000.0;
+    const int64_t sample_count = agg_rows[0]["samples"].as<int64_t>();
+    const int64_t bucket_count = agg_rows[0]["buckets"].as<int64_t>();
+    const double coverage = std::min(1.0, static_cast<double>(bucket_count) / expected_5m_buckets);
+
+    client->execSqlSync(
+        R"SQL(
+INSERT INTO power_energy (device_id, granularity, time_start, energy_wh, coverage, sample_count)
+VALUES (NULL, ?, ?, ?, ?, ?)
+ON CONFLICT DO UPDATE SET
+    energy_wh = excluded.energy_wh,
+    coverage = excluded.coverage,
+    sample_count = excluded.sample_count
+)SQL",
+        period,
+        period_start,
+        energy_wh,
+        coverage,
+        sample_count);
+
+    const auto energy_rows = client->execSqlSync(
+        "SELECT id FROM power_energy WHERE device_id IS NULL AND granularity = ? AND time_start = ?",
+        period,
+        period_start);
+    if (energy_rows.empty())
+        return std::nullopt;
+    const int64_t energy_id = energy_rows[0]["id"].as<int64_t>();
+
+    json target;
+    target["id"] = energy_id;
+    target["deviceId"] = nullptr;
+    target["granularity"] = period;
+    target["timeStart"] = period_start;
+    target["energyWh"] = energy_wh;
+    target["coverage"] = coverage;
+    target["sampleCount"] = sample_count;
+
+    json metrics;
+    metrics["totalEnergyWh"] = energy_wh;
+    metrics["coveragePercent"] = std::round(coverage * 1000.0) / 10.0;
+    metrics["sampleCount"] = sample_count;
+
+    json body;
+    body["deviceId"] = nullptr;
+    body["period"] = period;
+    body["periodStart"] = period_start;
+    body["metrics"] = metrics;
+    body["target"] = target;
+    body["children"] = json::array();
+    body["embed"] = true;
+
+    service::AgentSleepJobResult agent_result;
+    std::string error;
+    if (service::runPowerJobSync(AppState::get().config.agent.base_url, body, agent_result, error)
+        != service::AgentClientResult::success)
+    {
+        LOG_WARN("power report generation failed ({} {}): {}", period, period_start, error);
+        return std::nullopt;
+    }
+
+    int64_t report_id = 0;
+    try
+    {
+        client->execSqlSync(
+            R"SQL(
+INSERT INTO power_report (energy_id, device_id, period, period_start, metrics, report_text, created_at)
+VALUES (?, NULL, ?, ?, ?, ?, ?)
+ON CONFLICT DO UPDATE SET
+    energy_id = excluded.energy_id,
+    metrics = excluded.metrics,
+    report_text = excluded.report_text,
+    created_at = excluded.created_at
+)SQL",
+            energy_id,
+            period,
+            period_start,
+            metrics.dump(),
+            agent_result.text,
+            formatTimestamp());
+
+        const auto report_rows = client->execSqlSync(
+            "SELECT id FROM power_report WHERE period = ? AND period_start = ? AND device_id IS NULL",
+            period,
+            period_start);
+        if (report_rows.empty())
+            return std::nullopt;
+        report_id = report_rows[0]["id"].as<int64_t>();
+    }
+    catch (const std::exception& e)
+    {
+        LOG_WARN("power_report write failed ({} {}): {}", period, period_start, e.what());
+        return std::nullopt;
+    }
+
+    storeReportEmbedding(client, report_id, agent_result.embedding);
+    return report_id;
+}
+
+bool PowerStore::ensureDailyReport(const drogon::orm::DbClientPtr& client, const std::string& date)
+{
+    const std::string day_start = date + " 00:00:00";
+    const auto day_end_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", date);
+    const std::string day_end = (day_end_rows.empty() ? date : day_end_rows[0]["d"].as<std::string>()) + " 00:00:00";
+
+    const auto pre_existing = client->execSqlSync(
+        "SELECT id FROM power_report WHERE period = '24h' AND period_start = ? AND device_id IS NULL", day_start);
+    const bool already_had_report = !pre_existing.empty();
+
+    const auto report_id = generateReport(client, "24h", day_start, day_start, day_end, 288.0);
+    if (!report_id)
+        return false;
+
+    if (already_had_report)
+        return true; // 캐시 재사용 — 매 요청마다 인사이트를 다시 만들 필요는 없다.
+
+    // sleep_manager.cpp 와 동일한 지점: 리포트가 막 새로 생성된 직후에만 그 날짜 인사이트도 생성한다.
+    const auto user_rows = client->execSqlSync("SELECT id FROM user");
+    for (const auto& row : user_rows)
+    {
+        const auto user_id = row["id"].as<int64_t>();
+        std::string insight_error;
+        if (!service::generateAndPersistInsights(
+                client, AppState::get().config.agent.base_url, user_id, "power", date, insight_error))
+            LOG_WARN("power insight generation failed (user {}): {}", user_id, insight_error);
+    }
+
+    return true;
+}
+
+bool PowerStore::ensureHourlyReport(const drogon::orm::DbClientPtr& client, const std::string& hour_start)
+{
+    const auto hour_end_rows = client->execSqlSync("SELECT datetime(?, '+1 hour') AS d", hour_start);
+    const std::string hour_end = hour_end_rows.empty() ? hour_start : hour_end_rows[0]["d"].as<std::string>();
+
+    return generateReport(client, "1h", hour_start, hour_start, hour_end, 12.0).has_value();
+}
+
 Json::Value PowerStore::queryReport(
     drogon::orm::DbClientPtr client,
     const std::string& device_external_id,
@@ -390,12 +621,50 @@ Json::Value PowerStore::queryReport(
         || (*api_period == "1mo" && period_start_hint.size() == 10)
         || (*api_period == "1w" && period_start_hint.size() == 10));
 
+    const auto now_rows = client->execSqlSync("SELECT datetime('now', 'localtime') AS now");
+    const std::string now_full = now_rows.empty() ? (ref_date + " 00:00:00") : now_rows[0]["now"].as<std::string>();
+    const std::string today = now_full.substr(0, 10);
+
+    // 일간(24h)/시간(1h) 전체 가구(all) 리포트는 없으면 지금 만든다 (sleep_plan 과 동일한
+    // "요청 시점에 캐시 확인 → 없으면 생성" 패턴). 주/월/년, 기기별 리포트는 아직 미지원.
+    if (*api_period == "24h" && !device_db_id)
+    {
+        const std::string target_date = exact_match ? period_start_hint.substr(0, 10) : ref_date.substr(0, 10);
+        if (target_date <= today)
+            ensureDailyReport(client, target_date);
+    }
+    else if (*api_period == "1h" && !device_db_id)
+    {
+        // hint 가 있으면 그 시각을, 없으면 "방금 끝난 시간"(진행 중인 시간은 아직 데이터가 안 찼음)을 생성한다.
+        std::string target_hour_start;
+        if (exact_match)
+        {
+            target_hour_start = period_start_hint.substr(0, 13) + ":00:00";
+        }
+        else
+        {
+            const auto prev_hour_rows = client->execSqlSync("SELECT datetime(?, '-1 hour') AS d", now_full);
+            const std::string prev_hour = prev_hour_rows.empty() ? now_full : prev_hour_rows[0]["d"].as<std::string>();
+            target_hour_start = prev_hour.substr(0, 13) + ":00:00";
+        }
+        if (target_hour_start <= now_full)
+            ensureHourlyReport(client, target_hour_start);
+    }
+
     std::ostringstream sql;
     sql << "SELECT metrics, report_text, period_start FROM power_report WHERE period = '" << *api_period << "'";
     if (exact_match)
-        sql << " AND period_start = '" << period_start_hint << "'";
+    {
+        const std::string exact_value = *api_period == "1h" ? period_start_hint.substr(0, 13) + ":00:00" : period_start_hint;
+        sql << " AND period_start = '" << exact_value << "'";
+    }
     else
-        sql << " AND period_start <= '" << ref_date.substr(0, 10) << "'";
+    {
+        // 1h 는 "YYYY-MM-DD HH:00:00" 전체 타임스탬프로 저장되므로 날짜만으로 비교하면 안 되고,
+        // 지금 시각(now_full)과 비교해야 "가장 최근 리포트"가 정확히 나온다.
+        const std::string compare_value = *api_period == "1h" ? now_full : today;
+        sql << " AND period_start <= '" << compare_value << "'";
+    }
     if (device_db_id)
         sql << " AND device_id = " << *device_db_id;
     else
