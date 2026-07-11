@@ -9,6 +9,8 @@ set(_wave_server_sources
     db/database.cpp
     service/llm_client.cpp
     service/agent_client.cpp
+    service/insight_generator.cpp
+    service/goal_coaching_generator.cpp
     service/go2rtc_service.cpp
     service/power_manager.cpp
     service/alarm_manager.cpp
@@ -62,8 +64,11 @@ set(_wave_server_sources
     web/http/v1/power_store.cpp
     web/http/v1/sleep_controller.cpp
     web/http/v1/sleep_store.cpp
+    web/http/v1/action_log_store.cpp
     web/http/v1/insights_store.cpp
     web/http/v1/insights_controller.cpp
+    web/http/v1/goals_store.cpp
+    web/http/v1/goals_controller.cpp
     web/http/v1/dashboard_store.cpp
     web/http/v1/dashboard_controller.cpp
     web/http/v1/weekly_plan_store.cpp

@@ -68,5 +68,39 @@ AgentClientResult runSleepJobSync(
     AgentSleepJobResult& out_result,
     std::string& out_error);
 
+/** POST /power/v1/reports then poll /power/v1/jobs/{id} until done (same result shape as sleep). */
+AgentClientResult runPowerJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentSleepJobResult& out_result,
+    std::string& out_error);
+
+struct AgentInsightJobResult
+{
+    json items = json::array();
+};
+
+/** POST /insight/v1/insights then poll /insight/v1/jobs/{id} until done. */
+AgentClientResult runInsightJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentInsightJobResult& out_result,
+    std::string& out_error);
+
+struct AgentGoalCoachingJobResult
+{
+    /** raw {periodStart, pastSummary, projection, projectedMetrics, items} — richer than the
+     * plain text/embedding shape sleep/power reports use, so we keep it as a json blob rather
+     * than a struct with named fields. */
+    json content = json::object();
+};
+
+/** POST /goal-coaching/v1/reports then poll /goal-coaching/v1/jobs/{id} until done. */
+AgentClientResult runGoalCoachingJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentGoalCoachingJobResult& out_result,
+    std::string& out_error);
+
 SERVICE_NAMESPACE_END
 WAVE_NAMESPACE_END

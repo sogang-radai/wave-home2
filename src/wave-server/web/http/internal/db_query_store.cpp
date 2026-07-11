@@ -662,6 +662,79 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
         return makeQuerySuccess(table, std::move(items));
     }
 
+    if (table == "user_action_log")
+    {
+        if (!filterInt(filter, "userId"))
+            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+
+        std::ostringstream sql;
+        sql << "SELECT id, user_id, action_type, ref_type, ref_id, occurred_at, category"
+            << " FROM user_action_log WHERE user_id = " << *filterInt(filter, "userId");
+        if (const auto action_type = filterString(filter, "actionType"))
+            sql << " AND action_type = '" << *action_type << "'";
+        if (const auto ref_type = filterString(filter, "refType"))
+            sql << " AND ref_type = '" << *ref_type << "'";
+        if (const auto ref_id = filterInt(filter, "refId"))
+            sql << " AND ref_id = " << *ref_id;
+        if (const auto category = filterString(filter, "category"))
+            sql << " AND category = '" << *category << "'";
+        if (const auto from = filterString(filter, "from"))
+            sql << " AND occurred_at >= '" << *from << "'";
+        if (const auto to = filterString(filter, "to"))
+            sql << " AND occurred_at < '" << *to << "'";
+        sql << (desc ? " ORDER BY occurred_at DESC, id DESC" : " ORDER BY occurred_at ASC, id ASC");
+        sql << " LIMIT " << limit;
+
+        Json::Value items(Json::arrayValue);
+        for (const auto& row : m_client->execSqlSync(sql.str()))
+        {
+            Json::Value item;
+            item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
+            item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
+            item["actionType"] = row["action_type"].as<std::string>();
+            item["refType"] = row["ref_type"].as<std::string>();
+            item["refId"] = static_cast<Json::Int64>(row["ref_id"].as<int64_t>());
+            item["occurredAt"] = row["occurred_at"].as<std::string>();
+            if (row["category"].isNull())
+                item["category"] = Json::nullValue;
+            else
+                item["category"] = row["category"].as<std::string>();
+            items.append(item);
+        }
+        return makeQuerySuccess(table, std::move(items));
+    }
+
+    if (table == "goal")
+    {
+        if (!filterInt(filter, "userId"))
+            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+
+        std::ostringstream sql;
+        sql << "SELECT id, user_id, title, category, status, created_at, updated_at"
+            << " FROM goal WHERE user_id = " << *filterInt(filter, "userId");
+        if (const auto id = filterInt(filter, "id"))
+            sql << " AND id = " << *id;
+        if (const auto status = filterString(filter, "status"))
+            sql << " AND status = '" << *status << "'";
+        sql << (desc ? " ORDER BY created_at DESC, id DESC" : " ORDER BY created_at ASC, id ASC");
+        sql << " LIMIT " << limit;
+
+        Json::Value items(Json::arrayValue);
+        for (const auto& row : m_client->execSqlSync(sql.str()))
+        {
+            Json::Value item;
+            item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
+            item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
+            item["title"] = row["title"].as<std::string>();
+            item["category"] = row["category"].as<std::string>();
+            item["status"] = row["status"].as<std::string>();
+            item["createdAt"] = toIsoOrNull(row["created_at"]);
+            item["updatedAt"] = toIsoOrNull(row["updated_at"]);
+            items.append(item);
+        }
+        return makeQuerySuccess(table, std::move(items));
+    }
+
     if (table == "sleep_session")
     {
         if (!filterInt(filter, "userId"))

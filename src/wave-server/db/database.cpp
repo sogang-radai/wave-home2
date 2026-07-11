@@ -488,6 +488,155 @@ CREATE TABLE IF NOT EXISTS weekly_plan_report (
 )SQL",
             },
         },
+        {
+            2,
+            "user action log (insight/schedule_task execution history)",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS user_action_log (
+    id            INTEGER      PRIMARY KEY,
+    user_id       INTEGER      NOT NULL,
+    action_type   VARCHAR(30)  NOT NULL,
+    ref_type      VARCHAR(20)  NOT NULL,
+    ref_id        INTEGER      NOT NULL,
+    occurred_at   VARCHAR(50)  NOT NULL,
+    metadata_json TEXT,
+    CHECK (action_type IN ('insight_applied', 'insight_canceled', 'schedule_task_completed', 'schedule_task_uncompleted', 'schedule_task_created')),
+    CHECK (ref_type IN ('insight', 'schedule_task')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_action_log_user_time ON user_action_log (user_id, occurred_at)
+)SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_action_log_ref ON user_action_log (ref_type, ref_id)
+)SQL",
+            },
+        },
+        {
+            3,
+            "sleep plan (tonight's recommended bedtime/wake time cache)",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS sleep_plan (
+    id                      INTEGER      PRIMARY KEY,
+    user_id                 INTEGER      NOT NULL,
+    plan_date               VARCHAR(10)  NOT NULL,
+    bedtime_minute          INTEGER      NOT NULL,
+    wake_minute             INTEGER      NOT NULL,
+    prep_minute             INTEGER,
+    recommended_temp_c      REAL,
+    target_duration_minutes INTEGER      NOT NULL,
+    rationale_text          VARCHAR(300) NOT NULL,
+    created_at              VARCHAR(50)  NOT NULL,
+    CHECK (bedtime_minute >= 0 AND bedtime_minute <= 1439),
+    CHECK (wake_minute >= 0 AND wake_minute <= 1439),
+    UNIQUE (user_id, plan_date),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_sleep_plan_user_date ON sleep_plan (user_id, plan_date)
+)SQL",
+            },
+        },
+        {
+            4,
+            "power report embedding fallback storage",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS power_report_embedding (
+    report_id      INTEGER     PRIMARY KEY,
+    dim            INTEGER     NOT NULL,
+    embedding_blob BLOB        NOT NULL,
+    updated_at     VARCHAR(50) NOT NULL,
+    FOREIGN KEY (report_id) REFERENCES power_report(id)
+))SQL",
+            },
+        },
+        {
+            5,
+            "index power_energy for granularity/time_start range scans",
+            {
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_power_energy_gran_time ON power_energy (granularity, time_start, device_id)
+)SQL",
+            },
+        },
+        {
+            6,
+            "goal-based habit coaching tables (goal, goal_coaching_report, goal_recommendation)",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS goal (
+    id          INTEGER      PRIMARY KEY,
+    user_id     INTEGER      NOT NULL,
+    title       VARCHAR(200) NOT NULL,
+    category    VARCHAR(10)  NOT NULL,
+    status      VARCHAR(10)  NOT NULL DEFAULT 'active',
+    created_at  VARCHAR(50)  NOT NULL,
+    updated_at  VARCHAR(50)  NOT NULL,
+    CHECK (category IN ('sleep', 'posture', 'mental', 'life', 'diet')),
+    CHECK (status IN ('active', 'archived', 'completed')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_goal_user_status ON goal (user_id, status)
+)SQL",
+                R"SQL(
+CREATE TABLE IF NOT EXISTS goal_coaching_report (
+    id                      INTEGER      PRIMARY KEY,
+    goal_id                 INTEGER      NOT NULL,
+    user_id                 INTEGER      NOT NULL,
+    period_start            VARCHAR(10)  NOT NULL,
+    past_summary_text       VARCHAR(500) NOT NULL,
+    projection_text         VARCHAR(500) NOT NULL,
+    projected_metrics_json  TEXT,
+    created_at              VARCHAR(50)  NOT NULL,
+    UNIQUE (goal_id, period_start),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE TABLE IF NOT EXISTS goal_recommendation (
+    id                 INTEGER      PRIMARY KEY,
+    goal_id            INTEGER      NOT NULL,
+    user_id            INTEGER      NOT NULL,
+    date               VARCHAR(10)  NOT NULL,
+    kind               VARCHAR(10)  NOT NULL,
+    title              VARCHAR(100) NOT NULL,
+    text               VARCHAR(500) NOT NULL,
+    actionable         INTEGER      NOT NULL DEFAULT 0,
+    action_type        VARCHAR(20),
+    approved           INTEGER      NOT NULL DEFAULT 0,
+    rule_json          TEXT,
+    schedule_task_json TEXT,
+    created_at         VARCHAR(50)  NOT NULL,
+    CHECK (kind IN ('action', 'goal', 'tip')),
+    CHECK (actionable IN (0, 1)),
+    CHECK (approved IN (0, 1)),
+    CHECK (actionable = 0 OR action_type IS NOT NULL),
+    CHECK (action_type != 'automation_rule' OR rule_json IS NOT NULL),
+    CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_goal_recommendation_goal_date ON goal_recommendation (goal_id, date)
+)SQL",
+            },
+        },
+        {
+            7,
+            "add category column to user_action_log for goal-coaching filtering",
+            {
+                R"SQL(
+ALTER TABLE user_action_log ADD COLUMN category VARCHAR(10)
+)SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log (user_id, category, occurred_at)
+)SQL",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)

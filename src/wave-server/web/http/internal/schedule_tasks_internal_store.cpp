@@ -102,6 +102,29 @@ Json::Value ScheduleTasksInternalStore::list(const ScheduleTaskListFilter& filte
     return items;
 }
 
+std::optional<Json::Value> ScheduleTasksInternalStore::getById(int64_t user_id, int64_t task_id) const
+{
+    auto rows = m_client->execSqlSync(
+        R"SQL(
+SELECT id, user_id, title, created_at, created_by, category, schedule_kind, day_of_week,
+       event_date, start_minute, end_minute, done, source_insight_id
+FROM schedule_task WHERE id = ? AND user_id = ?
+)SQL",
+        task_id,
+        user_id);
+    if (rows.empty())
+        return std::nullopt;
+    return rowToJson(rows[0]);
+}
+
+void ScheduleTasksInternalStore::removeBySourceInsight(int64_t user_id, int64_t insight_id) const
+{
+    m_client->execSqlSync(
+        "DELETE FROM schedule_task WHERE user_id = ? AND source_insight_id = ?",
+        user_id,
+        insight_id);
+}
+
 std::optional<Json::Value> ScheduleTasksInternalStore::create(
     const Json::Value& body,
     std::string& error,

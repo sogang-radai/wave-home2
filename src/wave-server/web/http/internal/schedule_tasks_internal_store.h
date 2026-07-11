@@ -30,6 +30,7 @@ public:
     explicit ScheduleTasksInternalStore(drogon::orm::DbClientPtr client);
 
     Json::Value list(const ScheduleTaskListFilter& filter) const;
+    std::optional<Json::Value> getById(int64_t user_id, int64_t task_id) const;
     std::optional<Json::Value> create(const Json::Value& body, std::string& error, std::string& field) const;
     std::optional<Json::Value> update(
         int64_t user_id,
@@ -38,6 +39,8 @@ public:
         std::string& error,
         std::string& field) const;
     std::optional<Json::Value> remove(int64_t user_id, int64_t task_id, std::string& error) const;
+    /** insight 취소(apply 되돌리기) 시 파생된 schedule_task 를 정리한다. */
+    void removeBySourceInsight(int64_t user_id, int64_t insight_id) const;
 
 private:
     drogon::orm::DbClientPtr m_client;

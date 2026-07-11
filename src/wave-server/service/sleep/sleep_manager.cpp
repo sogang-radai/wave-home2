@@ -15,6 +15,7 @@
 #include "../../device/platform/radai_ws.h"
 #include "../../device/platform/srs_r4sn.h"
 #include "../agent_client.h"
+#include "../insight_generator.h"
 
 #include <future>
 
@@ -1168,6 +1169,15 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         {
             LOG_WARN("sleep_report daily write failed: {}", e.what());
         }
+
+        {
+            std::string insight_error;
+            if (!generateAndPersistInsights(
+                    client, app.config.agent.base_url, job.userId, "sleep_report", job.periodStart, insight_error))
+            {
+                LOG_WARN("insight generation (sleep_report daily) failed: {}", insight_error);
+            }
+        }
         return;
     }
 
@@ -1278,6 +1288,15 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         catch (const std::exception& e)
         {
             LOG_WARN("sleep_report weekly write failed: {}", e.what());
+        }
+
+        {
+            std::string insight_error;
+            if (!generateAndPersistInsights(
+                    client, app.config.agent.base_url, job.userId, "sleep_report", job.periodStart, insight_error))
+            {
+                LOG_WARN("insight generation (sleep_report weekly) failed: {}", insight_error);
+            }
         }
     }
 }

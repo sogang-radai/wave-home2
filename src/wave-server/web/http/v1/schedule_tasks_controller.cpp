@@ -8,6 +8,7 @@
 #include "../../../demo/demo_runtime_id.h"
 #include "../../../demo/demo_session_writes.h"
 #include "../internal/schedule_tasks_internal_store.h"
+#include "action_log_store.h"
 #include "session_store.h"
 #include "settings_store.h"
 
@@ -188,6 +189,12 @@ void ScheduleTasksController::createTask(
         return;
     }
 
+    if (!demoVirtualDevicesEnabled())
+    {
+        ActionLogStore(AppState::get().db())
+            .record(*user_id, "schedule_task_created", "schedule_task", created["id"].asInt64(), created["category"].asString());
+    }
+
     if (demoVirtualDevicesEnabled())
     {
         callback(demoResponse(req, withoutUserId(created), runtime_id, drogon::k201Created));
@@ -226,6 +233,15 @@ void ScheduleTasksController::updateTask(
     const auto runtime_id = demoVirtualDevicesEnabled()
         ? resolveDemoRuntimeId(req, json.get())
         : std::string();
+
+    std::optional<bool> done_before;
+    if (!demoVirtualDevicesEnabled() && json->isMember("done"))
+    {
+        internal::ScheduleTasksInternalStore store(AppState::get().db());
+        if (const auto existing = store.getById(*user_id, *id))
+            done_before = (*existing)["done"].asBool();
+    }
+
     Json::Value updated;
     if (demoVirtualDevicesEnabled())
         updated = demoUpdateScheduleTask(runtime_id, *id, *json, error, field);
@@ -237,6 +253,22 @@ void ScheduleTasksController::updateTask(
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
         respondError(callback, status, status == 404 ? "NOT_FOUND" : "INVALID_REQUEST", error, field);
         return;
+    }
+
+    if (!demoVirtualDevicesEnabled() && done_before)
+    {
+        const bool done_after = updated["done"].asBool();
+        const std::string category = updated["category"].asString();
+        if (!*done_before && done_after)
+        {
+            ActionLogStore(AppState::get().db())
+                .record(*user_id, "schedule_task_completed", "schedule_task", *id, category);
+        }
+        else if (*done_before && !done_after)
+        {
+            ActionLogStore(AppState::get().db())
+                .record(*user_id, "schedule_task_uncompleted", "schedule_task", *id, category);
+        }
     }
 
     if (demoVirtualDevicesEnabled())
