@@ -7,6 +7,7 @@
 
 #include "../v1/chat_store.h"
 #include "../../../core/logger.h"
+#include "../../../device/device_wire_id.hpp"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
@@ -230,7 +231,7 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
     if (table == "device")
     {
         std::ostringstream sql;
-        sql << "SELECT DISTINCT d.id, d.external_id, d.name, d.description, d.class, d.archived, d.enabled"
+        sql << "SELECT DISTINCT d.id, d.name, d.description, d.class, d.archived, d.enabled"
             << " FROM device d";
         bool joined_room = false;
         bool joined_user = false;
@@ -277,9 +278,9 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
         {
             Json::Value item;
             item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
-            if (!row["external_id"].isNull())
-                item["externalId"] = row["external_id"].as<std::string>();
-            item["name"] = row["name"].as<std::string>();
+            const auto name = row["name"].as<std::string>();
+            item["wireId"] = dev::wireIdForDbRow(row["id"].as<int64_t>(), name);
+            item["name"] = name;
             item["description"] = row["description"].as<std::string>();
             item["class"] = row["class"].as<std::string>();
             item["archived"] = row["archived"].as<int>();

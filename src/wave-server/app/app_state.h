@@ -156,7 +156,7 @@ public:
     IotRuntime iot;
 
 private:
-    bool loadDeviceManifests();
+    bool loadDeviceManifests(const drogon::orm::DbClientPtr& client);
     void startAutomationServices();
     void stopAutomationServices();
     void startTriggerRuntime();

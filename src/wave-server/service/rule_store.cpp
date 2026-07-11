@@ -1,6 +1,5 @@
 #include "rule_store.h"
 
-#include <fstream>
 #include <sstream>
 
 #include "../core/logger.h"
@@ -180,7 +179,7 @@ namespace
 
     bool hydrateTriggersFromRule(Rule& rule, std::unordered_map<std::string, Trigger>& triggers, std::string& out_error)
     {
-        if (rule.triggerId.empty() || !rule.triggerJson.is_object())
+        if (!rule.triggerJson.is_object() || rule.triggerJson.empty())
             return true;
 
         Trigger trigger;
@@ -328,12 +327,6 @@ void RuleStore::setDefaultUserId(int64_t user_id)
     m_defaultUserId = user_id;
 }
 
-void RuleStore::setLegacyImportPath(const std::filesystem::path& path)
-{
-    std::unique_lock lock(m_mutex);
-    m_legacyImportPath = path;
-}
-
 void RuleStore::setOnChanged(ChangedCallback callback)
 {
     std::unique_lock lock(m_mutex);
@@ -355,19 +348,6 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
 
     try
     {
-        auto count_rows = m_db->execSqlSync("SELECT COUNT(*) AS cnt FROM automation_rule");
-        if (!count_rows.empty() && count_rows[0]["cnt"].as<int64_t>() == 0 && !m_legacyImportPath.empty())
-        {
-            lock.unlock();
-            if (!importLegacyRulesFile(out_error))
-            {
-                lock.lock();
-                rebuildIndex();
-                return false;
-            }
-            lock.lock();
-        }
-
         auto rows = m_db->execSqlSync(
             "SELECT external_id, name, enabled, cooldown_ms, trigger_json, schedule_json, actions_json "
             "FROM automation_rule ORDER BY id ASC");
@@ -414,58 +394,6 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
         m_rules.clear();
         m_triggers.clear();
         rebuildIndex();
-        return false;
-    }
-}
-
-bool RuleStore::importLegacyRulesFile(std::string& out_error)
-{
-    if (!m_db)
-    {
-        out_error = "database client is not set";
-        return false;
-    }
-
-    if (m_legacyImportPath.empty() || !std::filesystem::exists(m_legacyImportPath))
-    {
-        out_error = "legacy rules file not found";
-        return false;
-    }
-
-    try
-    {
-        json root;
-        {
-            std::ifstream in(m_legacyImportPath);
-            in >> root;
-        }
-
-        if (!root.contains("rules") || !root["rules"].is_array())
-        {
-            out_error = "legacy rules file must contain a rules array";
-            return false;
-        }
-
-        const auto now = formatTimestamp();
-        for (const auto& item : root["rules"])
-        {
-            Rule rule;
-            if (!parseRuleFromJson(item, rule, out_error))
-                return false;
-
-            std::unordered_map<std::string, Trigger> triggers;
-            if (!hydrateTriggersFromRule(rule, triggers, out_error))
-                return false;
-
-            insertAutomationRuleRow(m_db, m_defaultUserId, rule, now, now);
-        }
-
-        LOG_INFO("Imported {} rules from {} into automation_rule", root["rules"].size(), m_legacyImportPath.string());
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        out_error = e.what();
         return false;
     }
 }

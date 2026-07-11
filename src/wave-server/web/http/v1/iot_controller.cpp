@@ -17,6 +17,9 @@
 
 #include "../../../app/app_state.h"
 #include "../../../core/logger.h"
+#include "../../../demo/demo_device_backend.h"
+#include "../../../demo/demo_runtime_id.h"
+#include "../../../demo/demo_session_registry.h"
 #include "../../../device/platform/droid_cam.h"
 #include "../../../device/platform/radai_ws.h"
 #include "../../../service/go2rtc_service.h"
@@ -32,12 +35,25 @@ namespace
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
         IotStore& store)
     {
+        if (demoVirtualDevicesEnabled())
+            return true;
         if (!store.devicesAvailable())
         {
             respondError(callback, 503, "DEVICES_UNAVAILABLE", "장치 관리자를 사용할 수 없습니다.");
             return false;
         }
         return true;
+    }
+
+    void respondDemoJson(
+        const drogon::HttpRequestPtr& req,
+        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const Json::Value& body,
+        const std::string& runtime_id)
+    {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        callback(resp);
     }
 
     class PhoneMjpegStream
@@ -194,10 +210,28 @@ void IotController::getSummary(
 }
 
 void IotController::listDevices(
-    const drogon::HttpRequestPtr& /*req*/,
+    const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
     auto& state = AppState::get();
+    if (demoVirtualDevicesEnabled())
+    {
+        if (!state.db())
+        {
+            respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+            return;
+        }
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        DemoDeviceBackend backend(state.db());
+        std::string code;
+        const auto body = backend.listDevices(runtime_id, code);
+        if (!code.empty())
+            respondError(callback, 503, code, "장치 목록을 조회할 수 없습니다.");
+        else
+            respondDemoJson(req, callback, body.isMember("items") ? body["items"] : body, runtime_id);
+        return;
+    }
+
     IotStore store(state.deviceManager);
     if (!requireDevices(callback, store))
         return;
@@ -205,11 +239,33 @@ void IotController::listDevices(
 }
 
 void IotController::getDeviceState(
-    const drogon::HttpRequestPtr& /*req*/,
+    const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
+    if (demoVirtualDevicesEnabled())
+    {
+        if (!state.db())
+        {
+            respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+            return;
+        }
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        DemoDeviceBackend backend(state.db());
+        std::string code;
+        const auto body = backend.getState(runtime_id, deviceId, code);
+        if (code == "NOT_FOUND")
+            respondError(callback, 404, code, "기기를 찾을 수 없습니다.");
+        else if (code == "DEVICE_OFFLINE")
+            respondError(callback, 409, code, "장치가 오프라인 상태입니다.");
+        else if (!code.empty())
+            respondError(callback, 500, code, "상태 조회에 실패했습니다.");
+        else
+            respondDemoJson(req, callback, body.isMember("state") ? body["state"] : body, runtime_id);
+        return;
+    }
+
     IotStore store(state.deviceManager);
     if (!requireDevices(callback, store))
         return;
@@ -229,12 +285,34 @@ void IotController::getDeviceState(
 }
 
 void IotController::queryDevice(
-    const drogon::HttpRequestPtr& /*req*/,
+    const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId,
     std::string queryName)
 {
     auto& state = AppState::get();
+    if (demoVirtualDevicesEnabled())
+    {
+        if (!state.db())
+        {
+            respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+            return;
+        }
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        DemoDeviceBackend backend(state.db());
+        std::string code;
+        const auto body = backend.queryDevice(runtime_id, deviceId, queryName, code);
+        if (code == "NOT_FOUND")
+            respondError(callback, 404, code, "기기를 찾을 수 없습니다.");
+        else if (code == "DEVICE_OFFLINE")
+            respondError(callback, 409, code, "장치가 오프라인 상태입니다.");
+        else if (!code.empty())
+            respondError(callback, 500, code, "조회에 실패했습니다.");
+        else
+            respondDemoJson(req, callback, body.isMember("result") ? body["result"] : body, runtime_id);
+        return;
+    }
+
     IotStore store(state.deviceManager);
     if (!requireDevices(callback, store))
         return;
@@ -260,6 +338,36 @@ void IotController::invokeDevice(
     std::string actionName)
 {
     auto& state = AppState::get();
+    if (demoVirtualDevicesEnabled())
+    {
+        if (!state.db())
+        {
+            respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+            return;
+        }
+        const auto json = req->getJsonObject();
+        Json::Value body(Json::objectValue);
+        if (json && json->isObject())
+            body = *json;
+        const auto runtime_id = resolveDemoRuntimeId(req, &body);
+        body["demoRuntimeId"] = runtime_id;
+
+        DemoDeviceBackend backend(state.db());
+        std::string code;
+        const auto response = backend.invokeAction(runtime_id, deviceId, actionName, body, code);
+        if (code == "NOT_FOUND")
+            respondError(callback, 404, code, "기기를 찾을 수 없습니다.");
+        else if (code == "DEVICE_OFFLINE")
+            respondError(callback, 409, code, "장치가 오프라인 상태입니다.");
+        else if (code == "ACTION_NOT_FOUND")
+            respondError(callback, 404, code, "동작을 찾을 수 없습니다.");
+        else if (!code.empty())
+            respondError(callback, 500, code, "제어에 실패했습니다.");
+        else
+            respondDemoJson(req, callback, response, runtime_id);
+        return;
+    }
+
     IotStore store(state.deviceManager);
     if (!requireDevices(callback, store))
         return;
@@ -903,11 +1011,43 @@ void IotController::getGestureSetDefinition(
 }
 
 void IotController::getRadarGestureSet(
-    const drogon::HttpRequestPtr& /*req*/,
+    const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        Json::Value body;
+        body["deviceId"] = deviceId;
+        body["gestureSetId"] = Json::Value();
+
+        bool from_session = false;
+        if (const auto session = DemoSessionRegistry::instance().get(runtime_id))
+        {
+            const auto it = session->radar_gesture_sets.find(deviceId);
+            if (it != session->radar_gesture_sets.end())
+            {
+                from_session = true;
+                if (!it->second.empty())
+                    body["gestureSetId"] = it->second;
+            }
+        }
+
+        // Session has no override yet — fall back to DB-backed GestureStore mapping.
+        if (!from_session && state.hasGestureStore())
+        {
+            std::string code;
+            const auto mapped = state.gestureStore().getRadarGestureSet(deviceId, code);
+            if (mapped.isMember("gestureSetId"))
+                body["gestureSetId"] = mapped["gestureSetId"];
+        }
+
+        respondDemoJson(req, callback, body, runtime_id);
+        return;
+    }
+
     if (!state.hasGestureStore())
     {
         respondError(callback, 503, "AUTOMATION_UNAVAILABLE", "제스처 저장소를 사용할 수 없습니다.");
@@ -925,7 +1065,7 @@ void IotController::setRadarGestureSet(
     std::string deviceId)
 {
     auto& state = AppState::get();
-    if (!state.hasGestureStore())
+    if (!demoVirtualDevicesEnabled() && !state.hasGestureStore())
     {
         respondError(callback, 503, "AUTOMATION_UNAVAILABLE", "제스처 저장소를 사용할 수 없습니다.");
         return;
@@ -941,6 +1081,18 @@ void IotController::setRadarGestureSet(
             return;
         }
         gesture_set_id = (*json)["gestureSetId"].asString();
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
+        auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+        session.radar_gesture_sets[deviceId] = gesture_set_id;
+        Json::Value body;
+        body["deviceId"] = deviceId;
+        body["gestureSetId"] = gesture_set_id.empty() ? Json::Value() : Json::Value(gesture_set_id);
+        respondDemoJson(req, callback, body, runtime_id);
+        return;
     }
 
     std::string code;

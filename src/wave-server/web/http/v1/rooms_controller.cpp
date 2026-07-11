@@ -1,6 +1,7 @@
 #include "rooms_controller.h"
 
 #include "../../../app/app_state.h"
+#include "../../../device/device_wire_id.hpp"
 #include "rooms_store.h"
 #include "session_store.h"
 
@@ -56,7 +57,7 @@ void RoomsController::createRoom(
     }
 
     Json::Value body;
-    body["id"] = static_cast<Json::Int64>(room->id);
+    body["id"] = dev::wireIdForDbRow(room->id);
     body["name"] = room->name;
     body["description"] = room->description;
     auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
@@ -96,7 +97,7 @@ void RoomsController::updateRoom(
     }
 
     Json::Value body;
-    body["id"] = static_cast<Json::Int64>(room->id);
+    body["id"] = dev::wireIdForDbRow(room->id);
     body["name"] = room->name;
     body["description"] = room->description;
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
@@ -125,7 +126,7 @@ void RoomsController::deleteRoom(
     }
 
     Json::Value body;
-    body["id"] = static_cast<Json::Int64>(roomId);
+    body["id"] = dev::wireIdForDbRow(roomId);
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 

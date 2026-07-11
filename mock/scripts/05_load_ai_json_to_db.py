@@ -18,7 +18,7 @@ import sqlite3
 from pathlib import Path
 
 from lib import ollama_client
-from lib.schema import INSIGHT_SURFACE_TO_VEC, try_load_vec_extension
+from lib.schema import INSIGHT_SURFACE_TO_VEC, ensure_runtime_schema
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = REPO_ROOT / "mock" / "data" / "mock.db"
@@ -199,9 +199,12 @@ def ensure_calendar_monthly_power_reports(conn: sqlite3.Connection) -> int:
 
 def main() -> None:
     conn = sqlite3.connect(DB_PATH)
-    vec_ready = try_load_vec_extension(conn)
+    vec_ready = ensure_runtime_schema(conn, with_vec=True)
     if not vec_ready:
-        print("경고: sqlite-vec 확장을 로드할 수 없어 vec_* 테이블 반영을 건너뜁니다.")
+        print(
+            "경고: sqlite-vec 확장을 로드할 수 없어 vec_* 테이블 반영을 건너뜁니다.\n"
+            "      uv run --with sqlite-vec mock/scripts/00_ensure_schema.py 를 먼저 실행하세요."
+        )
 
     print(f"power_report: {load_power_reports(conn, vec_ready)}건")
     print(f"power_report(1mo calendar): {ensure_calendar_monthly_power_reports(conn)}건")

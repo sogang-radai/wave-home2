@@ -1,7 +1,6 @@
 #include "devices_store.h"
 
 #include <cstdio>
-#include <random>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -9,6 +8,8 @@
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
 #include "../../../core/logger.h"
+#include "../../../device/device.h"
+#include "../../../device/device_wire_id.hpp"
 #include "rooms_store.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -87,6 +88,22 @@ namespace
         else
             output.append(device);
     }
+
+    std::optional<int64_t> resolveRoomIdFromJson(const Json::Value& value)
+    {
+        if (value.isString())
+        {
+            const auto parsed = dev::parseRoomID(value.asString());
+            if (parsed == 0)
+                return std::nullopt;
+            return static_cast<int64_t>(parsed);
+        }
+        if (value.isInt64())
+            return value.asInt64();
+        if (value.isInt())
+            return value.asInt();
+        return std::nullopt;
+    }
 }
 
 DevicesStore::DevicesStore(drogon::orm::DbClientPtr client) :
@@ -119,14 +136,11 @@ bool DevicesStore::isInputClass(const std::string& device_class)
     return false;
 }
 
-std::string DevicesStore::makeHexId()
+std::string DevicesStore::makeHexId() const
 {
-    static thread_local std::mt19937_64 rng{std::random_device{}()};
-    std::uniform_int_distribution<uint64_t> dist;
-    const auto value = dist(rng);
-    char buffer[17];
-    std::snprintf(buffer, sizeof(buffer), "%016llx", static_cast<unsigned long long>(value));
-    return std::string(buffer);
+    auto rows = m_client->execSqlSync("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM device");
+    const auto next_id = rows.empty() ? 1 : rows[0]["next_id"].as<int64_t>();
+    return dev::wireIdForDbRow(next_id);
 }
 
 bool DevicesStore::roomExists(int64_t room_id) const
@@ -148,14 +162,15 @@ std::optional<int64_t> DevicesStore::findRoomIdForDevice(int64_t device_id) cons
 Json::Value DevicesStore::rowToDeviceJson(const drogon::orm::Row& row, std::optional<int64_t> room_id) const
 {
     Json::Value device;
-    device["id"] = row["external_id"].as<std::string>();
+    const auto db_id = row["id"].as<int64_t>();
+    device["id"] = dev::wireIdForDbRow(db_id, row["name"].as<std::string>());
     device["name"] = row["name"].as<std::string>();
     device["description"] = row["description"].as<std::string>();
     device["enabled"] = row["enabled"].as<int>() != 0;
     device["class"] = row["class"].as<std::string>();
 
     if (room_id)
-        device["room_id"] = static_cast<Json::Int64>(*room_id);
+        device["room_id"] = dev::wireIdForDbRow(*room_id);
     else
         device["room_id"] = Json::Value(Json::nullValue);
 
@@ -180,11 +195,11 @@ Json::Value DevicesStore::listDevices() const
     Json::Value input(Json::arrayValue);
     Json::Value output(Json::arrayValue);
 
-    std::unordered_map<std::string, Json::Value> db_by_external_id;
+    std::unordered_map<int64_t, Json::Value> db_by_id;
 
     auto rows = m_client->execSqlSync(
         R"SQL(
-SELECT d.id, d.external_id, d.name, d.description, d.class, d.enabled, d.interface_json, d.settings_json
+SELECT d.id, d.name, d.description, d.class, d.enabled, d.interface_json, d.settings_json
 FROM device d
 WHERE d.archived = 0
 ORDER BY d.id
@@ -193,9 +208,8 @@ ORDER BY d.id
     for (const auto& row : rows)
     {
         const auto device_id = row["id"].as<int64_t>();
-        const auto external_id = row["external_id"].as<std::string>();
         const auto room_id = findRoomIdForDevice(device_id);
-        db_by_external_id.emplace(external_id, rowToDeviceJson(row, room_id));
+        db_by_id.emplace(device_id, rowToDeviceJson(row, room_id));
     }
 
     std::unordered_set<std::string> emitted;
@@ -203,25 +217,30 @@ ORDER BY d.id
     const auto& manifest = ws::AppState::get().deviceManager.manifestEntries();
     for (const auto& entry : manifest)
     {
-        const auto external_id = entry.config.value("id", std::string());
-        if (external_id.empty())
+        const auto wire_id = entry.config.value("id", std::string());
+        if (wire_id.empty())
             continue;
 
         Json::Value device;
-        const auto db_it = db_by_external_id.find(external_id);
-        if (db_it != db_by_external_id.end())
-            device = db_it->second;
-        else
+        if (const auto db_id = dev::dbIdForWireId(m_client, wire_id))
+        {
+            const auto db_it = db_by_id.find(*db_id);
+            if (db_it != db_by_id.end())
+                device = db_it->second;
+        }
+        if (!device.isObject() || device.empty())
             device = manifestConfigToDeviceJson(entry.config);
 
-        emitted.insert(external_id);
+        emitted.insert(wire_id);
         appendDeviceToBuckets(device, input, output);
     }
 
-    for (const auto& [external_id, device] : db_by_external_id)
+    for (const auto& [db_id, device] : db_by_id)
     {
-        if (emitted.contains(external_id))
+        const auto wire_id = device.get("id", "").asString();
+        if (emitted.contains(wire_id))
             continue;
+        (void)db_id;
         appendDeviceToBuckets(device, input, output);
     }
 
@@ -230,16 +249,20 @@ ORDER BY d.id
     return body;
 }
 
-std::optional<Json::Value> DevicesStore::findDevice(const std::string& external_id) const
+std::optional<Json::Value> DevicesStore::findDevice(const std::string& wire_id) const
 {
+    const auto db_id = dev::dbIdForWireId(m_client, wire_id);
+    if (!db_id)
+        return std::nullopt;
+
     auto rows = m_client->execSqlSync(
         R"SQL(
-SELECT d.id, d.external_id, d.name, d.description, d.class, d.enabled, d.interface_json, d.settings_json
+SELECT d.id, d.name, d.description, d.class, d.enabled, d.interface_json, d.settings_json
 FROM device d
-WHERE d.external_id = ? AND d.archived = 0
+WHERE d.id = ? AND d.archived = 0
 LIMIT 1
 )SQL",
-        external_id);
+        *db_id);
     if (rows.empty())
         return std::nullopt;
 
@@ -281,8 +304,8 @@ std::optional<Json::Value> DevicesStore::createDevice(
     std::optional<int64_t> room_id;
     if (body.isMember("room_id") && !body["room_id"].isNull())
     {
-        room_id = body["room_id"].asInt64();
-        if (!roomExists(*room_id))
+        room_id = resolveRoomIdFromJson(body["room_id"]);
+        if (!room_id || !roomExists(*room_id))
         {
             error = "방을 찾을 수 없습니다.";
             code = "NOT_FOUND";
@@ -290,7 +313,7 @@ std::optional<Json::Value> DevicesStore::createDevice(
         }
     }
 
-    const auto external_id = body.isMember("id") && body["id"].isString() && !body["id"].asString().empty()
+    const auto wire_id = body.isMember("id") && body["id"].isString() && !body["id"].asString().empty()
         ? body["id"].asString()
         : makeHexId();
     const auto description = body.isMember("description") && body["description"].isString()
@@ -311,11 +334,10 @@ std::optional<Json::Value> DevicesStore::createDevice(
         {
             m_client->execSqlSync(
                 R"SQL(
-INSERT INTO device (id, external_id, name, description, class, archived, enabled, interface_json, settings_json)
-VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+INSERT INTO device (id, name, description, class, archived, enabled, interface_json, settings_json)
+VALUES (?, ?, ?, ?, 0, ?, ?, ?)
 )SQL",
                 internal_id,
-                external_id,
                 name,
                 description.empty() ? name : description,
                 device_class,
@@ -327,11 +349,10 @@ VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
         {
             m_client->execSqlSync(
                 R"SQL(
-INSERT INTO device (id, external_id, name, description, class, archived, enabled, interface_json, settings_json)
-VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL)
+INSERT INTO device (id, name, description, class, archived, enabled, interface_json, settings_json)
+VALUES (?, ?, ?, ?, 0, ?, ?, NULL)
 )SQL",
                 internal_id,
-                external_id,
                 name,
                 description.empty() ? name : description,
                 device_class,
@@ -355,18 +376,43 @@ VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL)
         return std::nullopt;
     }
 
-    return findDevice(external_id);
+    if (dev::manifestHasWireId(wire_id))
+        return findDevice(wire_id);
+
+    auto created = m_client->execSqlSync(
+        R"SQL(
+SELECT d.id, d.name, d.description, d.class, d.enabled, d.interface_json, d.settings_json
+FROM device d
+WHERE d.id = ?
+LIMIT 1
+)SQL",
+        internal_id);
+    if (created.empty())
+        return std::nullopt;
+
+    auto device = rowToDeviceJson(created[0], room_id);
+    if (!dev::manifestHasWireId(wire_id))
+        device["id"] = wire_id;
+    return device;
 }
 
 std::optional<Json::Value> DevicesStore::updateDevice(
-    const std::string& external_id,
+    const std::string& wire_id,
     const Json::Value& body,
     std::string& error,
     std::string& code)
 {
+    const auto db_id = dev::dbIdForWireId(m_client, wire_id);
+    if (!db_id)
+    {
+        error = "기기를 찾을 수 없습니다.";
+        code = "NOT_FOUND";
+        return std::nullopt;
+    }
+
     auto rows = m_client->execSqlSync(
-        "SELECT id, external_id, name, description, class, enabled, interface_json, settings_json FROM device WHERE external_id = ? AND archived = 0 LIMIT 1",
-        external_id);
+        "SELECT id, name, description, class, enabled, interface_json, settings_json FROM device WHERE id = ? AND archived = 0 LIMIT 1",
+        *db_id);
     if (rows.empty())
     {
         error = "기기를 찾을 수 없습니다.";
@@ -412,8 +458,8 @@ std::optional<Json::Value> DevicesStore::updateDevice(
         m_client->execSqlSync("DELETE FROM device_room_map WHERE device_id = ?", internal_id);
         if (!body["room_id"].isNull())
         {
-            const auto room_id = body["room_id"].asInt64();
-            if (!roomExists(room_id))
+            const auto room_id = resolveRoomIdFromJson(body["room_id"]);
+            if (!room_id || !roomExists(*room_id))
             {
                 error = "방을 찾을 수 없습니다.";
                 code = "NOT_FOUND";
@@ -422,7 +468,7 @@ std::optional<Json::Value> DevicesStore::updateDevice(
             m_client->execSqlSync(
                 "INSERT INTO device_room_map (device_id, room_id) VALUES (?, ?)",
                 internal_id,
-                room_id);
+                *room_id);
         }
     }
 
@@ -469,21 +515,19 @@ WHERE id = ?
         return std::nullopt;
     }
 
-    return findDevice(external_id);
+    return findDevice(wire_id);
 }
 
-bool DevicesStore::deleteDevice(const std::string& external_id, std::string& error)
+bool DevicesStore::deleteDevice(const std::string& wire_id, std::string& error)
 {
-    auto rows = m_client->execSqlSync(
-        "SELECT id FROM device WHERE external_id = ? AND archived = 0 LIMIT 1",
-        external_id);
-    if (rows.empty())
+    const auto db_id = dev::dbIdForWireId(m_client, wire_id);
+    if (!db_id)
     {
         error = "기기를 찾을 수 없습니다.";
         return false;
     }
 
-    const auto internal_id = rows[0]["id"].as<int64_t>();
+    const auto internal_id = *db_id;
     try
     {
         m_client->execSqlSync("DELETE FROM device_room_map WHERE device_id = ?", internal_id);
@@ -500,7 +544,7 @@ bool DevicesStore::deleteDevice(const std::string& external_id, std::string& err
 }
 
 std::optional<Json::Value> DevicesStore::assignRoom(
-    const std::string& external_id,
+    const std::string& wire_id,
     int64_t room_id,
     std::string& error,
     std::string& code)
@@ -512,31 +556,27 @@ std::optional<Json::Value> DevicesStore::assignRoom(
         return std::nullopt;
     }
 
-    auto rows = m_client->execSqlSync(
-        "SELECT id FROM device WHERE external_id = ? AND archived = 0 LIMIT 1",
-        external_id);
-    if (rows.empty())
+    const auto db_id = dev::dbIdForWireId(m_client, wire_id);
+    if (!db_id)
     {
         error = "기기를 찾을 수 없습니다.";
         code = "NOT_FOUND";
         return std::nullopt;
     }
 
-    const auto internal_id = rows[0]["id"].as<int64_t>();
+    const auto internal_id = *db_id;
     m_client->execSqlSync("DELETE FROM device_room_map WHERE device_id = ?", internal_id);
     m_client->execSqlSync(
         "INSERT INTO device_room_map (device_id, room_id) VALUES (?, ?)",
         internal_id,
         room_id);
-    return findDevice(external_id);
+    return findDevice(wire_id);
 }
 
-std::optional<Json::Value> DevicesStore::unassignRoom(const std::string& external_id, std::string& error)
+std::optional<Json::Value> DevicesStore::unassignRoom(const std::string& wire_id, std::string& error)
 {
-    auto rows = m_client->execSqlSync(
-        "SELECT id FROM device WHERE external_id = ? AND archived = 0 LIMIT 1",
-        external_id);
-    if (rows.empty())
+    const auto db_id = dev::dbIdForWireId(m_client, wire_id);
+    if (!db_id)
     {
         error = "기기를 찾을 수 없습니다.";
         return std::nullopt;
@@ -544,8 +584,8 @@ std::optional<Json::Value> DevicesStore::unassignRoom(const std::string& externa
 
     m_client->execSqlSync(
         "DELETE FROM device_room_map WHERE device_id = ?",
-        rows[0]["id"].as<int64_t>());
-    return findDevice(external_id);
+        *db_id);
+    return findDevice(wire_id);
 }
 
 } // namespace v1

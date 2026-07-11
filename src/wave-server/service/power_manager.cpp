@@ -11,6 +11,7 @@
 #include "../core/logger.h"
 #include "../core/time_util.h"
 #include "../device/device.h"
+#include "../device/device_wire_id.hpp"
 #include "../device/platform/tuya_ep2h.h"
 
 #define SERVICE_NAMESPACE_BEGIN namespace service {
@@ -311,13 +312,11 @@ std::optional<int64_t> PowerManager::resolveDbDeviceId(const std::string& extern
 
     try
     {
-        auto rows = client->execSqlSync(
-            "SELECT id FROM device WHERE external_id = ? AND archived = 0 LIMIT 1",
-            external_id);
-        if (rows.empty())
+        const auto db_id = dev::dbIdForWireId(client, external_id);
+        if (!db_id)
             return std::nullopt;
 
-        const int64_t id = rows[0]["id"].as<int64_t>();
+        const int64_t id = *db_id;
         std::lock_guard lock(m_mutex);
         m_db_device_cache[external_id] = id;
         return id;

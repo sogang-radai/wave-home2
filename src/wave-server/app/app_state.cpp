@@ -389,14 +389,13 @@ drogon::orm::DbClientPtr AppState::db() const
     return drogon::app().getDbClient();
 }
 
-bool AppState::loadDeviceManifests()
+bool AppState::loadDeviceManifests(const drogon::orm::DbClientPtr& client)
 {
-    const auto rooms_path = resolvePath(config.rooms_path);
     const auto devices_path = resolvePath(config.device_list_path);
 
-    if (!std::filesystem::exists(rooms_path))
+    if (!client)
     {
-        LOG_WARN("Rooms manifest not found ({}); device manager not loaded", rooms_path.string());
+        LOG_WARN("Database client unavailable; device manager not loaded");
         return false;
     }
 
@@ -408,15 +407,28 @@ bool AppState::loadDeviceManifests()
 
     try
     {
-        json rooms_json;
-        {
-            std::ifstream in(rooms_path);
-            in >> rooms_json;
-        }
         json devices_json;
         {
             std::ifstream in(devices_path);
             in >> devices_json;
+        }
+
+        json rooms_json;
+        rooms_json["rooms"] = json::array();
+        auto rows = client->execSqlSync("SELECT id, name, description FROM room ORDER BY id");
+        if (rows.empty())
+        {
+            LOG_WARN("No rooms in database; device manager not loaded");
+            return false;
+        }
+
+        for (const auto& row : rows)
+        {
+            json room;
+            room["id"] = dev::roomIDToString(static_cast<dev::RoomID>(row["id"].as<int64_t>()));
+            room["name"] = row["name"].as<std::string>();
+            room["description"] = row["description"].as<std::string>();
+            rooms_json["rooms"].push_back(std::move(room));
         }
 
         if (!deviceManager.load(rooms_json, devices_json))
@@ -426,7 +438,7 @@ bool AppState::loadDeviceManifests()
         }
 
         LOG_INFO(
-            "Device manager loaded ({} rooms, {} devices)",
+            "Device manager loaded ({} rooms from DB, {} devices)",
             deviceManager.enumerateRooms().size(),
             deviceManager.enumerateDevices().size());
         return true;
@@ -448,8 +460,6 @@ void AppState::startAutomationServices()
     if (!m_irStore->load(resolvePath("device/ir_list.json"), ir_error))
         LOG_WARN("IrStore load failed: {}", ir_error);
 
-    m_ruleStore->setLegacyImportPath(resolvePath(config.rules_path));
-
     std::string gesture_error;
     if (!m_gestureStore->load(
             resolvePath(config.gesture_sets_path),
@@ -458,7 +468,6 @@ void AppState::startAutomationServices()
     {
         LOG_WARN("GestureStore load failed: {}", gesture_error);
     }
-    m_gestureStore->setAssignmentsPath(resolvePath(config.gesture_assignments_path));
 
     if (no_devices)
         return;
@@ -482,6 +491,16 @@ void AppState::onDatabaseReady(const drogon::orm::DbClientPtr& client)
 
     m_ruleStore->setDatabaseClient(client);
 
+    if (m_gestureStore)
+    {
+        m_gestureStore->setDatabaseClient(client);
+        std::string gesture_db_error;
+        if (!m_gestureStore->syncFromDatabase(gesture_db_error, config.db_read_only))
+            LOG_WARN("GestureStore DB sync failed: {}", gesture_db_error);
+        else if (config.db_read_only)
+            LOG_INFO("GestureStore loaded device mappings (read-only DB)");
+    }
+
     std::string rules_error;
     if (!m_ruleStore->loadFromDatabase(rules_error))
         LOG_WARN("RuleStore load failed: {}", rules_error);
@@ -492,6 +511,14 @@ void AppState::onDatabaseReady(const drogon::orm::DbClientPtr& client)
 
     if (!no_devices)
     {
+        if (!deviceManager.manifestLoaded())
+        {
+            if (!loadDeviceManifests(client))
+                LOG_WARN("Device manager load failed");
+            else
+                deviceManager.startDevicesAsync();
+        }
+
         service::SleepManager::get().reconcile();
         service::SleepManager::get().start();
         LOG_INFO("SleepManager started");
@@ -573,11 +600,9 @@ void AppState::init(const LaunchOptions& launch)
     if (!test_mode)
     {
         settings.load(resolvePath(config.setting_path).string());
-        if (!no_devices)
-            loadDeviceManifests();
-        else if (demo_mode)
+        if (no_devices && demo_mode)
             LOG_INFO("Devices skipped (demo profile)");
-        else
+        else if (no_devices)
             LOG_INFO("Devices skipped (--no-devices or devices_enabled=false)");
 
         startAutomationServices();
@@ -592,7 +617,6 @@ void AppState::init(const LaunchOptions& launch)
 
     if (!test_mode && !no_devices)
     {
-        deviceManager.startDevicesAsync();
         ws::service::PowerManager::get().start();
 
         std::string tts_error;
@@ -620,11 +644,11 @@ void AppState::shutdown()
     running.store(false, std::memory_order_release);
     m_dbReady.store(false, std::memory_order_release);
 
-    stopAutomationServices();
-    deviceManager.shutdown();
     ws::service::PowerManager::get().stop();
     service::SleepManager::get().stop();
     service::AlarmManager::get().stop();
+    stopAutomationServices();
+    deviceManager.shutdown();
 
     iot.shutdown();
     tts.shutdown();

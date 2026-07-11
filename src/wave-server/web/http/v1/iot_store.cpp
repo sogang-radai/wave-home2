@@ -617,6 +617,10 @@ Json::Value IotStore::listDevices() const
         item["class"] = class_name;
         item["classLabel"] = classLabel(class_name);
         item["panel"] = panelForClass(class_name);
+        item["sleepAnalysis"] =
+            cfg.contains("settings") &&
+            cfg["settings"].is_object() &&
+            cfg["settings"].value("sleep", false);
         item["connectionStatus"] = status;
         item["connected"] = status == "online";
         item["available"] = true;

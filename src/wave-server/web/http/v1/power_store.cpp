@@ -8,6 +8,7 @@
 
 #include "../../../app/app_state.h"
 #include "../../../service/power_manager.h"
+#include "../../../device/device_wire_id.hpp"
 #include "insights_store.h"
 #include "iot_store.h"
 
@@ -239,13 +240,10 @@ Json::Value PowerStore::periodTrend(
     std::string device_clause;
     if (!device_external_id.empty() && device_external_id != "all")
     {
-        const auto device_rows = client->execSqlSync(
-            "SELECT id FROM device WHERE external_id = ? LIMIT 1",
-            device_external_id);
-        if (!device_rows.empty())
-            device_clause = " AND device_id = " + device_rows[0]["id"].as<std::string>();
-        else
+        const auto db_id = dev::dbIdForWireId(client, device_external_id);
+        if (!db_id)
             return series;
+        device_clause = " AND device_id = " + std::to_string(*db_id);
     }
     else
     {
@@ -379,11 +377,7 @@ Json::Value PowerStore::queryReport(
     std::optional<int64_t> device_db_id;
     if (!device_external_id.empty() && device_external_id != "all")
     {
-        const auto device_rows = client->execSqlSync(
-            "SELECT id FROM device WHERE external_id = ? LIMIT 1",
-            device_external_id);
-        if (!device_rows.empty())
-            device_db_id = device_rows[0]["id"].as<int64_t>();
+        device_db_id = dev::dbIdForWireId(client, device_external_id);
     }
 
     const std::string ref_date = period_start_hint.empty()

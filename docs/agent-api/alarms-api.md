@@ -39,7 +39,7 @@ type Alarm = {
 };
 ```
 
-`deviceId`·`radarDeviceId` 는 API에서 16자리 hex 외부 id (`device.external_id`).
+`deviceId`·`radarDeviceId` 는 API에서 16자리 manifest wire id (`device_list.json`의 `id`). DB에는 INTEGER PK(`device.id`)만 저장하며, 백엔드가 manifest·이름·JSON 순서로 wire id를 변환한다.
 
 ## GET `/internal/v1/alarms`
 

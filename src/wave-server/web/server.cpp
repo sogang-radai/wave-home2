@@ -75,6 +75,41 @@ namespace
 
         return true;
     }
+
+    void configureStaticFileTypes(drogon::HttpAppFramework& app)
+    {
+        // Drogon defaults omit .json; CRA ships manifest.json and asset-manifest.json.
+        app.registerCustomExtensionMime("json", "application/json");
+        app.registerCustomExtensionMime("map", "application/json");
+        app.registerCustomExtensionMime("gltf", "model/gltf+json");
+        app.registerCustomExtensionMime("bin", "application/octet-stream");
+        app.setFileTypes({
+            "html",
+            "js",
+            "css",
+            "xml",
+            "xsl",
+            "txt",
+            "svg",
+            "ttf",
+            "otf",
+            "woff2",
+            "woff",
+            "eot",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "bmp",
+            "ico",
+            "icns",
+            "webp",
+            "json",
+            "map",
+            "gltf",
+            "bin",
+        });
+    }
 }
 
 struct Server::Impl
@@ -138,6 +173,26 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     }();
     const auto resolved_database_path = resolvePath(base_dir, database_path);
     const auto resolved_upload_path = resolvePath(base_dir, "uploads");
+    const auto resolved_gestures_root = [&]() -> std::filesystem::path
+    {
+        auto path = resolvePath(base_dir, "gestures");
+        if (std::filesystem::exists(path))
+            return path;
+
+#if defined(WAVE_SOURCE_DIR)
+        const auto fallback = std::filesystem::path(WAVE_SOURCE_DIR) / "bin" / "gestures";
+        if (std::filesystem::exists(fallback))
+        {
+            LOG_INFO(
+                "Gestures directory {} not found; using {}",
+                path.string(),
+                fallback.string());
+            return fallback;
+        }
+#endif
+
+        return path;
+    }();
 
     if (!std::filesystem::exists(resolved_document_root))
     {
@@ -174,6 +229,21 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     app.setImplicitPageEnable(true);
     app.setImplicitPage(home_page);
     app.setUploadPath(resolved_upload_path.string());
+    configureStaticFileTypes(app);
+
+    if (!std::filesystem::exists(resolved_gestures_root))
+    {
+        LOG_WARN(
+            "Gestures directory does not exist: {} (thumbnail URLs under /gestures/ will 404)",
+            resolved_gestures_root.string());
+    }
+    else
+    {
+        const auto gestures_alias = std::filesystem::weakly_canonical(resolved_gestures_root).string();
+        app.addALocation("/gestures", "", gestures_alias);
+        LOG_INFO("Serving gesture assets at /gestures/ from {}", gestures_alias);
+    }
+
     app.addListener("0.0.0.0", port);
 
     if (demo_mode)

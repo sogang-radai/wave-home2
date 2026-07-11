@@ -8,13 +8,19 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEVICE_LIST_PATH = REPO_ROOT / "bin" / "device" / "device_list.json"
 
+
+def hex_id(n: int) -> str:
+    """DB INTEGER PK ↔ device_list.json 16자리 hex (순차 증가)."""
+    return f"{n:016x}"
+
+
 # 사용자: 김건강(1, 침실 취침) / 박헬스(2, 거실·부엌만 사용, 침실 미사용)
 USERS = [
     (1, "김건강", "2025-11-03 10:00:00"),
     (2, "박헬스", "2026-01-12 19:30:00"),
 ]
 
-# 방: 요청 순서(거실/침실/부엌)를 그대로 id 순서로 사용한다.
+# 방: 거실/침실/부엌 — DB id 순서와 동일
 ROOMS = [
     (1, "거실", "공용 거실. 카메라/에어컨/선풍기/조명, 두 사람 모두 사용."),
     (2, "침실", "김건강 침실. 레이더 2대(하방/책상)/Wave Station/조명/TV/PC 플러그. 박헬스는 사용하지 않음."),
@@ -31,25 +37,43 @@ ROOM_USER_MAP = [
     (3, 2),  # 부엌 - 박헬스
 ]
 
-GESTURE_SETS = [
-    (1, "Desk Set", 0),
-]
+GESTURE_SETS_JSON = REPO_ROOT / "bin" / "gestures" / "gesture_sets.json"
 
-# 새로 추가한 책상 레이더(제스처 전용) hex id. device_list.json 과 반드시 일치해야 한다.
-DESK_RADAR_HEX_ID = "8d4f2a7c93b105e6"
-# 기존 하방(수면용) 레이더 hex id.
-BED_RADAR_HEX_ID = "3a7f2c9d10b4e85f"
-WAVE_STATION_HEX_ID = "5c1e8b6402fda973"
-DROID_CAM_HEX_ID = "a3d7c91e2f0486b5"
-LIVING_CAM_HEX_ID = "27d9a4f3c85b016e"
-FAN_PLUG_HEX_ID = "6b0f3e8a92c47d15"          # 거실 선풍기
-PC_PLUG_HEX_ID = "1f8c5a2e7b93064d"           # 침실 컴퓨터
-AIRCON_PLUG_HEX_ID = "4a2d9c7f1e60b358"       # 침실 에어컨
-INDUCTION_PLUG_HEX_ID = "7e3b1d8a5f02c964"    # 부엌 인덕션
-TV_HEX_ID = "2c9f6a1b4d78e350"                # 침실 TV
-BEDROOM_LIGHT_HEX_ID = "5d0a3f8c26b91e74"
-LIVING_LIGHT_HEX_ID = "3f7c2a9e14d8065b"
-KITCHEN_LIGHT_HEX_ID = "6a1e4b8d3f05c927"
+DESK_SET_WIRE_ID = hex_id(1)
+BED_SET_WIRE_ID = hex_id(2)
+
+DESK_RADAR_HEX_ID = hex_id(2)
+BED_RADAR_HEX_ID = hex_id(1)
+WAVE_STATION_HEX_ID = hex_id(3)
+DROID_CAM_HEX_ID = hex_id(4)
+LIVING_CAM_HEX_ID = hex_id(5)
+FAN_PLUG_HEX_ID = hex_id(6)
+PC_PLUG_HEX_ID = hex_id(7)
+AIRCON_PLUG_HEX_ID = hex_id(8)
+INDUCTION_PLUG_HEX_ID = hex_id(9)
+TV_HEX_ID = hex_id(10)
+BEDROOM_LIGHT_HEX_ID = hex_id(11)
+LIVING_LIGHT_HEX_ID = hex_id(12)
+KITCHEN_LIGHT_HEX_ID = hex_id(13)
+
+
+def load_gesture_sets() -> list[tuple[int, str, int]]:
+    """gesture_set 테이블 행: (id, name, archived)."""
+    data = json.loads(GESTURE_SETS_JSON.read_text(encoding="utf-8"))
+    rows: list[tuple[int, str, int]] = []
+    for i, item in enumerate(data["gesture_sets"], start=1):
+        archived = 0 if item.get("enabled", True) else 1
+        rows.append((i, item["name"], archived))
+    return rows
+
+
+def desk_set_pk() -> int:
+    """gesture_set 테이블 PK for Desk Set (wire id 0000000000000001 → usually 1)."""
+    data = json.loads(GESTURE_SETS_JSON.read_text(encoding="utf-8"))
+    for i, item in enumerate(data["gesture_sets"], start=1):
+        if item.get("id") == DESK_SET_WIRE_ID:
+            return i
+    return 1
 
 PLUG_HEX_TO_APPLIANCE = {
     FAN_PLUG_HEX_ID: "fan",
@@ -91,14 +115,14 @@ def classify_appliance(description: str) -> str | None:
     return None
 
 
-def build_device_rows(devices: list[dict]) -> tuple[list[tuple[int, str, str, str, str, int, int, str]], dict[str, int]]:
-    """device 테이블 행과 hex_id -> integer PK 매핑을 만든다(JSON 순서 = PK 순서)."""
-    rows: list[tuple[int, str, str, str, str, int, int, str]] = []
+def build_device_rows(devices: list[dict]) -> tuple[list[tuple[int, str, str, str, int, int, str]], dict[str, int]]:
+    """device 테이블 행과 hex_id -> integer PK 매핑 (JSON id hex = DB PK)."""
+    rows: list[tuple[int, str, str, str, int, int, str]] = []
     hex_to_pk: dict[str, int] = {}
     for i, dev in enumerate(devices, start=1):
+        pk = i
         rows.append((
-            i,
-            dev["id"],
+            pk,
             dev["name"],
             dev["description"],
             dev["class"],
@@ -106,7 +130,7 @@ def build_device_rows(devices: list[dict]) -> tuple[list[tuple[int, str, str, st
             1 if dev.get("enabled", True) else 0,
             "{}",
         ))
-        hex_to_pk[dev["id"]] = i
+        hex_to_pk[dev["id"]] = pk
     return rows, hex_to_pk
 
 

@@ -239,8 +239,15 @@ namespace
         }
         body["messages"] = std::move(messages);
 
-        if (!request.now.empty())
-            body["context"] = {{"now", request.now}};
+        if (!request.now.empty() || !request.demo_runtime_id.empty())
+        {
+            json context = json::object();
+            if (!request.now.empty())
+                context["now"] = request.now;
+            if (!request.demo_runtime_id.empty())
+                context["demoRuntimeId"] = request.demo_runtime_id;
+            body["context"] = std::move(context);
+        }
 
         return body.dump();
     }

@@ -82,6 +82,7 @@ private:
     bool m_manifestLoaded = false;
     std::atomic<bool> m_startupComplete{false};
     std::atomic<bool> m_startRequested{false};
+    std::atomic<bool> m_shutdown{false};
     std::thread m_startThread;
     std::thread m_retryThread;
     std::atomic<bool> m_retryStop{false};

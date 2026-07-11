@@ -56,7 +56,7 @@ public:
 
     struct SessionConfig
     {
-        uint32_t connectTimeoutMs = 8000;
+        uint32_t connectTimeoutMs = 4000;
         uint32_t requestTimeoutMs = 5000;
         uint32_t heartbeatIntervalMs = 5000;
         uint32_t reconnectInitialMs = 1000;

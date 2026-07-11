@@ -170,6 +170,9 @@ CREATE TABLE device (
     PRIMARY KEY (id)
 );
 
+-- manifest wire id(16자리 hex)는 `device_list.json`에만 존재한다.
+-- DB `device.id`는 INTEGER PK(보통 JSON 배열 순서 1..N). API wire id는 런타임에 manifest·이름으로 변환한다.
+
 CREATE TABLE device_user_map (
     device_id INTEGER NOT NULL,
     user_id   INTEGER NOT NULL,
@@ -567,8 +570,9 @@ CREATE VIRTUAL TABLE vec_weekly_plan_report USING vec0 (
 
 ## 제스처
 
-- 제스처 세트/클래스 정의는 json으로 관리함(gestures/gesture_sets.json + 각 set.json).
-- 세트 테이블은 FK 참조용 id 만 둔다(장치와 동일한 방식). 로그가 어떤 세트에서 나왔는지 가리키는 용도.
+- 제스처 세트/클래스 정의는 json으로 관리함(`gestures/gesture_sets.json` + 각 `set.json`).
+- 세트 테이블은 FK 참조용 id 만 둔다(장치와 동일한 방식). json `id`(16자 hex)는 API wire id, DB `gesture_set.id`는 json 배열 순서(1..N).
+- 레이더↔세트 연동은 `gesture_device_map` 테이블에 저장한다(구 `gesture_assignments.json` 대체).
 - 세트 내 개별 제스처는 set.json 의 class_id 로 식별하며 별도 테이블을 두지 않는다.
 - 로그는 json 이 바뀌어도 남아야 하므로 이름/동작을 스냅샷으로 저장한다.
 
@@ -599,6 +603,16 @@ CREATE TABLE gesture_log (
     FOREIGN KEY (device_id) REFERENCES device(id)
 );
 CREATE INDEX idx_gesture_log_occurred ON gesture_log (timestamp);
+
+CREATE TABLE gesture_device_map (
+    device_id       INTEGER NOT NULL,
+    gesture_set_id  INTEGER NOT NULL,
+
+    PRIMARY KEY (device_id),
+    FOREIGN KEY (device_id) REFERENCES device(id),
+    FOREIGN KEY (gesture_set_id) REFERENCES gesture_set(id)
+);
+
 ```
 
 ---
@@ -610,7 +624,7 @@ CREATE INDEX idx_gesture_log_occurred ON gesture_log (timestamp);
 트리거 룰과 이벤트 로그. 장치 마스터는 `device` + json 설정을 따른다.
 
 > **런타임**: wave-server 는 IoT 트리거·예약을 SQLite `automation_rule` 테이블에 저장한다.
-> 최초 기동 시 테이블이 비어 있으면 `device/rules.json` 을 **1회 import** 한다.
+> 런타임 저장소는 SQLite `automation_rule` 테이블이다. API·트리거 엔진은 DB만 사용한다.
 
 ### 트리거 룰
 

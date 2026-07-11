@@ -37,6 +37,8 @@ install_deps() {
 
 install_deps
 
+bash "$(dirname "${BASH_SOURCE[0]}")/copy-twin-model.sh"
+
 API_MODE="${WAVE_SITE_API_MODE:-}"
 if [[ -z "$API_MODE" ]]; then
     if [[ "$USE_MOCK" == "true" ]]; then
@@ -55,6 +57,10 @@ else
 fi
 
 echo "Building wave-home-front (REACT_APP_API_MODE=$API_MODE_FLAG REACT_APP_USE_MOCK=$MOCK_FLAG) → $SITE_DIR"
+
+# CRA keeps old hashed bundles; a stale index.html can point at the wrong API-mode bundle.
+rm -rf "$SITE_SOURCE_DIR/build" "$SITE_SOURCE_DIR/dist" "$SITE_SOURCE_DIR/out"
+
 REACT_APP_API_MODE="$API_MODE_FLAG" \
 REACT_APP_USE_MOCK="$MOCK_FLAG" \
 REACT_APP_ANCHOR_DATE="${WAVE_SITE_ANCHOR_DATE:-}" \

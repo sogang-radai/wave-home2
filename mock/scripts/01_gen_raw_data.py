@@ -45,8 +45,8 @@ def main() -> None:
     device_list = devices.load_devices()
     device_rows, hex_to_pk = devices.build_device_rows(device_list)
     cur.executemany(
-        "INSERT INTO device (id, external_id, name, description, class, archived, enabled, interface_json) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO device (id, name, description, class, archived, enabled, interface_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         device_rows,
     )
 
@@ -116,7 +116,18 @@ def main() -> None:
     )
 
     # --- 제스처 --------------------------------------------------------------
-    cur.executemany("INSERT INTO gesture_set (id, name, archived) VALUES (?, ?, ?)", devices.GESTURE_SETS)
+    # gesture_sets.json 순서: 1=Desk Set, 2=Bed Set.
+    # 침실 책상 레이더(device id=2)는 Desk Set에 고정 매핑한다.
+    cur.executemany("INSERT INTO gesture_set (id, name, archived) VALUES (?, ?, ?)", devices.load_gesture_sets())
+    desk_set_id = devices.desk_set_pk()
+    if desk_set_id != 1:
+        raise RuntimeError(f"Desk Set PK expected 1, got {desk_set_id}")
+    if pks["desk_radar"] != 2:
+        raise RuntimeError(f"desk radar PK expected 2, got {pks['desk_radar']}")
+    cur.execute(
+        "INSERT INTO gesture_device_map (device_id, gesture_set_id) VALUES (?, ?)",
+        (pks["desk_radar"], desk_set_id),
+    )
 
     rng = random.Random(SEED)
     gesture_rows = narrative.gen_gesture_log(pks["desk_radar"], pks["tv"], pks["bedroom_light"], rng)
@@ -129,6 +140,9 @@ def main() -> None:
 
     # --- 홈 자동화 -------------------------------------------------------------
     hex_ids = {
+        "bed_radar": devices.BED_RADAR_HEX_ID,
+        "desk_radar": devices.DESK_RADAR_HEX_ID,
+        "tv": devices.TV_HEX_ID,
         "bedroom_light": devices.BEDROOM_LIGHT_HEX_ID,
         "aircon_plug": devices.AIRCON_PLUG_HEX_ID,
         "induction_plug": devices.INDUCTION_PLUG_HEX_ID,
@@ -189,7 +203,14 @@ def main() -> None:
 
     print("=== 01_gen_raw_data 완료 ===")
     print(f"db: {DB_PATH}")
-    print(f"vec_* 생성 여부: {vec_ready}")
+    vec_count = cur.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE 'vec_%'"
+    ).fetchone()[0]
+    print(f"schema_version: 1")
+    print(f"vec_* 테이블: {vec_count}/{len(schema.VEC_TABLES)} (ready={vec_ready})")
+    if not vec_ready:
+        print("  → vec 없음: uv run --with sqlite-vec mock/scripts/01_gen_raw_data.py 로 재생성하거나")
+        print("    uv run --with sqlite-vec mock/scripts/00_ensure_schema.py 로 기존 DB에 추가")
     for t in (
         "user", "room", "room_user_map", "device", "device_user_map", "device_room_map",
         "user_sleep_config", "user_general_settings", "user_ai_agent_settings",

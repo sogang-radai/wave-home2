@@ -25,6 +25,7 @@ struct AgentChatTurnRequest
     int64_t user_id = 0;
     std::vector<AgentChatMessage> messages;
     std::string now;
+    std::string demo_runtime_id;
     bool stream = true;
 };
 

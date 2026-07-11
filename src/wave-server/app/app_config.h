@@ -32,10 +32,7 @@ struct AppConfig
 
     std::string setting_path = "data/settings.json";
     std::string device_list_path = "device/device_list.json";
-    std::string rooms_path = "device/rooms.json";
     std::string gesture_sets_path = "gestures/gesture_sets.json";
-    std::string rules_path = "device/rules.json";
-    std::string gesture_assignments_path = "device/gesture_assignments.json";
     std::string sleep_model_path = "models/sleep/model.json";
     std::string stt_model_path = "models/stt/stt.json";
     std::string tts_model_path = "models/tts/tts.json";

@@ -14,13 +14,25 @@ from . import timeutil
 # ---------------------------------------------------------------------------
 # 제스처 (침실 책상 레이더 -> TV / 침실 조명)
 # ---------------------------------------------------------------------------
+# desk_set/set.json class_id → (이름, cooldown_ms)
+DESK_GESTURE_CLASSES = {
+    0: ("부재중", 3000),
+    1: ("앉음", 3000),
+    5: ("왼쪽 스와이프", 800),
+    6: ("오른쪽 스와이프", 800),
+    8: ("왼손 반짝", 1200),
+    10: ("오른손 시계방향", 500),
+    11: ("왼손 반시계방향", 500),
+}
+
 GESTURES = [
-    (1, "swipe_right", "tv", "volume_up"),
-    (2, "swipe_left", "tv", "volume_down"),
-    (3, "palm_push", "light", "toggle"),
-    (4, "circle_cw", "light", "brightness_up"),
-    (5, "circle_ccw", "light", "brightness_down"),
-    (6, "double_tap", "tv", "power_toggle"),
+    (0, "부재중", "tv", "off"),
+    (1, "앉음", "tv", "on"),
+    (5, "왼쪽 스와이프", "tv", "channel_down"),
+    (6, "오른쪽 스와이프", "tv", "channel_up"),
+    (11, "왼손 반시계방향", "tv", "volume_down"),
+    (10, "오른손 시계방향", "tv", "volume_up"),
+    (8, "왼손 반짝", "light", "toggle"),
 ]
 
 
@@ -55,6 +67,64 @@ def gen_gesture_log(desk_radar_pk: int, tv_pk: int, light_pk: int, rng: random.R
 # ---------------------------------------------------------------------------
 # 홈 자동화 룰
 # ---------------------------------------------------------------------------
+def _gesture_trigger(desk_radar_hex: str, class_id: int) -> str:
+    return json.dumps(
+        {
+            "kind": "gesture",
+            "deviceId": desk_radar_hex,
+            "gestureSetPath": "gestures/desk_set/set.json",
+            "classId": class_id,
+        },
+        ensure_ascii=False,
+    )
+
+
+def gen_gesture_automation_rules(hex_ids: dict[str, str], now: str) -> list[tuple]:
+    """침실 책상 레이더(desk_set) 제스처 → TV/침실 조명 자동화."""
+    desk = hex_ids["desk_radar"]
+    tv = hex_ids["tv"]
+    light = hex_ids["bedroom_light"]
+
+    def action_row(device_hex: str, name: str, *, exec_mode: str = "once", repeat_ms: int = 0) -> str:
+        return json.dumps(
+            {
+                "deviceId": device_hex,
+                "name": name,
+                "params": {},
+                "execMode": exec_mode,
+                "repeatIntervalMs": repeat_ms,
+            },
+            ensure_ascii=False,
+        )
+
+    specs = [
+        ("rule_gesture_desk_absent_tv_off", "부재중 → 침실 TV 끄기", 0, tv, "off", "once", 0),
+        ("rule_gesture_desk_sit_tv_on", "앉음 → 침실 TV 켜기", 1, tv, "on", "once", 0),
+        ("rule_gesture_desk_swipe_left_channel", "왼쪽 스와이프 → 채널 내리기", 5, tv, "channel_down", "repeat", 200),
+        ("rule_gesture_desk_swipe_right_channel", "오른쪽 스와이프 → 채널 올리기", 6, tv, "channel_up", "repeat", 200),
+        ("rule_gesture_desk_ccw_volume_down", "왼손 반시계 → 볼륨 내리기", 11, tv, "volume_down", "repeat", 200),
+        ("rule_gesture_desk_cw_volume_up", "오른손 시계 → 볼륨 올리기", 10, tv, "volume_up", "repeat", 200),
+        ("rule_gesture_desk_flash_light_toggle", "왼손 반짝 → 침실 조명 토글", 8, light, "toggle", "toggle", 0),
+    ]
+
+    rows: list[tuple] = []
+    for external_id, name, class_id, device_hex, action_name, exec_mode, repeat_ms in specs:
+        _, cooldown_ms = DESK_GESTURE_CLASSES[class_id]
+        rows.append((
+            1,
+            external_id,
+            name,
+            1,
+            cooldown_ms,
+            _gesture_trigger(desk, class_id),
+            None,
+            action_row(device_hex, action_name, exec_mode=exec_mode, repeat_ms=repeat_ms),
+            now,
+            now,
+        ))
+    return rows
+
+
 def gen_automation_rules(hex_ids: dict[str, str], now: str) -> list[tuple]:
     def actions(device_hex: str, name: str, params: dict | None = None) -> str:
         return json.dumps(
@@ -109,6 +179,7 @@ def gen_automation_rules(hex_ids: dict[str, str], now: str) -> list[tuple]:
             now, now,
         ),
     ]
+    rows.extend(gen_gesture_automation_rules(hex_ids, now))
     return rows
 
 

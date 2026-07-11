@@ -8,8 +8,10 @@
 #include <unordered_set>
 
 #include "../../../app/app_state.h"
+#include "../../../demo/demo_device_backend.h"
+#include "../../../demo/demo_runtime_id.h"
 #include "../../../device/device.h"
-#include "../../../device/device_manager.h"
+#include "../../../device/device_wire_id.hpp"
 #include "device_class_registry.h"
 #include "../v1/iot_store.h"
 
@@ -51,28 +53,12 @@ namespace
 
     bool manifestHasDevice(const std::string& manifest_id)
     {
-        if (manifest_id.empty())
-            return false;
-
-        for (const auto& entry : AppState::get().deviceManager.manifestEntries())
-        {
-            if (entry.config.value("id", "") == manifest_id)
-                return true;
-        }
-        return false;
+        return dev::manifestHasWireId(manifest_id);
     }
 
     std::optional<std::string> manifestIdForDeviceName(const std::string& name)
     {
-        for (const auto& entry : AppState::get().deviceManager.manifestEntries())
-        {
-            if (entry.config.value("name", "") == name)
-            {
-                const auto id = entry.config.value("id", "");
-                if (!id.empty())
-                    return id;
-            }
-        }
+        (void)name;
         return std::nullopt;
     }
 
@@ -84,19 +70,12 @@ namespace
             return std::nullopt;
 
         auto rows = client->execSqlSync(
-            "SELECT external_id, name FROM device WHERE id = ? LIMIT 1",
+            "SELECT name FROM device WHERE id = ? LIMIT 1",
             db_id);
         if (rows.empty())
             return std::nullopt;
 
-        if (!rows[0]["external_id"].isNull())
-        {
-            const auto ext = rows[0]["external_id"].as<std::string>();
-            if (!ext.empty() && manifestHasDevice(ext))
-                return ext;
-        }
-
-        return manifestIdForDeviceName(rows[0]["name"].as<std::string>());
+        return dev::wireIdForDbRow(db_id, rows[0]["name"].as<std::string>());
     }
 
     std::optional<int64_t> optionalUserId(const Json::Value& body)
@@ -123,24 +102,28 @@ namespace
 
     bool demoDbDevicesEnabled()
     {
-        const auto& state = AppState::get();
-        return state.demo_mode && state.no_devices;
+        return demoVirtualDevicesEnabled();
     }
 
-    std::string wireIdFromDbRow(int64_t db_id, const std::string& external_id)
+    std::string runtimeFromBody(const Json::Value& body)
     {
-        if (!external_id.empty())
-            return external_id;
+        if (body.isMember("demoRuntimeId") && body["demoRuntimeId"].isString())
+        {
+            const auto id = body["demoRuntimeId"].asString();
+            if (!id.empty())
+                return id;
+        }
+        return generateDemoRuntimeId();
+    }
 
-        std::ostringstream stream;
-        stream << std::hex << std::nouppercase << std::setw(16) << std::setfill('0') << db_id;
-        return stream.str();
+    std::string wireIdFromDbRow(int64_t db_id, const std::string& db_name)
+    {
+        return dev::wireIdForDbRow(db_id, db_name);
     }
 
     struct DbDeviceRow
     {
         int64_t id = 0;
-        std::string external_id;
         std::string name;
         std::string description;
         std::string device_class;
@@ -153,7 +136,6 @@ namespace
     {
         DbDeviceRow out;
         out.id = row["id"].as<int64_t>();
-        out.external_id = row["external_id"].isNull() ? std::string() : row["external_id"].as<std::string>();
         out.name = row["name"].as<std::string>();
         out.description = row["description"].as<std::string>();
         out.device_class = row["class"].as<std::string>();
@@ -172,26 +154,29 @@ namespace
         if (!client || device_id_param.empty())
             return std::nullopt;
 
-        auto rows = client->execSqlSync(
-            R"SQL(
-SELECT d.id, d.external_id, d.name, d.description, d.class, d.enabled,
+        if (const auto db_id = dev::dbIdForWireId(client, device_id_param))
+        {
+            auto rows = client->execSqlSync(
+                R"SQL(
+SELECT d.id, d.name, d.description, d.class, d.enabled,
        r.id AS room_id, r.name AS room_name
 FROM device d
 LEFT JOIN device_room_map drm ON drm.device_id = d.id
 LEFT JOIN room r ON r.id = drm.room_id
-WHERE d.archived = 0 AND d.external_id = ?
+WHERE d.archived = 0 AND d.id = ?
 LIMIT 1
 )SQL",
-            device_id_param);
-        if (!rows.empty())
-            return rowFromResult(rows[0]);
+                *db_id);
+            if (!rows.empty())
+                return rowFromResult(rows[0]);
+        }
 
         const auto parsed = dev::parseDeviceID(device_id_param);
         if (parsed != 0 && parsed < 1'000'000)
         {
-            rows = client->execSqlSync(
+            auto rows = client->execSqlSync(
                 R"SQL(
-SELECT d.id, d.external_id, d.name, d.description, d.class, d.enabled,
+SELECT d.id, d.name, d.description, d.class, d.enabled,
        r.id AS room_id, r.name AS room_name
 FROM device d
 LEFT JOIN device_room_map drm ON drm.device_id = d.id
@@ -208,9 +193,9 @@ LIMIT 1
         {
             if (*as_int > 0)
             {
-                rows = client->execSqlSync(
+                auto rows = client->execSqlSync(
                     R"SQL(
-SELECT d.id, d.external_id, d.name, d.description, d.class, d.enabled,
+SELECT d.id, d.name, d.description, d.class, d.enabled,
        r.id AS room_id, r.name AS room_name
 FROM device d
 LEFT JOIN device_room_map drm ON drm.device_id = d.id
@@ -230,7 +215,7 @@ LIMIT 1
     Json::Value deviceJsonFromDbRow(const DbDeviceRow& row)
     {
         Json::Value item;
-        item["id"] = wireIdFromDbRow(row.id, row.external_id);
+        item["id"] = wireIdFromDbRow(row.id, row.name);
         item["name"] = row.name;
         item["description"] = row.description;
         item["class"] = row.device_class;
@@ -238,7 +223,7 @@ LIMIT 1
         item["vendor"] = "";
         item["model"] = "";
         item["enabled"] = row.enabled;
-        item["connected"] = false;
+        item["connected"] = row.device_class != "droid_cam";
         item["stateSummary"] = "데모";
         if (row.room_id > 0)
         {
@@ -318,7 +303,7 @@ LIMIT 1
         if (demoDbDevicesEnabled() && client)
         {
             if (const auto row = lookupDbDeviceRow(client, device_id_param))
-                return wireIdFromDbRow(row->id, row->external_id);
+                return wireIdFromDbRow(row->id, row->name);
         }
 
         return std::nullopt;
@@ -326,16 +311,19 @@ LIMIT 1
 
     std::optional<Json::Value> lookupDbRoomRef(
         const drogon::orm::DbClientPtr& client,
-        const std::string& external_id,
+        const std::string& wire_id,
         const std::string& device_name,
         const Json::Value& manifest_room)
     {
         if (!client)
             return std::nullopt;
 
-        auto query_by_external = [&]()
+        auto query_by_wire = [&]()
         {
-            if (external_id.empty())
+            if (wire_id.empty())
+                return drogon::orm::Result(nullptr);
+            const auto db_id = dev::dbIdForWireId(client, wire_id);
+            if (!db_id)
                 return drogon::orm::Result(nullptr);
             return client->execSqlSync(
                 R"SQL(
@@ -343,10 +331,10 @@ SELECT r.id, r.name
 FROM device d
 JOIN device_room_map drm ON drm.device_id = d.id
 JOIN room r ON r.id = drm.room_id
-WHERE d.external_id = ?
+WHERE d.id = ?
 LIMIT 1
 )SQL",
-                external_id);
+                *db_id);
         };
 
         auto query_by_name = [&]()
@@ -377,7 +365,7 @@ LIMIT 1
                 room_name);
         };
 
-        auto rows = query_by_external();
+        auto rows = query_by_wire();
         if (rows.empty())
             rows = query_by_name();
         if (rows.empty())
@@ -398,10 +386,10 @@ LIMIT 1
         if (!device.isObject())
             return;
 
-        const auto external_id = device.get("id", "").asString();
+        const auto wire_id = device.get("id", "").asString();
         const auto device_name = device.get("name", "").asString();
         const auto manifest_room = device.get("room", Json::nullValue);
-        const auto db_room = lookupDbRoomRef(client, external_id, device_name, manifest_room);
+        const auto db_room = lookupDbRoomRef(client, wire_id, device_name, manifest_room);
         if (db_room)
             device["room"] = *db_room;
     }
@@ -442,19 +430,6 @@ bool DevicesInternalStore::deviceAllowedForUser(const std::string& external_id, 
         if (!manifest_id)
             return false;
 
-        auto rows = m_client->execSqlSync(
-            R"SQL(
-SELECT 1
-FROM device d
-JOIN device_user_map m ON m.device_id = d.id
-WHERE m.user_id = ? AND d.external_id = ?
-LIMIT 1
-)SQL",
-            user_id,
-            *manifest_id);
-        if (!rows.empty())
-            return true;
-
         if (const auto internal_id = internalIdFromExternal(*manifest_id))
             db_row_id = internal_id;
         else
@@ -476,7 +451,9 @@ LIMIT 1
     return !rows.empty();
 }
 
-std::optional<Json::Value> DevicesInternalStore::findListedDevice(const std::string& device_id) const
+std::optional<Json::Value> DevicesInternalStore::findListedDevice(
+    const std::string& device_id,
+    const std::optional<std::string>& demo_runtime_id) const
 {
     std::string code;
     if (!devicesReady(m_client, code))
@@ -485,7 +462,24 @@ std::optional<Json::Value> DevicesInternalStore::findListedDevice(const std::str
     if (demoDbDevicesEnabled())
     {
         if (const auto row = lookupDbDeviceRow(m_client, device_id))
+        {
+            const auto wire_id = wireIdFromDbRow(row->id, row->name);
+            const auto runtime_id = demo_runtime_id && !demo_runtime_id->empty()
+                ? *demo_runtime_id
+                : generateDemoRuntimeId();
+            DemoDeviceBackend backend(m_client);
+            std::string list_code;
+            const auto listed = backend.listDevices(runtime_id, list_code);
+            if (list_code.empty())
+            {
+                for (const auto& device : listed["items"])
+                {
+                    if (device.isObject() && device.get("id", "").asString() == wire_id)
+                        return device;
+                }
+            }
             return deviceJsonFromDbRow(*row);
+        }
         return std::nullopt;
     }
 
@@ -512,49 +506,17 @@ std::string DevicesInternalStore::externalIdFromDb(int64_t device_row_id) const
         return {};
 
     auto rows = m_client->execSqlSync(
-        "SELECT external_id, name FROM device WHERE id = ?",
+        "SELECT name FROM device WHERE id = ?",
         device_row_id);
     if (rows.empty())
         return {};
 
-    const auto external_id = rows[0]["external_id"].isNull()
-        ? std::string()
-        : rows[0]["external_id"].as<std::string>();
-    if (!external_id.empty())
-        return external_id;
-
-    const auto name = rows[0]["name"].as<std::string>();
-    for (const auto& entry : AppState::get().deviceManager.manifestEntries())
-    {
-        if (entry.config.value("name", "") == name)
-            return entry.config.value("id", "");
-    }
-    return {};
+    return dev::wireIdForDbRow(device_row_id, rows[0]["name"].as<std::string>());
 }
 
-std::optional<int64_t> DevicesInternalStore::internalIdFromExternal(const std::string& external_id) const
+std::optional<int64_t> DevicesInternalStore::internalIdFromExternal(const std::string& wire_id) const
 {
-    if (!m_client || external_id.empty())
-        return std::nullopt;
-
-    auto rows = m_client->execSqlSync(
-        "SELECT id FROM device WHERE external_id = ? LIMIT 1",
-        external_id);
-    if (!rows.empty())
-        return rows[0]["id"].as<int64_t>();
-
-    for (const auto& entry : AppState::get().deviceManager.manifestEntries())
-    {
-        if (entry.config.value("id", "") != external_id)
-            continue;
-        const auto name = entry.config.value("name", "");
-        rows = m_client->execSqlSync(
-            "SELECT id FROM device WHERE name = ? LIMIT 1",
-            name);
-        if (!rows.empty())
-            return rows[0]["id"].as<int64_t>();
-    }
-    return std::nullopt;
+    return dev::dbIdForWireId(m_client, wire_id);
 }
 
 bool DevicesInternalStore::nameMatches(const std::string& haystack, const std::string& needle)
@@ -580,45 +542,57 @@ std::string DevicesInternalStore::makeEventId()
     return stream.str();
 }
 
-Json::Value DevicesInternalStore::listDevices(const DeviceListFilter& filter, std::string& code) const
+Json::Value DevicesInternalStore::listDevices(
+    const DeviceListFilter& filter,
+    std::string& code,
+    const std::optional<std::string>& demo_runtime_id) const
 {
     if (!devicesReady(m_client, code))
         return Json::Value();
 
     if (demoDbDevicesEnabled())
     {
-        const auto rows = m_client->execSqlSync(
-            R"SQL(
-SELECT d.id, d.external_id, d.name, d.description, d.class, d.enabled,
-       r.id AS room_id, r.name AS room_name
-FROM device d
-LEFT JOIN device_room_map drm ON drm.device_id = d.id
-LEFT JOIN room r ON r.id = drm.room_id
-WHERE d.archived = 0
-ORDER BY d.id
-)SQL");
+        DemoDeviceBackend backend(m_client);
+        const auto runtime_id = demo_runtime_id && !demo_runtime_id->empty()
+            ? *demo_runtime_id
+            : generateDemoRuntimeId();
+        const auto listed = backend.listDevices(runtime_id, code);
+        if (!code.empty())
+            return Json::Value();
 
         Json::Value items(Json::arrayValue);
-        for (size_t i = 0; i < rows.size(); ++i)
+        for (const auto& device : listed["items"])
         {
-            const auto row = rowFromResult(rows[i]);
-            if (!row)
+            if (!device.isObject())
                 continue;
 
-            if (filter.enabled && *filter.enabled != row->enabled)
+            if (filter.enabled && *filter.enabled != device.get("enabled", true).asBool())
                 continue;
-            if (filter.connected && *filter.connected)
+            if (filter.connected && *filter.connected != device.get("connected", false).asBool())
                 continue;
-            if (filter.device_class && row->device_class != *filter.device_class)
+            if (filter.device_class && device.get("class", "").asString() != *filter.device_class)
                 continue;
-            if (filter.room_id && row->room_id != *filter.room_id)
-                continue;
-
-            const auto wire_id = wireIdFromDbRow(row->id, row->external_id);
-            if (filter.user_id && !deviceAllowedForUser(wire_id, *filter.user_id))
+            if (filter.room_id && !roomMatches(device.get("room", Json::nullValue), *filter.room_id))
                 continue;
 
-            items.append(deviceJsonFromDbRow(*row));
+            const std::string external_id = device.get("id", "").asString();
+            if (filter.user_id && !deviceAllowedForUser(external_id, *filter.user_id))
+                continue;
+
+            Json::Value item;
+            item["id"] = external_id;
+            item["name"] = device.get("name", "");
+            item["description"] = device.get("description", "");
+            item["class"] = device.get("class", "");
+            item["classLabel"] = device.get("classLabel", "");
+            item["vendor"] = device.get("vendor", "");
+            item["model"] = device.get("model", "");
+            item["enabled"] = device.get("enabled", true);
+            item["connected"] = device.get("connected", false);
+            item["stateSummary"] = device.get("stateSummary", "");
+            if (device.isMember("room"))
+                item["room"] = device["room"];
+            items.append(item);
         }
 
         Json::Value body;
@@ -677,7 +651,8 @@ ORDER BY d.id
 Json::Value DevicesInternalStore::getDevice(
     const std::string& device_id,
     const std::optional<int64_t> user_id,
-    std::string& code) const
+    std::string& code,
+    const std::optional<std::string>& demo_runtime_id) const
 {
     if (!devicesReady(m_client, code))
         return Json::Value();
@@ -688,7 +663,7 @@ Json::Value DevicesInternalStore::getDevice(
         return Json::Value();
     }
 
-    const auto listed = findListedDevice(device_id);
+    const auto listed = findListedDevice(device_id, demo_runtime_id);
     if (!listed)
     {
         code = "NOT_FOUND";
@@ -715,7 +690,8 @@ Json::Value DevicesInternalStore::getDevice(
 Json::Value DevicesInternalStore::getState(
     const std::string& device_id,
     const std::optional<int64_t> user_id,
-    std::string& code) const
+    std::string& code,
+    const std::optional<std::string>& demo_runtime_id) const
 {
     if (!devicesReady(m_client, code))
         return Json::Value();
@@ -726,7 +702,7 @@ Json::Value DevicesInternalStore::getState(
         return Json::Value();
     }
 
-    const auto listed = findListedDevice(device_id);
+    const auto listed = findListedDevice(device_id, demo_runtime_id);
     if (!listed)
     {
         code = "NOT_FOUND";
@@ -735,11 +711,11 @@ Json::Value DevicesInternalStore::getState(
 
     if (demoDbDevicesEnabled())
     {
-        Json::Value body;
-        body["deviceId"] = (*listed).get("id", "");
-        body["connected"] = false;
-        body["state"] = Json::objectValue;
-        return body;
+        DemoDeviceBackend backend(m_client);
+        const auto runtime_id = demo_runtime_id && !demo_runtime_id->empty()
+            ? *demo_runtime_id
+            : generateDemoRuntimeId();
+        return backend.getState(runtime_id, (*listed).get("id", "").asString(), code);
     }
 
     v1::IotStore store = makeIotStore();
@@ -775,7 +751,7 @@ Json::Value DevicesInternalStore::queryDevice(
         }
     }
 
-    const auto listed = findListedDevice(device_id);
+    const auto listed = findListedDevice(device_id, runtimeFromBody(body));
     if (!listed)
     {
         code = "NOT_FOUND";
@@ -786,10 +762,11 @@ Json::Value DevicesInternalStore::queryDevice(
 
     if (demoDbDevicesEnabled())
     {
-        Json::Value response;
-        response["deviceId"] = manifest_id;
-        response["query"] = query_name;
-        response["result"] = Json::objectValue;
+        DemoDeviceBackend backend(m_client);
+        const auto runtime_id = runtimeFromBody(body);
+        const auto response = backend.queryDevice(runtime_id, manifest_id, query_name, code);
+        if (!code.empty())
+            return Json::Value();
         return response;
     }
 
@@ -829,7 +806,7 @@ Json::Value DevicesInternalStore::invokeAction(
     else if (body.isObject())
     {
         static const std::unordered_set<std::string> k_meta = {
-            "userId", "reason", "execMode", "triggeredBy", "params", "repeatIntervalMs"};
+            "userId", "reason", "execMode", "triggeredBy", "params", "repeatIntervalMs", "demoRuntimeId"};
         for (const auto& key : body.getMemberNames())
         {
             if (k_meta.count(key) == 0)
@@ -837,7 +814,7 @@ Json::Value DevicesInternalStore::invokeAction(
         }
     }
 
-    const auto listed = findListedDevice(device_id);
+    const auto listed = findListedDevice(device_id, runtimeFromBody(body));
     if (!listed)
     {
         code = "NOT_FOUND";
@@ -848,11 +825,13 @@ Json::Value DevicesInternalStore::invokeAction(
 
     if (demoDbDevicesEnabled())
     {
-        Json::Value response;
-        response["ok"] = true;
-        response["deviceId"] = manifest_id;
-        response["action"] = action_name;
-        response["state"] = Json::objectValue;
+        DemoDeviceBackend backend(m_client);
+        const auto runtime_id = runtimeFromBody(body);
+        Json::Value invoke_body = body;
+        invoke_body["params"] = params;
+        Json::Value response = backend.invokeAction(runtime_id, manifest_id, action_name, invoke_body, code);
+        if (!code.empty())
+            return Json::Value();
         response["eventId"] = makeEventId();
         return response;
     }
@@ -922,7 +901,8 @@ std::optional<ResolvedDevice> DevicesInternalStore::resolveDeviceByName(
     int64_t room_id,
     const std::string& device_name,
     const std::optional<int64_t> user_id,
-    std::string& code) const
+    std::string& code,
+    const std::optional<std::string>& demo_runtime_id) const
 {
     DeviceListFilter filter;
     filter.room_id = room_id;
@@ -930,7 +910,7 @@ std::optional<ResolvedDevice> DevicesInternalStore::resolveDeviceByName(
     if (user_id)
         filter.user_id = *user_id;
 
-    const Json::Value listed = listDevices(filter, code);
+    const Json::Value listed = listDevices(filter, code, demo_runtime_id);
     if (!code.empty())
         return std::nullopt;
 
@@ -979,7 +959,10 @@ Json::Value DevicesInternalStore::toolListDevices(const Json::Value& body, std::
     }
     filter.enabled = std::nullopt;
 
-    const Json::Value listed = listDevices(filter, code);
+    const auto runtime_id = demoDbDevicesEnabled()
+        ? std::optional<std::string>(runtimeFromBody(body))
+        : std::nullopt;
+    const Json::Value listed = listDevices(filter, code, runtime_id);
     if (!code.empty())
         return Json::Value();
 
@@ -1028,7 +1011,11 @@ Json::Value DevicesInternalStore::toolControlDevice(const Json::Value& body, std
     const int64_t room_id = body["roomId"].isInt64()
         ? body["roomId"].asInt64()
         : static_cast<int64_t>(body["roomId"].asInt());
-    const auto resolved = resolveDeviceByName(room_id, body["device"].asString(), optionalUserId(body), code);
+    const auto runtime_id = demoDbDevicesEnabled()
+        ? std::optional<std::string>(runtimeFromBody(body))
+        : std::nullopt;
+    const auto resolved = resolveDeviceByName(
+        room_id, body["device"].asString(), optionalUserId(body), code, runtime_id);
     if (!resolved)
         return Json::Value();
 
@@ -1055,7 +1042,11 @@ Json::Value DevicesInternalStore::toolQueryDevice(const Json::Value& body, std::
     const int64_t room_id = body["roomId"].isInt64()
         ? body["roomId"].asInt64()
         : static_cast<int64_t>(body["roomId"].asInt());
-    const auto resolved = resolveDeviceByName(room_id, body["device"].asString(), optionalUserId(body), code);
+    const auto runtime_id = demoDbDevicesEnabled()
+        ? std::optional<std::string>(runtimeFromBody(body))
+        : std::nullopt;
+    const auto resolved = resolveDeviceByName(
+        room_id, body["device"].asString(), optionalUserId(body), code, runtime_id);
     if (!resolved)
         return Json::Value();
 

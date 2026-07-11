@@ -30,10 +30,7 @@ namespace
 
         assignPath("setting_path", out.setting_path);
         assignPath("device_list_path", out.device_list_path);
-        assignPath("rooms_path", out.rooms_path);
         assignPath("gesture_sets_path", out.gesture_sets_path);
-        assignPath("rules_path", out.rules_path);
-        assignPath("gesture_assignments_path", out.gesture_assignments_path);
         assignPath("sleep_model_path", out.sleep_model_path);
         assignPath("stt_model_path", out.stt_model_path);
         assignPath("tts_model_path", out.tts_model_path);

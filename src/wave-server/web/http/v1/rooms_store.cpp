@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 
+#include "../../../device/device_wire_id.hpp"
 #include "session_store.h"
 #include "../../../core/logger.h"
 
@@ -35,7 +36,7 @@ int64_t RoomsStore::nextRoomId() const
 Json::Value RoomsStore::roomJson(const RoomView& room) const
 {
     Json::Value value;
-    value["id"] = static_cast<Json::Int64>(room.id);
+    value["id"] = dev::wireIdForDbRow(room.id);
     value["name"] = room.name;
     value["description"] = room.description;
     return value;

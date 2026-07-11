@@ -4,6 +4,9 @@
 #include <optional>
 
 #include "../../../app/app_state.h"
+#include "../../../demo/demo_device_backend.h"
+#include "../../../demo/demo_runtime_id.h"
+#include "../../../demo/demo_session_writes.h"
 #include "../internal/schedule_tasks_internal_store.h"
 #include "session_store.h"
 #include "settings_store.h"
@@ -72,6 +75,18 @@ namespace
             out.append(withoutUserId(item));
         return out;
     }
+
+    drogon::HttpResponsePtr demoResponse(
+        const drogon::HttpRequestPtr& req,
+        const Json::Value& body,
+        const std::string& runtime_id,
+        drogon::HttpStatusCode status = drogon::k200OK)
+    {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        resp->setStatusCode(status);
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        return resp;
+    }
 }
 
 void ScheduleTasksController::listTasks(
@@ -98,6 +113,30 @@ void ScheduleTasksController::listTasks(
         filter.done = *done;
 
     internal::ScheduleTasksInternalStore store(AppState::get().db());
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        ensureDemoSessionSeeded(runtime_id, AppState::get().db());
+        auto items = demoListScheduleTasks(runtime_id, *user_id, AppState::get().db());
+        // Optional filters applied client-side for session copy.
+        Json::Value filtered(Json::arrayValue);
+        for (const auto& item : items)
+        {
+            if (!item.isObject())
+                continue;
+            if (filter.day_of_week && item.get("dayOfWeek", "").asString() != *filter.day_of_week)
+                continue;
+            if (filter.event_date && item.get("eventDate", "").asString() != *filter.event_date)
+                continue;
+            if (filter.schedule_kind && item.get("scheduleKind", "").asString() != *filter.schedule_kind)
+                continue;
+            if (filter.done && item.get("done", false).asBool() != *filter.done)
+                continue;
+            filtered.append(item);
+        }
+        callback(demoResponse(req, withoutUserIds(filtered), runtime_id));
+        return;
+    }
     callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserIds(store.list(filter))));
 }
 
@@ -130,17 +169,31 @@ void ScheduleTasksController::createTask(
         body["title"] = "인사이트 일정";
     }
 
-    internal::ScheduleTasksInternalStore store(AppState::get().db());
     std::string error;
     std::string field;
-    const auto created = store.create(body, error, field);
-    if (!created)
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, &body)
+        : std::string();
+    Json::Value created;
+    if (demoVirtualDevicesEnabled())
+    {
+        ensureDemoSessionSeeded(runtime_id, AppState::get().db());
+        created = demoCreateScheduleTask(runtime_id, body, error, field);
+    }
+    else if (const auto persisted = internal::ScheduleTasksInternalStore(AppState::get().db()).create(body, error, field))
+        created = *persisted;
+    if (created.isNull())
     {
         respondError(callback, 400, "INVALID_REQUEST", error, field);
         return;
     }
 
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(withoutUserId(*created));
+    if (demoVirtualDevicesEnabled())
+    {
+        callback(demoResponse(req, withoutUserId(created), runtime_id, drogon::k201Created));
+        return;
+    }
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(withoutUserId(created));
     resp->setStatusCode(drogon::k201Created);
     callback(resp);
 }
@@ -168,18 +221,30 @@ void ScheduleTasksController::updateTask(
         return;
     }
 
-    internal::ScheduleTasksInternalStore store(AppState::get().db());
     std::string error;
     std::string field;
-    const auto updated = store.update(*user_id, *id, *json, error, field);
-    if (!updated)
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, json.get())
+        : std::string();
+    Json::Value updated;
+    if (demoVirtualDevicesEnabled())
+        updated = demoUpdateScheduleTask(runtime_id, *id, *json, error, field);
+    else if (const auto persisted =
+        internal::ScheduleTasksInternalStore(AppState::get().db()).update(*user_id, *id, *json, error, field))
+        updated = *persisted;
+    if (updated.isNull())
     {
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
         respondError(callback, status, status == 404 ? "NOT_FOUND" : "INVALID_REQUEST", error, field);
         return;
     }
 
-    callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserId(*updated)));
+    if (demoVirtualDevicesEnabled())
+    {
+        callback(demoResponse(req, withoutUserId(updated), runtime_id));
+        return;
+    }
+    callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserId(updated)));
 }
 
 void ScheduleTasksController::deleteTask(
@@ -198,16 +263,35 @@ void ScheduleTasksController::deleteTask(
         return;
     }
 
-    internal::ScheduleTasksInternalStore store(AppState::get().db());
     std::string error;
-    const auto removed = store.remove(*user_id, *id, error);
-    if (!removed)
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    Json::Value removed;
+    if (demoVirtualDevicesEnabled())
+    {
+        if (demoDeleteScheduleTask(runtime_id, *id))
+            removed["id"] = static_cast<Json::Int64>(*id);
+        else
+            error = "세션 일정을 찾을 수 없습니다.";
+    }
+    else if (const auto persisted =
+        internal::ScheduleTasksInternalStore(AppState::get().db()).remove(*user_id, *id, error))
+    {
+        removed = *persisted;
+    }
+    if (removed.isNull())
     {
         respondError(callback, 404, "NOT_FOUND", error);
         return;
     }
 
-    callback(drogon::HttpResponse::newHttpJsonResponse(*removed));
+    if (demoVirtualDevicesEnabled())
+    {
+        callback(demoResponse(req, removed, runtime_id));
+        return;
+    }
+    callback(drogon::HttpResponse::newHttpJsonResponse(removed));
 }
 
 } // namespace v1

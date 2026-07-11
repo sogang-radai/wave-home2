@@ -1,1 +1,6 @@
 새 채팅의 경우 docs/style.md파일 참조
+
+backend server build: scripts/build-server.sh
+test front build: scripts/build-site-test.sh
+demo front build: scripts/build-site-demo.sh
+production front build: scripts/build-site.sh

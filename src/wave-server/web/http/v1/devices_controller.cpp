@@ -1,6 +1,7 @@
 #include "devices_controller.h"
 
 #include "../../../app/app_state.h"
+#include "../../../device/device.h"
 #include "devices_store.h"
 #include "session_store.h"
 
@@ -134,10 +135,21 @@ void DevicesController::assignRoom(
         return;
     }
 
+    int64_t room_id = 0;
+    if ((*json)["roomId"].isString())
+        room_id = static_cast<int64_t>(dev::parseRoomID((*json)["roomId"].asString()));
+    else
+        room_id = (*json)["roomId"].asInt64();
+    if (room_id <= 0)
+    {
+        respondError(callback, 400, "INVALID_BODY", "roomId가 유효하지 않습니다.");
+        return;
+    }
+
     DevicesStore store(state.db());
     std::string error;
     std::string code;
-    const auto device = store.assignRoom(deviceId, (*json)["roomId"].asInt64(), error, code);
+    const auto device = store.assignRoom(deviceId, room_id, error, code);
     if (!device)
     {
         const auto status = code == "NOT_FOUND" ? 404 : 400;

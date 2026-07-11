@@ -1,6 +1,7 @@
 #include "device_manager.h"
 
 #include <algorithm>
+#include <future>
 #include <stdexcept>
 
 #include "../app/app_state.h"
@@ -146,6 +147,10 @@ bool DeviceManager::entryNeedsRetry(const DeviceManifestEntry& entry) const
 
 bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
 {
+    if (m_shutdown.load(std::memory_order_acquire)
+        || !ws::AppState::get().running.load(std::memory_order_acquire))
+        return false;
+
     if (entry.state == DeviceEntryState::Unsupported)
         return false;
 
@@ -202,6 +207,10 @@ bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
     }
 
     entry.state = DeviceEntryState::Ready;
+    if (m_shutdown.load(std::memory_order_acquire)
+        || !ws::AppState::get().running.load(std::memory_order_acquire))
+        return false;
+
     registerDevice(std::move(device));
 
     const auto* handle = findDevice(device_id);
@@ -221,14 +230,23 @@ bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
 
 void DeviceManager::retryFailedDevices(bool manual)
 {
+    bool any_recovered = false;
     for (auto& entry : m_manifest)
     {
         if (!ws::AppState::get().running.load(std::memory_order_acquire))
             break;
         if (!entryNeedsRetry(entry))
             continue;
-        tryInitEntry(entry, manual);
+        if (tryInitEntry(entry, manual))
+        {
+            const auto* handle = findDevice(parseDeviceID(manifestDeviceId(entry)));
+            if (handle && handle->getState() == DeviceState::Running)
+                any_recovered = true;
+        }
     }
+
+    if (any_recovered)
+        m_retryIntervalSec = 16;
 }
 
 void DeviceManager::startRetryLoop()
@@ -236,12 +254,14 @@ void DeviceManager::startRetryLoop()
     m_retryThread = std::thread([this]()
     {
         while (!m_retryStop.load(std::memory_order_acquire)
+            && !m_shutdown.load(std::memory_order_acquire)
             && ws::AppState::get().running.load(std::memory_order_acquire))
         {
             const int wait_sec = std::max(1, m_retryIntervalSec);
             for (int i = 0; i < wait_sec; ++i)
             {
                 if (m_retryStop.load(std::memory_order_acquire)
+                    || m_shutdown.load(std::memory_order_acquire)
                     || !ws::AppState::get().running.load(std::memory_order_acquire))
                     return;
                 std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -316,6 +336,7 @@ bool DeviceManager::load(const json& room_list, const json& device_list)
     m_roomDeviceMap.clear();
     m_manifest.clear();
     m_manifestLoaded = false;
+    m_shutdown.store(false, std::memory_order_release);
     m_startupComplete.store(false, std::memory_order_release);
     m_startRequested.store(false, std::memory_order_release);
     m_retryIntervalSec = 16;
@@ -385,7 +406,8 @@ void DeviceManager::startDevicesAsync()
         int online = 0;
         for (auto& entry : m_manifest)
         {
-            if (!ws::AppState::get().running.load(std::memory_order_acquire))
+            if (m_shutdown.load(std::memory_order_acquire)
+                || !ws::AppState::get().running.load(std::memory_order_acquire))
                 break;
 
             if (entry.state == DeviceEntryState::Unsupported)
@@ -411,6 +433,7 @@ void DeviceManager::startDevicesAsync()
 
 void DeviceManager::shutdown()
 {
+    m_shutdown.store(true, std::memory_order_release);
     m_retryStop.store(true, std::memory_order_release);
 
     for (auto& owned : m_devices)
@@ -423,10 +446,24 @@ void DeviceManager::shutdown()
         m_retryThread.join();
 
     if (m_startThread.joinable())
-        m_startThread.join();
+    {
+        auto join_task = std::async(std::launch::async, [this]()
+        {
+            m_startThread.join();
+        });
+        constexpr auto kJoinTimeout = std::chrono::seconds(5);
+        if (join_task.wait_for(kJoinTimeout) != std::future_status::ready)
+        {
+            LOG_WARN(
+                "Device startup thread did not finish within {}s; continuing shutdown",
+                kJoinTimeout.count());
+            m_startThread.detach();
+        }
+    }
 
     m_startRequested.store(false, std::memory_order_release);
     m_retryStop.store(false, std::memory_order_release);
+    m_shutdown.store(false, std::memory_order_release);
 
     m_devices.clear();
     m_deviceMap.clear();

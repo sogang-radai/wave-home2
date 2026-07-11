@@ -19,6 +19,12 @@ set(_wave_server_sources
     service/ir_trigger_bridge.cpp
     web/server.cpp
     web/demo_policy.cpp
+    demo/demo_runtime_id.cpp
+    demo/demo_session_registry.cpp
+    demo/demo_device_simulator.cpp
+    demo/demo_device_backend.cpp
+    demo/demo_session_writes.cpp
+    demo/demo_power_meter.cpp
     web/http/api_controller.cpp
     web/http/v1/health_controller.cpp
     web/http/v1/session_controller.cpp
@@ -57,6 +63,7 @@ set(_wave_server_sources
     web/http/v1/sleep_store.cpp
     web/http/v1/insights_store.cpp
     web/http/v1/insights_controller.cpp
+    web/http/v1/dashboard_store.cpp
     web/http/v1/dashboard_controller.cpp
     web/http/v1/weekly_plan_store.cpp
     web/http/v1/weekly_plan_controller.cpp
@@ -64,6 +71,7 @@ set(_wave_server_sources
     web/push/web_push.cpp
     web/push/push_store.cpp
     device/device.cpp
+    device/device_wire_id.cpp
     device/device_manager.cpp
     device/platform/srs_r4sn.cpp
     device/platform/tuya_ep2h.cpp

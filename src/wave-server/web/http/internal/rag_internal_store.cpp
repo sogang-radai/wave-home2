@@ -150,9 +150,7 @@ bool RagInternalStore::embedQuery(
 
     Json::Value payload;
     payload["model"] = m_config.embedding_model;
-    Json::Value input(Json::arrayValue);
-    input.append(query);
-    payload["input"] = input;
+    payload["input"] = query;
 
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";
@@ -164,7 +162,7 @@ bool RagInternalStore::embedQuery(
     req->setMethod(drogon::Post);
     req->setPath("/llm/v1/embeddings");
     req->setBody(body);
-    req->addHeader("Content-Type", "application/json");
+    req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
 
     std::promise<std::pair<drogon::ReqResult, drogon::HttpResponsePtr>> done;
     auto future = done.get_future();

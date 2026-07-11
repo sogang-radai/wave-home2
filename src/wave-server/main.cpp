@@ -32,7 +32,7 @@ namespace
             if (signal == SIGTSTP)
                 LOG_INFO("Shutdown requested (Ctrl+Z)");
             else if (signal == SIGINT)
-                LOG_INFO("Shutdown requested (Ctrl+C)");
+                LOG_INFO("Shutdown requested (Ctrl+C). Press again to force quit.");
             else
                 LOG_INFO("Shutdown requested (signal {})", signal);
 

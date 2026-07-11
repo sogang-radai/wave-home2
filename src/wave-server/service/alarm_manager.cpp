@@ -12,6 +12,7 @@
 #include "../core/json.h"
 #include "../core/logger.h"
 #include "../core/time_util.h"
+#include "../device/device_wire_id.hpp"
 #include "../web/http/v1/iot_store.h"
 #include "action_queue.h"
 
@@ -53,15 +54,6 @@ namespace
         if (!value.isArray())
             return Json::Value(Json::arrayValue);
         return value;
-    }
-
-    std::string wireIdFromDbRow(int64_t db_id, const std::string& external_id)
-    {
-        if (!external_id.empty())
-            return external_id;
-        std::ostringstream stream;
-        stream << std::hex << std::nouppercase << std::setw(16) << std::setfill('0') << db_id;
-        return stream.str();
     }
 
     void enqueueAction(const std::string& device_id, const std::string& action, const json& params, const std::string& source)
@@ -151,8 +143,8 @@ std::vector<AlarmRecord> AlarmManager::loadEnabledAlarms()
             R"SQL(
 SELECT a.id, a.user_id, a.name, a.time_minute, a.days_of_week, a.smart_wake,
        a.device_id, a.radar_device_id, a.method, a.enabled,
-       d.external_id AS device_external_id,
-       r.external_id AS radar_external_id
+       d.id AS device_row_id, d.name AS device_name,
+       r.id AS radar_row_id, r.name AS radar_name
 FROM alarm a
 LEFT JOIN device d ON d.id = a.device_id
 LEFT JOIN device r ON r.id = a.radar_device_id
@@ -179,20 +171,16 @@ ORDER BY a.time_minute ASC
 
             if (!row["device_id"].isNull())
             {
-                const int64_t device_id = row["device_id"].as<int64_t>();
-                const std::string external = row["device_external_id"].isNull()
-                    ? std::string()
-                    : row["device_external_id"].as<std::string>();
-                alarm.device_external_id = wireIdFromDbRow(device_id, external);
+                const int64_t device_id = row["device_row_id"].as<int64_t>();
+                const std::string name = row["device_name"].as<std::string>();
+                alarm.device_external_id = dev::wireIdForDbRow(device_id, name);
             }
 
             if (!row["radar_device_id"].isNull())
             {
-                const int64_t radar_id = row["radar_device_id"].as<int64_t>();
-                const std::string external = row["radar_external_id"].isNull()
-                    ? std::string()
-                    : row["radar_external_id"].as<std::string>();
-                alarm.radar_external_id = wireIdFromDbRow(radar_id, external);
+                const int64_t radar_id = row["radar_row_id"].as<int64_t>();
+                const std::string name = row["radar_name"].as<std::string>();
+                alarm.radar_external_id = dev::wireIdForDbRow(radar_id, name);
             }
 
             Json::CharReaderBuilder reader;

@@ -1106,6 +1106,13 @@ struct RadaiWs::Impl
                         m_socket.set_option(keepAlive);
                         m_connected.store(true);
                         m_connecting.store(false);
+                        if (m_reconnectAttempts > 0)
+                        {
+                            LOG_INFO(
+                                "RadaiWs reconnected to {}:{} (backoff reset)",
+                                endpoint.address().to_string(),
+                                endpoint.port());
+                        }
                         m_reconnectDelayMs = m_session.reconnectInitialMs;
                         m_reconnectAttempts = 0;
                         m_streamBuf.clear();
@@ -1304,10 +1311,6 @@ int RadaiWs::init(const json& config)
         m_impl->stop();
         m_connectionState = ConnectionState::Disconnected;
         m_state = DeviceState::Stopped;
-        LOG_ERROR(
-            "RadaiWs init failed: could not connect to {}:{}",
-            m_interface.host,
-            m_interface.port);
         return -4;
     }
 

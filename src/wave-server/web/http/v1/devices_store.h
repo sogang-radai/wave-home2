@@ -32,7 +32,7 @@ private:
     drogon::orm::DbClientPtr m_client;
 
     static bool isInputClass(const std::string& device_class);
-    static std::string makeHexId();
+    std::string makeHexId() const;
     static std::string jsonToText(const Json::Value& value);
     static bool parseJsonText(const std::string& text, Json::Value& out);
 

@@ -478,6 +478,7 @@ struct SRSR4SN::Impl
     void stop()
     {
         std::error_code ec;
+        m_connectTimer.cancel();
         m_reconnectTimer.cancel();
         m_resolver.cancel();
         m_socket.cancel(ec);
@@ -584,6 +585,7 @@ struct SRSR4SN::Impl
 private:
     static constexpr uint32_t kInitialReconnectDelayMs = 200;
     static constexpr uint32_t kMaxReconnectDelayMs = 5000;
+    static constexpr uint32_t kConnectTimeoutMs = 4000;
     static constexpr auto kQueueWarnInterval = std::chrono::seconds(10);
 
     bool shouldIgnoreIoError(const std::error_code& ec) const
@@ -596,9 +598,25 @@ private:
         m_connecting.store(true);
 
         std::error_code ec;
+        m_connectTimer.cancel();
+        m_reconnectTimer.cancel();
         m_resolver.cancel();
         m_socket.cancel(ec);
         m_socket.close(ec);
+
+        m_connectTimer.expires_after(std::chrono::milliseconds(kConnectTimeoutMs));
+        m_connectTimer.async_wait([this](const std::error_code& timerEc)
+        {
+            if (timerEc || !m_connecting.load() || !m_work)
+                return;
+
+            std::error_code cancelEc;
+            m_socket.cancel(cancelEc);
+            m_socket.close(cancelEc);
+            m_connecting.store(false);
+            LOG_WARN("srs_r4sn connect timed out after {} ms", kConnectTimeoutMs);
+            scheduleReconnect("connect_timeout");
+        });
 
         m_resolver.async_resolve(
             m_host,
@@ -624,6 +642,8 @@ private:
                     endpoints,
                     [this](const std::error_code& connectEc, const tcp::endpoint& endpoint)
                     {
+                        m_connectTimer.cancel();
+
                         if (shouldIgnoreIoError(connectEc))
                         {
                             m_connecting.store(false);
@@ -633,7 +653,7 @@ private:
                         if (connectEc)
                         {
                             m_connecting.store(false);
-                            LOG_ERROR("srs_r4sn connect failed: {}", connectEc.message());
+                            LOG_WARN("srs_r4sn connect failed: {}", connectEc.message());
                             scheduleReconnect("connect_failed");
                             return;
                         }
@@ -642,6 +662,13 @@ private:
                         m_socket.set_option(option);
                         m_connected.store(true);
                         m_connecting.store(false);
+                        if (m_reconnectAttempts > 0)
+                        {
+                            LOG_INFO(
+                                "srs_r4sn reconnected to {}:{} (backoff reset)",
+                                endpoint.address().to_string(),
+                                endpoint.port());
+                        }
                         m_reconnectDelayMs = kInitialReconnectDelayMs;
                         m_reconnectAttempts = 0;
                         m_streamBuf.clear();
@@ -666,6 +693,7 @@ private:
         m_connecting.store(false);
 
         m_reconnectTimer.cancel();
+        m_connectTimer.cancel();
         std::error_code ec;
         m_socket.cancel(ec);
         m_socket.close(ec);
@@ -752,6 +780,7 @@ private:
 
     tcp::resolver m_resolver;
     tcp::socket m_socket;
+    asio::steady_timer m_connectTimer{m_io};
     asio::steady_timer m_reconnectTimer{m_io};
     std::atomic<bool> m_connected{false};
     std::atomic<bool> m_connecting{false};

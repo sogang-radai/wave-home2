@@ -127,6 +127,46 @@ namespace
         return caps;
     }
 
+    Json::Value brightnessParamsSchema()
+    {
+        Json::Value schema;
+        Json::Value value;
+        value["type"] = "integer";
+        value["minimum"] = 10;
+        value["maximum"] = 100;
+        value["description"] = "밝기 %(10-100). 예: {\"value\": 40}";
+        schema["value"] = value;
+        return schema;
+    }
+
+    Json::Value colorParamsSchema()
+    {
+        Json::Value schema;
+        Json::Value channel;
+        channel["type"] = "integer";
+        channel["minimum"] = 0;
+        channel["maximum"] = 255;
+        schema["r"] = channel;
+        schema["g"] = channel;
+        schema["b"] = channel;
+        schema["r"]["description"] = "빨강 0-255";
+        schema["g"]["description"] = "초록 0-255";
+        schema["b"]["description"] = "파랑 0-255. 예: {\"r\":255,\"g\":64,\"b\":0}";
+        return schema;
+    }
+
+    Json::Value temperatureParamsSchema()
+    {
+        Json::Value schema;
+        Json::Value value;
+        value["type"] = "integer";
+        value["minimum"] = 2200;
+        value["maximum"] = 6500;
+        value["description"] = "색온도 Kelvin(2200-6500). 예: {\"value\": 2700}";
+        schema["value"] = value;
+        return schema;
+    }
+
     Json::Value lightColorCapabilities()
     {
         Json::Value caps;
@@ -136,9 +176,9 @@ namespace
         actions.append(action("on", "전원 켜기", {"Stateful"}));
         actions.append(action("off", "전원 끄기", {"Stateful"}));
         actions.append(action("toggle", "전원 토글", {"Toggle", "Stateful"}));
-        actions.append(action("brightness", "밝기 설정(10-100)", {"Stateful"}));
-        actions.append(action("color", "RGB 색상 설정", {"Stateful"}));
-        actions.append(action("temperature", "색온도 설정(K)", {"Stateful"}));
+        actions.append(action("brightness", "밝기 설정(10-100)", {"Stateful"}, brightnessParamsSchema()));
+        actions.append(action("color", "RGB 색상 설정", {"Stateful"}, colorParamsSchema()));
+        actions.append(action("temperature", "색온도 설정(K)", {"Stateful"}, temperatureParamsSchema()));
         caps["actions"] = actions;
         Json::Value queries(Json::arrayValue);
         queries.append(query("capabilities", "프로브된 하드웨어 기능"));
@@ -161,8 +201,8 @@ namespace
         actions.append(action("on", "전원 켜기", {"Stateful"}));
         actions.append(action("off", "전원 끄기", {"Stateful"}));
         actions.append(action("toggle", "전원 토글", {"Toggle", "Stateful"}));
-        actions.append(action("brightness", "밝기 설정(10-100)", {"Stateful"}));
-        actions.append(action("temperature", "색온도 설정(K)", {"Stateful"}));
+        actions.append(action("brightness", "밝기 설정(10-100)", {"Stateful"}, brightnessParamsSchema()));
+        actions.append(action("temperature", "색온도 설정(K)", {"Stateful"}, temperatureParamsSchema()));
         caps["actions"] = actions;
         Json::Value queries(Json::arrayValue);
         queries.append(query("capabilities", "프로브된 하드웨어 기능"));

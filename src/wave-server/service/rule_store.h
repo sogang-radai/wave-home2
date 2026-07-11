@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <filesystem>
 #include <functional>
 #include <future>
 #include <memory>
@@ -31,7 +30,6 @@ public:
 
     void setDatabaseClient(const drogon::orm::DbClientPtr& client);
     void setDefaultUserId(int64_t user_id);
-    void setLegacyImportPath(const std::filesystem::path& path);
     void setOnChanged(ChangedCallback callback);
 
     bool loadFromDatabase(std::string& out_error);
@@ -52,7 +50,6 @@ public:
     static bool validatePayload(const json& payload, std::string& out_error);
 
 private:
-    bool importLegacyRulesFile(std::string& out_error);
     bool insertRuleToDatabase(const Rule& rule, int64_t user_id, std::string& out_error);
     bool updateRuleInDatabase(const Rule& rule, int64_t user_id, std::string& out_error);
     bool deleteRuleFromDatabase(const std::string& external_id, std::string& out_error);
@@ -71,7 +68,6 @@ private:
     TriggerIndexSnapshot m_index;
     drogon::orm::DbClientPtr m_db;
     int64_t m_defaultUserId = 1;
-    std::filesystem::path m_legacyImportPath;
     ChangedCallback m_onChanged;
 };
 

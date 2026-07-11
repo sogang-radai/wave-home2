@@ -1,6 +1,10 @@
 #include "dashboard_controller.h"
 
 #include "../../../app/app_state.h"
+#include "../../../demo/demo_device_backend.h"
+#include "../../../demo/demo_runtime_id.h"
+#include "../../../demo/demo_session_writes.h"
+#include "dashboard_store.h"
 #include "insights_store.h"
 #include "session_store.h"
 #include "settings_store.h"
@@ -17,25 +21,46 @@ namespace
         SettingsStore settings(client);
         return settings.resolveActiveUserId(sessions, req);
     }
+
+    bool requireDb(
+        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        drogon::orm::DbClientPtr& client_out)
+    {
+        client_out = AppState::get().db();
+        if (!client_out)
+        {
+            respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+            return false;
+        }
+        return true;
+    }
+
+    std::optional<int64_t> requireActiveUser(
+        const drogon::HttpRequestPtr& req,
+        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        drogon::orm::DbClientPtr client)
+    {
+        const auto user_id = resolveUserId(req, client);
+        if (!user_id)
+        {
+            respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
+            return std::nullopt;
+        }
+        return user_id;
+    }
 }
 
 void DashboardController::dailyMessage(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    auto client = AppState::get().db();
-    if (!client)
-    {
-        respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+    drogon::orm::DbClientPtr client;
+    if (!requireDb(callback, client))
         return;
-    }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = requireActiveUser(req, callback, client);
     if (!user_id)
-    {
-        respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
         return;
-    }
 
     InsightsStore store(client);
     const auto body = store.dashboardDailyMessage(*user_id);
@@ -46,6 +71,65 @@ void DashboardController::dailyMessage(
     }
 
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
+}
+
+void DashboardController::currentState(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+{
+    drogon::orm::DbClientPtr client;
+    if (!requireDb(callback, client))
+        return;
+
+    if (!requireActiveUser(req, callback, client))
+        return;
+
+    DashboardStore store(client);
+    callback(drogon::HttpResponse::newHttpJsonResponse(store.currentState()));
+}
+
+void DashboardController::upcomingAlarms(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+{
+    drogon::orm::DbClientPtr client;
+    if (!requireDb(callback, client))
+        return;
+
+    const auto user_id = requireActiveUser(req, callback, client);
+    if (!user_id)
+        return;
+
+    DashboardStore store(client);
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        const auto alarms = demoListAlarms(runtime_id, *user_id, client, true);
+        // Reuse store helper by synthesizing upcoming from session alarms via store API shape.
+        // Keep response compatible: filter enabled alarms already applied.
+        Json::Value upcoming = store.upcomingAlarmsFromItems(alarms);
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(upcoming);
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        callback(resp);
+        return;
+    }
+    callback(drogon::HttpResponse::newHttpJsonResponse(store.upcomingAlarms(*user_id)));
+}
+
+void DashboardController::activeGestureRules(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+{
+    drogon::orm::DbClientPtr client;
+    if (!requireDb(callback, client))
+        return;
+
+    const auto user_id = requireActiveUser(req, callback, client);
+    if (!user_id)
+        return;
+
+    DashboardStore store(client);
+    callback(drogon::HttpResponse::newHttpJsonResponse(store.activeGestureRules(*user_id)));
 }
 
 } // namespace v1

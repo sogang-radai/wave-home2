@@ -44,9 +44,20 @@ class DevicesInternalStore
 public:
     explicit DevicesInternalStore(drogon::orm::DbClientPtr client);
 
-    Json::Value listDevices(const DeviceListFilter& filter, std::string& code) const;
-    Json::Value getDevice(const std::string& device_id, std::optional<int64_t> user_id, std::string& code) const;
-    Json::Value getState(const std::string& device_id, std::optional<int64_t> user_id, std::string& code) const;
+    Json::Value listDevices(
+        const DeviceListFilter& filter,
+        std::string& code,
+        const std::optional<std::string>& demo_runtime_id = std::nullopt) const;
+    Json::Value getDevice(
+        const std::string& device_id,
+        std::optional<int64_t> user_id,
+        std::string& code,
+        const std::optional<std::string>& demo_runtime_id = std::nullopt) const;
+    Json::Value getState(
+        const std::string& device_id,
+        std::optional<int64_t> user_id,
+        std::string& code,
+        const std::optional<std::string>& demo_runtime_id = std::nullopt) const;
     Json::Value queryDevice(
         const std::string& device_id,
         const std::string& query_name,
@@ -67,7 +78,8 @@ public:
         int64_t room_id,
         const std::string& device_name,
         std::optional<int64_t> user_id,
-        std::string& code) const;
+        std::string& code,
+        const std::optional<std::string>& demo_runtime_id = std::nullopt) const;
 
     static std::optional<std::string> resolveWireDeviceId(
         const drogon::orm::DbClientPtr& client,
@@ -77,7 +89,9 @@ private:
     drogon::orm::DbClientPtr m_client;
 
     bool deviceAllowedForUser(const std::string& external_id, int64_t user_id) const;
-    std::optional<Json::Value> findListedDevice(const std::string& device_id) const;
+    std::optional<Json::Value> findListedDevice(
+        const std::string& device_id,
+        const std::optional<std::string>& demo_runtime_id = std::nullopt) const;
     std::string externalIdFromDb(int64_t device_row_id) const;
     std::optional<int64_t> internalIdFromExternal(const std::string& external_id) const;
     static bool nameMatches(const std::string& haystack, const std::string& needle);

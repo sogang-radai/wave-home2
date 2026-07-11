@@ -11,7 +11,13 @@ bin/data/*.db
 bin/data/*.db-shm
 bin/data/*.db-wal
 bin/data/*.db.backup
+bin/data/*.db.backup*
 bin/data/*.backup
+bin/database.db
+bin/database.db-*
+bin/*.db
+bin/*.db-shm
+bin/*.db-wal
 
 # Mock DB pipeline (regenerate: mock/scripts/, see mock/mock.md)
 mock/data/

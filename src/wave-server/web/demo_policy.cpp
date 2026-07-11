@@ -5,6 +5,7 @@
 #include <drogon/drogon.h>
 
 #include "../app/app_state.h"
+#include "../demo/demo_device_backend.h"
 #include "http/v1/session_store.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -42,8 +43,49 @@ namespace
                 return true;
         }
 
-        // POST .../devices/{id}/query/{name} — attribute read
         if (path.starts_with("/internal/v1/devices/") && path.find("/query/") != std::string_view::npos)
+            return true;
+
+        return false;
+    }
+
+    bool isDemoVirtualWritePath(std::string_view path, drogon::HttpMethod method)
+    {
+        if (!demoVirtualDevicesEnabled())
+            return false;
+
+        if (isReadMethod(method))
+            return true;
+
+        if (path.starts_with("/api/v1/chat"))
+            return true;
+
+        if (isDemoReadPost(path))
+            return true;
+
+        if (path == "/internal/v1/tools/device.control")
+            return true;
+
+        if (path.starts_with("/internal/v1/devices/") &&
+            (path.find("/actions/") != std::string_view::npos ||
+             path.find("/query/") != std::string_view::npos))
+            return true;
+
+        if (path.starts_with("/api/v1/iot/devices/") &&
+            (path.find("/actions/") != std::string_view::npos ||
+             path.find("/query/") != std::string_view::npos ||
+             path.ends_with("/gesture-set")))
+            return true;
+
+        if (path.starts_with("/api/v1/alarms"))
+            return true;
+        if (path.starts_with("/api/v1/schedule-tasks"))
+            return true;
+        if (path.starts_with("/internal/v1/alarms"))
+            return true;
+        if (path.starts_with("/internal/v1/schedule-tasks"))
+            return true;
+        if (path.starts_with("/internal/v1/rules"))
             return true;
 
         return false;
@@ -58,6 +100,9 @@ namespace
             return true;
 
         if (isDemoReadPost(path))
+            return true;
+
+        if (isDemoVirtualWritePath(path, method))
             return true;
 
         return false;

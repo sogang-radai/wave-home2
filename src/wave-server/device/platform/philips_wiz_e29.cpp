@@ -105,7 +105,7 @@ struct PhilipsWizE29::Impl
         } guard{fd};
 
         timeval tv {};
-        tv.tv_sec = 2;
+        tv.tv_sec = 1;
         ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
@@ -232,6 +232,7 @@ int PhilipsWizE29::init(const json& config)
     }
     catch (const std::exception& ex)
     {
+        m_errorJson["-5"] = ex.what();
         m_state = DeviceState::Stopped;
         return -5;
     }

@@ -42,7 +42,6 @@ CREATE TABLE room_user_map (
 
 CREATE TABLE device (
     id              INTEGER NOT NULL,
-    external_id     TEXT,
     name            TEXT    NOT NULL,
     description     TEXT    NOT NULL,
     class           TEXT    NOT NULL,
@@ -52,7 +51,6 @@ CREATE TABLE device (
     settings_json   TEXT,
     PRIMARY KEY (id)
 );
-CREATE UNIQUE INDEX idx_device_external_id ON device(external_id) WHERE external_id IS NOT NULL;
 
 CREATE TABLE device_user_map (
     device_id INTEGER NOT NULL,
@@ -116,6 +114,14 @@ CREATE TABLE gesture_log (
     FOREIGN KEY (device_id) REFERENCES device(id)
 );
 CREATE INDEX idx_gesture_log_occurred ON gesture_log (timestamp);
+
+CREATE TABLE gesture_device_map (
+    device_id       INTEGER NOT NULL,
+    gesture_set_id  INTEGER NOT NULL,
+    PRIMARY KEY (device_id),
+    FOREIGN KEY (device_id) REFERENCES device(id),
+    FOREIGN KEY (gesture_set_id) REFERENCES gesture_set(id)
+);
 
 CREATE TABLE automation_rule (
     id              INTEGER      PRIMARY KEY,
@@ -250,6 +256,25 @@ CREATE TABLE chat_history (
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES user(id)
 );
+CREATE INDEX idx_chat_history_user_updated ON chat_history (user_id, updated_at DESC);
+
+CREATE TABLE push_subscription (
+    session_id  INTEGER NOT NULL,
+    endpoint    TEXT    NOT NULL,
+    p256dh      TEXT    NOT NULL,
+    auth_key    TEXT    NOT NULL,
+    created_at  VARCHAR(50) NOT NULL,
+    updated_at  VARCHAR(50) NOT NULL,
+    PRIMARY KEY (session_id, endpoint),
+    FOREIGN KEY (session_id) REFERENCES user_session(id)
+);
+
+CREATE TABLE schema_version (
+    version     INTEGER NOT NULL,
+    applied_at  VARCHAR(50) NOT NULL,
+    description TEXT,
+    PRIMARY KEY (version)
+);
 
 CREATE TABLE sleep_session (
     id             INTEGER     PRIMARY KEY,
@@ -312,6 +337,10 @@ CREATE TABLE sleep_stat (
     FOREIGN KEY (room_id) REFERENCES room(id),
     FOREIGN KEY (session_id) REFERENCES sleep_session(id)
 );
+CREATE INDEX idx_sleep_stat_user_granularity_time
+    ON sleep_stat (user_id, granularity, time_start);
+CREATE INDEX idx_sleep_session_user_night
+    ON sleep_session (user_id, night_date);
 
 CREATE TABLE sleep_report (
     id           INTEGER     PRIMARY KEY,
@@ -474,8 +503,86 @@ def try_load_vec_extension(conn: sqlite3.Connection) -> bool:
         conn.enable_load_extension(False)
         return True
     except Exception as exc:  # noqa: BLE001 - best effort, report and continue
-        print(f"[schema] sqlite-vec 확장 로드 실패, vec_* 테이블은 건너뜁니다: {exc}")
+        print(
+            "[schema] sqlite-vec 확장 로드 실패, vec_* 테이블은 건너뜁니다.\n"
+            "         해결: uv run --with sqlite-vec mock/scripts/01_gen_raw_data.py\n"
+            f"         ({exc})"
+        )
         return False
+
+
+def stamp_schema_version(conn: sqlite3.Connection, version: int = 1, description: str = "schema v1 baseline") -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_version (version, applied_at, description) VALUES (?, datetime('now'), ?)",
+        (version, description),
+    )
+
+
+def create_vec_tables(conn: sqlite3.Connection) -> int:
+    """vec_* 가상 테이블을 만든다. sqlite-vec 로드 실패 시 0 반환."""
+    if not try_load_vec_extension(conn):
+        return 0
+
+    created = 0
+    for name, sql in VEC_TABLES.items():
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+            (name,),
+        ).fetchone()
+        if exists:
+            continue
+        conn.execute(sql)
+        created += 1
+    if created:
+        print(f"[schema] vec_* 테이블 {created}개 신규 생성")
+    else:
+        print(f"[schema] vec_* 테이블 {len(VEC_TABLES)}개 이미 존재")
+    return created
+
+
+def ensure_runtime_schema(conn: sqlite3.Connection, with_vec: bool = True) -> bool:
+    """기존 mock.db에 누락된 테이블·인덱스·schema_version·vec_* 를 보강한다(데이터 유지)."""
+    conn.executescript(
+        """
+CREATE TABLE IF NOT EXISTS push_subscription (
+    session_id  INTEGER NOT NULL,
+    endpoint    TEXT    NOT NULL,
+    p256dh      TEXT    NOT NULL,
+    auth_key    TEXT    NOT NULL,
+    created_at  VARCHAR(50) NOT NULL,
+    updated_at  VARCHAR(50) NOT NULL,
+    PRIMARY KEY (session_id, endpoint),
+    FOREIGN KEY (session_id) REFERENCES user_session(id)
+);
+CREATE TABLE IF NOT EXISTS schema_version (
+    version     INTEGER NOT NULL,
+    applied_at  VARCHAR(50) NOT NULL,
+    description TEXT,
+    PRIMARY KEY (version)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_history_user_updated ON chat_history (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sleep_stat_user_granularity_time
+    ON sleep_stat (user_id, granularity, time_start);
+CREATE INDEX IF NOT EXISTS idx_sleep_session_user_night
+    ON sleep_session (user_id, night_date);
+CREATE TABLE IF NOT EXISTS gesture_device_map (
+    device_id       INTEGER NOT NULL,
+    gesture_set_id  INTEGER NOT NULL,
+    PRIMARY KEY (device_id),
+    FOREIGN KEY (device_id) REFERENCES device(id),
+    FOREIGN KEY (gesture_set_id) REFERENCES gesture_set(id)
+);
+"""
+    )
+    stamp_schema_version(conn)
+    vec_ready = False
+    if with_vec:
+        create_vec_tables(conn)
+        vec_ready = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE 'vec_%'"
+        ).fetchone()[0] >= len(VEC_TABLES)
+    conn.commit()
+    return vec_ready
 
 
 def build_schema(conn: sqlite3.Connection, with_vec: bool = True) -> bool:
@@ -484,13 +591,13 @@ def build_schema(conn: sqlite3.Connection, with_vec: bool = True) -> bool:
     Returns: vec_* 테이블이 실제로 생성되었는지 여부.
     """
     conn.executescript(CORE_SCHEMA_SQL)
+    stamp_schema_version(conn)
 
     vec_ready = False
     if with_vec:
-        vec_ready = try_load_vec_extension(conn)
-        if vec_ready:
-            for name, sql in VEC_TABLES.items():
-                conn.execute(sql)
-            print(f"[schema] vec_* 테이블 {len(VEC_TABLES)}개 생성 완료")
+        create_vec_tables(conn)
+        vec_ready = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE 'vec_%'"
+        ).fetchone()[0] >= len(VEC_TABLES)
     conn.commit()
     return vec_ready

@@ -1,6 +1,7 @@
 #include "sleep_manager.h"
 
 #include <fstream>
+#include <map>
 
 #include <drogon/drogon.h>
 
@@ -8,6 +9,7 @@
 #include "../../core/logger.h"
 #include "../../core/time_util.h"
 #include "../../device/device.h"
+#include "../../device/device_wire_id.hpp"
 #include "../../device/device_manager.h"
 #include "../../device/interface/radar.h"
 #include "../../device/platform/radai_ws.h"
@@ -299,31 +301,53 @@ std::vector<SleepRoomConfig> SleepManager::loadRoomConfigs()
 SELECT
     r.id AS room_id,
     ru.user_id,
-    MAX(CASE WHEN d.class = 'srs_r4sn' THEN d.id END) AS radar_id,
-    MAX(CASE WHEN d.class = 'srs_r4sn' THEN d.external_id END) AS radar_external_id,
-    MAX(CASE WHEN d.class = 'wave_station' THEN d.id END) AS station_id,
-    MAX(CASE WHEN d.class = 'wave_station' THEN d.external_id END) AS station_external_id
+    d.id AS device_id,
+    d.class AS device_class,
+    d.name AS device_name
 FROM room r
 JOIN room_user_map ru ON ru.room_id = r.id
 JOIN device_room_map drm ON drm.room_id = r.id
 JOIN device d ON d.id = drm.device_id AND d.archived = 0 AND d.enabled = 1
 WHERE d.class IN ('srs_r4sn', 'wave_station')
-GROUP BY r.id, ru.user_id
-HAVING radar_id IS NOT NULL
+ORDER BY r.id, ru.user_id, d.id
 )SQL");
 
+        std::map<std::pair<int64_t, int64_t>, SleepRoomConfig> grouped;
         for (size_t i = 0; i < rows.size(); ++i)
         {
-            SleepRoomConfig config;
-            config.roomId = static_cast<int32_t>(rows[i]["room_id"].as<int64_t>());
-            config.userId = static_cast<int32_t>(rows[i]["user_id"].as<int64_t>());
-            config.radarDbId = rows[i]["radar_id"].as<int64_t>();
-            if (!rows[i]["station_id"].isNull())
-                config.stationDbId = rows[i]["station_id"].as<int64_t>();
-            config.radarExternalId = rows[i]["radar_external_id"].as<std::string>();
-            if (!rows[i]["station_external_id"].isNull())
-                config.stationExternalId = rows[i]["station_external_id"].as<std::string>();
-            if (!isSleepEnabledRadar(config.radarExternalId))
+            const int64_t room_id = rows[i]["room_id"].as<int64_t>();
+            const int64_t user_id = rows[i]["user_id"].as<int64_t>();
+            const auto key = std::make_pair(room_id, user_id);
+            auto& config = grouped[key];
+            if (config.roomId == 0)
+            {
+                config.roomId = static_cast<int32_t>(room_id);
+                config.userId = static_cast<int32_t>(user_id);
+            }
+
+            const auto device_id = rows[i]["device_id"].as<int64_t>();
+            const auto device_class = rows[i]["device_class"].as<std::string>();
+            const auto device_name = rows[i]["device_name"].as<std::string>();
+            const auto wire_id = dev::wireIdForDbRow(device_id, device_name);
+
+            if (device_class == "srs_r4sn")
+            {
+                if (!isSleepEnabledRadar(wire_id))
+                    continue;
+                config.radarDbId = device_id;
+                config.radarExternalId = wire_id;
+            }
+            else if (device_class == "wave_station")
+            {
+                config.stationDbId = device_id;
+                config.stationExternalId = wire_id;
+            }
+        }
+
+        for (auto& [key, config] : grouped)
+        {
+            (void)key;
+            if (config.radarDbId <= 0 || config.radarExternalId.empty())
                 continue;
             configs.push_back(std::move(config));
         }

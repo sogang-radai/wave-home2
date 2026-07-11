@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "../../../app/app_state.h"
+#include "../../../device/device_wire_id.hpp"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
@@ -80,59 +81,20 @@ std::string AlarmsInternalStore::nowStamp()
     return buffer;
 }
 
-std::optional<int64_t> AlarmsInternalStore::resolveInternalDeviceId(const std::string& external_id) const
+std::optional<int64_t> AlarmsInternalStore::resolveInternalDeviceId(const std::string& wire_id) const
 {
-    if (external_id.empty())
-        return std::nullopt;
-
-    auto rows = m_client->execSqlSync(
-        "SELECT id FROM device WHERE external_id = ? LIMIT 1",
-        external_id);
-    if (!rows.empty())
-        return rows[0]["id"].as<int64_t>();
-
-    for (const auto& entry : AppState::get().deviceManager.manifestEntries())
-    {
-        if (entry.config.value("id", "") != external_id)
-            continue;
-        const auto name = entry.config.value("name", "");
-        rows = m_client->execSqlSync(
-            "SELECT id FROM device WHERE name = ? LIMIT 1",
-            name);
-        if (!rows.empty())
-            return rows[0]["id"].as<int64_t>();
-    }
-    return std::nullopt;
+    return dev::dbIdForWireId(m_client, wire_id);
 }
 
 std::string AlarmsInternalStore::externalDeviceId(int64_t internal_id) const
 {
     auto rows = m_client->execSqlSync(
-        "SELECT external_id, name FROM device WHERE id = ?",
+        "SELECT name FROM device WHERE id = ?",
         internal_id);
     if (rows.empty())
         return {};
 
-    const auto external_id = rows[0]["external_id"].isNull()
-        ? std::string()
-        : rows[0]["external_id"].as<std::string>();
-    if (!external_id.empty())
-        return external_id;
-
-    const auto name = rows[0]["name"].as<std::string>();
-    for (const auto& entry : AppState::get().deviceManager.manifestEntries())
-    {
-        if (entry.config.value("name", "") == name)
-        {
-            const auto manifest_id = entry.config.value("id", "");
-            if (!manifest_id.empty())
-                return manifest_id;
-        }
-    }
-
-    std::ostringstream stream;
-    stream << std::hex << std::nouppercase << std::setw(16) << std::setfill('0') << internal_id;
-    return stream.str();
+    return dev::wireIdForDbRow(internal_id, rows[0]["name"].as<std::string>());
 }
 
 Json::Value AlarmsInternalStore::rowToJson(const drogon::orm::Row& row) const

@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "../../../core/logger.h"
+#include "../../../device/device_wire_id.hpp"
 
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
@@ -34,7 +35,7 @@ std::string gestureClassKind(const json& cls)
     return class_id < 3 ? "state" : "trigger";
 }
 
-Json::Value classToFrontend(const json& cls, const std::string& set_id)
+Json::Value classToFrontend(const json& cls, const std::string& asset_set_dir)
 {
     Json::Value out;
     out["classId"] = cls.value("class_id", 0);
@@ -43,7 +44,7 @@ Json::Value classToFrontend(const json& cls, const std::string& set_id)
 
     const auto thumb = cls.value("thumbnail", std::string());
     if (!thumb.empty())
-        out["thumbnail"] = "/gestures/" + set_id + "/" + thumb;
+        out["thumbnail"] = "/gestures/" + asset_set_dir + "/" + thumb;
     else
         out["thumbnail"] = Json::nullValue;
 
@@ -70,10 +71,16 @@ void appendClassCounts(const json& set_config, Json::Value& item)
     item["triggerClassCount"] = trigger_count;
 }
 
-Json::Value setConfigToFrontend(const json& set_config, const std::string& set_id, const std::string& entry_name, const std::string& entry_path)
+Json::Value setConfigToFrontend(
+    const json& set_config,
+    const std::string& set_wire_id,
+    const std::string& entry_name,
+    const std::string& entry_path)
 {
+    const auto asset_set_dir = std::filesystem::path(entry_path).parent_path().filename().string();
+
     Json::Value out;
-    out["id"] = set_id;
+    out["id"] = set_wire_id;
     out["name"] = set_config.value("name", entry_name);
     out["path"] = entry_path;
     out["description"] = set_config.value("description", std::string());
@@ -87,22 +94,13 @@ Json::Value setConfigToFrontend(const json& set_config, const std::string& set_i
     if (set_config.contains("classes") && set_config["classes"].is_array())
     {
         for (const auto& cls : set_config["classes"])
-            classes.append(classToFrontend(cls, set_id));
+            classes.append(classToFrontend(cls, asset_set_dir));
     }
     out["classes"] = classes;
     return out;
 }
 
 } // namespace
-
-std::string GestureStore::gestureSetIdFromPath(const std::string& path)
-{
-    const auto normalized = std::filesystem::path(path);
-    const auto parent = normalized.parent_path().filename().string();
-    if (!parent.empty())
-        return parent;
-    return normalized.stem().string();
-}
 
 bool GestureStore::load(
     const std::filesystem::path& registry_path,
@@ -133,15 +131,22 @@ bool GestureStore::load(
             return false;
         }
 
+        int64_t db_id = 0;
         for (const auto& item : root["gesture_sets"])
         {
+            if (!item.contains("id") || !item["id"].is_string() || item["id"].get<std::string>().empty())
+            {
+                out_error = "gesture_sets[].id is required";
+                return false;
+            }
+
             RegistryEntry entry;
+            entry.db_id = ++db_id;
+            entry.wire_id = item["id"].get<std::string>();
             entry.name = item.value("name", std::string());
             entry.path = item.value("path", std::string());
             entry.enabled = item.value("enabled", true);
-            entry.id = gestureSetIdFromPath(entry.path);
-            if (!entry.id.empty())
-                m_registry.push_back(std::move(entry));
+            m_registry.push_back(std::move(entry));
         }
 
         return true;
@@ -153,23 +158,165 @@ bool GestureStore::load(
     }
 }
 
-void GestureStore::persistAssignments() const
+void GestureStore::setDatabaseClient(const drogon::orm::DbClientPtr& client)
 {
-    if (m_assignmentsPath.empty())
-        return;
+    std::lock_guard lock(m_mutex);
+    m_db = client;
+}
 
-    json root = json::object();
-    for (const auto& [device_id, gesture_set_id] : m_assignments)
-        root[device_id] = gesture_set_id;
+bool GestureStore::syncFromDatabase(std::string& out_error, const bool read_only)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_db)
+    {
+        out_error = "database client is not set";
+        return false;
+    }
 
+    if (!read_only && !syncRegistryToDatabase(out_error))
+        return false;
+
+    return loadDeviceMappingsFromDatabase(out_error);
+}
+
+bool GestureStore::syncRegistryToDatabase(std::string& out_error)
+{
     try
     {
-        std::ofstream out(m_assignmentsPath);
-        out << root.dump(4);
+        for (const auto& entry : m_registry)
+        {
+            m_db->execSqlSync(
+                "INSERT INTO gesture_set (id, name, archived) VALUES (?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET name = excluded.name, archived = excluded.archived",
+                entry.db_id,
+                entry.name,
+                entry.enabled ? 0 : 1);
+        }
+        return true;
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("GestureStore: failed to persist assignments: {}", e.what());
+        out_error = e.what();
+        return false;
+    }
+}
+
+bool GestureStore::loadDeviceMappingsFromDatabase(std::string& out_error)
+{
+    try
+    {
+        m_deviceToSetWire.clear();
+        auto rows = m_db->execSqlSync(
+            "SELECT gdm.device_id, gdm.gesture_set_id, d.name "
+            "FROM gesture_device_map gdm "
+            "JOIN device d ON d.id = gdm.device_id");
+
+        for (const auto& row : rows)
+        {
+            const int64_t device_db_id = row["device_id"].as<int64_t>();
+            const int64_t set_db_id = row["gesture_set_id"].as<int64_t>();
+            const std::string device_name = row["name"].as<std::string>();
+
+            const auto set_wire = wireIdForGestureSetDbId(set_db_id);
+            if (!set_wire)
+                continue;
+
+            const auto device_wire = dev::wireIdForDbRow(device_db_id, device_name);
+            if (device_wire.empty())
+                continue;
+
+            m_deviceToSetWire[device_wire] = *set_wire;
+        }
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        out_error = e.what();
+        return false;
+    }
+}
+
+const GestureStore::RegistryEntry* GestureStore::findRegistryEntry(const std::string& gesture_set_id) const
+{
+    for (const auto& entry : m_registry)
+    {
+        if (entry.wire_id == gesture_set_id)
+            return &entry;
+
+        const auto& path = entry.path;
+        const auto first = path.find('/');
+        if (first == std::string::npos)
+            continue;
+        const auto second = path.find('/', first + 1);
+        if (second == std::string::npos)
+            continue;
+        if (path.substr(first + 1, second - first - 1) == gesture_set_id)
+            return &entry;
+    }
+    return nullptr;
+}
+
+std::optional<int64_t> GestureStore::dbIdForGestureSetWireId(const std::string& wire_id) const
+{
+    if (const auto* entry = findRegistryEntry(wire_id))
+        return entry->db_id;
+    return std::nullopt;
+}
+
+std::optional<std::string> GestureStore::wireIdForGestureSetDbId(int64_t db_id) const
+{
+    for (const auto& entry : m_registry)
+    {
+        if (entry.db_id == db_id)
+            return entry.wire_id;
+    }
+    return std::nullopt;
+}
+
+bool GestureStore::persistDeviceMapping(
+    const std::string& device_wire_id,
+    const std::string& gesture_set_wire_id,
+    std::string& out_error)
+{
+    if (!m_db)
+    {
+        out_error = "database client is not set";
+        return false;
+    }
+
+    const auto device_db_id = dev::dbIdForWireId(m_db, device_wire_id);
+    if (!device_db_id)
+    {
+        out_error = "device not found";
+        return false;
+    }
+
+    try
+    {
+        if (gesture_set_wire_id.empty())
+        {
+            m_db->execSqlSync("DELETE FROM gesture_device_map WHERE device_id = ?", *device_db_id);
+            return true;
+        }
+
+        const auto set_db_id = dbIdForGestureSetWireId(gesture_set_wire_id);
+        if (!set_db_id)
+        {
+            out_error = "gesture set not found";
+            return false;
+        }
+
+        m_db->execSqlSync(
+            "INSERT INTO gesture_device_map (device_id, gesture_set_id) VALUES (?, ?) "
+            "ON CONFLICT(device_id) DO UPDATE SET gesture_set_id = excluded.gesture_set_id",
+            *device_db_id,
+            *set_db_id);
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        out_error = e.what();
+        return false;
     }
 }
 
@@ -184,7 +331,7 @@ Json::Value GestureStore::listGestureSets() const
             continue;
 
         Json::Value item;
-        item["id"] = entry.id;
+        item["id"] = entry.wire_id;
         item["name"] = entry.name;
         item["path"] = entry.path;
         item["enabled"] = entry.enabled;
@@ -219,7 +366,7 @@ Json::Value GestureStore::loadSetDefinition(const RegistryEntry& entry) const
     if (!std::filesystem::exists(set_path))
     {
         Json::Value out;
-        out["id"] = entry.id;
+        out["id"] = entry.wire_id;
         out["name"] = entry.name;
         out["path"] = entry.path;
         out["description"] = "";
@@ -234,18 +381,14 @@ Json::Value GestureStore::loadSetDefinition(const RegistryEntry& entry) const
         in >> set_config;
     }
 
-    return setConfigToFrontend(set_config, entry.id, entry.name, entry.path);
+    return setConfigToFrontend(set_config, entry.wire_id, entry.name, entry.path);
 }
 
 Json::Value GestureStore::getGestureSetDefinition(const std::string& gesture_set_id, std::string& code) const
 {
     std::lock_guard lock(m_mutex);
-    for (const auto& entry : m_registry)
-    {
-        if (entry.id != gesture_set_id)
-            continue;
-        return loadSetDefinition(entry);
-    }
+    if (const auto* entry = findRegistryEntry(gesture_set_id))
+        return loadSetDefinition(*entry);
 
     code = "NOT_FOUND";
     return Json::Value();
@@ -257,8 +400,8 @@ Json::Value GestureStore::getRadarGestureSet(const std::string& device_id, std::
     Json::Value out;
     out["deviceId"] = device_id;
 
-    const auto it = m_assignments.find(device_id);
-    if (it == m_assignments.end())
+    const auto it = m_deviceToSetWire.find(device_id);
+    if (it == m_deviceToSetWire.end())
         out["gestureSetId"] = Json::nullValue;
     else
         out["gestureSetId"] = it->second;
@@ -273,65 +416,39 @@ Json::Value GestureStore::setRadarGestureSet(
 {
     std::lock_guard lock(m_mutex);
 
+    const RegistryEntry* resolved_entry = nullptr;
     if (!gesture_set_id.empty())
     {
-        const auto found = std::find_if(m_registry.begin(), m_registry.end(), [&](const RegistryEntry& entry)
-        {
-            return entry.id == gesture_set_id;
-        });
-        if (found == m_registry.end())
+        resolved_entry = findRegistryEntry(gesture_set_id);
+        if (!resolved_entry)
         {
             code = "NOT_FOUND";
             return Json::Value();
         }
     }
 
-    if (gesture_set_id.empty())
-        m_assignments.erase(device_id);
-    else
-        m_assignments[device_id] = gesture_set_id;
+    const std::string wire_set_id = resolved_entry ? resolved_entry->wire_id : std::string();
 
-    persistAssignments();
+    std::string persist_error;
+    if (!persistDeviceMapping(device_id, wire_set_id, persist_error))
+    {
+        LOG_WARN("GestureStore: failed to persist device mapping: {}", persist_error);
+        code = "PERSIST_FAILED";
+        return Json::Value();
+    }
+
+    if (wire_set_id.empty())
+        m_deviceToSetWire.erase(device_id);
+    else
+        m_deviceToSetWire[device_id] = wire_set_id;
 
     Json::Value out;
     out["deviceId"] = device_id;
-    if (gesture_set_id.empty())
+    if (wire_set_id.empty())
         out["gestureSetId"] = Json::nullValue;
     else
-        out["gestureSetId"] = gesture_set_id;
+        out["gestureSetId"] = wire_set_id;
     return out;
-}
-
-void GestureStore::setAssignmentsPath(const std::filesystem::path& path)
-{
-    std::lock_guard lock(m_mutex);
-    m_assignmentsPath = path;
-
-    if (!std::filesystem::exists(path))
-        return;
-
-    try
-    {
-        json root;
-        {
-            std::ifstream in(path);
-            in >> root;
-        }
-
-        if (!root.is_object())
-            return;
-
-        m_assignments.clear();
-        for (auto it = root.begin(); it != root.end(); ++it)
-        {
-            if (it.value().is_string())
-                m_assignments[it.key()] = it.value().get<std::string>();
-        }
-    }
-    catch (const std::exception& e)
-    {
-        LOG_WARN("GestureStore: failed to load assignments: {}", e.what());
-    }
 }
 
 } // namespace v1

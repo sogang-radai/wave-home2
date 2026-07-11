@@ -4,6 +4,9 @@
 #include <optional>
 
 #include "../../../app/app_state.h"
+#include "../../../demo/demo_device_backend.h"
+#include "../../../demo/demo_runtime_id.h"
+#include "../../../demo/demo_session_writes.h"
 #include "../../../service/alarm_manager.h"
 #include "../internal/alarms_internal_store.h"
 #include "session_store.h"
@@ -69,6 +72,18 @@ namespace
     {
         service::AlarmManager::get().reconcile();
     }
+
+    drogon::HttpResponsePtr demoResponse(
+        const drogon::HttpRequestPtr& req,
+        const Json::Value& body,
+        const std::string& runtime_id,
+        drogon::HttpStatusCode status = drogon::k200OK)
+    {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        resp->setStatusCode(status);
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        return resp;
+    }
 }
 
 void AlarmsController::listAlarms(
@@ -78,6 +93,16 @@ void AlarmsController::listAlarms(
     const auto user_id = requireActiveUser(req, callback);
     if (!user_id)
         return;
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        callback(demoResponse(
+            req,
+            withoutUserIds(demoListAlarms(runtime_id, *user_id, AppState::get().db())),
+            runtime_id));
+        return;
+    }
 
     internal::AlarmListFilter filter;
     filter.user_id = *user_id;
@@ -108,13 +133,23 @@ void AlarmsController::createAlarm(
     if (!body.isMember("daysOfWeek"))
         body["daysOfWeek"] = Json::Value(Json::arrayValue);
 
-    internal::AlarmsInternalStore store(AppState::get().db());
     std::string error;
     std::string field;
-    const auto created = store.createAlarm(body, error, field);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, &body)
+        : std::string();
+    const auto created = demoVirtualDevicesEnabled()
+        ? demoCreateAlarm(runtime_id, body, AppState::get().db(), error, field)
+        : internal::AlarmsInternalStore(AppState::get().db()).createAlarm(body, error, field);
     if (created.isNull())
     {
         respondError(callback, 400, "VALIDATION_ERROR", error, field);
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        callback(demoResponse(req, withoutUserId(created), runtime_id, drogon::k201Created));
         return;
     }
 
@@ -147,14 +182,24 @@ void AlarmsController::updateAlarm(
         return;
     }
 
-    internal::AlarmsInternalStore store(AppState::get().db());
     std::string error;
     std::string field;
-    const auto updated = store.updateAlarm(*user_id, *id, *json, error, field);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, json.get())
+        : std::string();
+    const auto updated = demoVirtualDevicesEnabled()
+        ? demoUpdateAlarm(runtime_id, *id, *json, error, field)
+        : internal::AlarmsInternalStore(AppState::get().db()).updateAlarm(*user_id, *id, *json, error, field);
     if (updated.isNull())
     {
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
         respondError(callback, status, status == 404 ? "NOT_FOUND" : "VALIDATION_ERROR", error, field);
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        callback(demoResponse(req, withoutUserId(updated), runtime_id));
         return;
     }
 
@@ -178,12 +223,31 @@ void AlarmsController::deleteAlarm(
         return;
     }
 
-    internal::AlarmsInternalStore store(AppState::get().db());
     std::string error;
-    const auto removed = store.deleteAlarm(*user_id, *id, error);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    Json::Value removed;
+    if (demoVirtualDevicesEnabled())
+    {
+        if (demoDeleteAlarm(runtime_id, *id))
+            removed["id"] = static_cast<Json::Int64>(*id);
+        else
+            error = "세션 알람을 찾을 수 없습니다.";
+    }
+    else
+    {
+        removed = internal::AlarmsInternalStore(AppState::get().db()).deleteAlarm(*user_id, *id, error);
+    }
     if (removed.isNull())
     {
         respondError(callback, 404, "NOT_FOUND", error);
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        callback(demoResponse(req, removed, runtime_id));
         return;
     }
 
