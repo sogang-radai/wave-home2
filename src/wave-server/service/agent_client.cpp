@@ -805,6 +805,79 @@ namespace
         out_error = "insight job poll timeout";
         return AgentClientResult::network_error;
     }
+
+    AgentClientResult poll_goal_coaching_job(
+        const std::string& base_url,
+        const std::string& job_id,
+        AgentGoalCoachingJobResult& out_result,
+        std::string& out_error)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(10);
+        double wait_s = 2.0;
+
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            ParsedEndpoint endpoint;
+            if (!parse_base_url(base_url, endpoint, out_error))
+                return AgentClientResult::parse_error;
+
+            const std::string path = endpoint.path_prefix + "/goal-coaching/v1/jobs/" + job_id;
+            std::string response_body;
+            const auto result = send_http_request(
+                base_url,
+                "GET",
+                path,
+                "",
+                false,
+                [&](const std::string& data, bool) -> bool {
+                    response_body = data;
+                    return true;
+                },
+                out_error);
+
+            if (result != AgentClientResult::success)
+                return result;
+
+            try
+            {
+                const json payload = json::parse(response_body);
+                const std::string status = payload.value("status", "");
+                if (status == "done")
+                {
+                    out_result.content = payload.value("result", json::object());
+                    return AgentClientResult::success;
+                }
+
+                if (status == "failed")
+                {
+                    if (payload.contains("error") && payload["error"].is_object())
+                    {
+                        const auto& err = payload["error"];
+                        out_error = err.value("code", "GENERATION_FAILED") + ": "
+                            + err.value("message", "job failed");
+                    }
+                    else
+                    {
+                        out_error = "goal coaching job failed";
+                    }
+                    return AgentClientResult::http_error;
+                }
+            }
+            catch (const json::exception& e)
+            {
+                out_error = std::string("goal coaching job poll parse error: ") + e.what();
+                return AgentClientResult::parse_error;
+            }
+
+            const auto sleep_ms = static_cast<int64_t>(wait_s * 1000.0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+            if (wait_s < 7.0 && std::chrono::steady_clock::now() > deadline - std::chrono::minutes(9))
+                wait_s = 7.0;
+        }
+
+        out_error = "goal coaching job poll timeout";
+        return AgentClientResult::network_error;
+    }
 }
 
 AgentClientResult runSleepJobSync(
@@ -939,6 +1012,51 @@ AgentClientResult runInsightJobSync(
     catch (const json::exception& e)
     {
         out_error = std::string("insight job response parse error: ") + e.what();
+        return AgentClientResult::parse_error;
+    }
+}
+
+AgentClientResult runGoalCoachingJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentGoalCoachingJobResult& out_result,
+    std::string& out_error)
+{
+    out_result = {};
+    ParsedEndpoint endpoint;
+    if (!parse_base_url(base_url, endpoint, out_error))
+        return AgentClientResult::parse_error;
+
+    const std::string path = endpoint.path_prefix + "/goal-coaching/v1/reports";
+    std::string response_body;
+    const auto post_result = send_http_request(
+        base_url,
+        "POST",
+        path,
+        body.dump(),
+        false,
+        [&](const std::string& data, bool) -> bool {
+            response_body = data;
+            return true;
+        },
+        out_error);
+
+    if (post_result != AgentClientResult::success)
+        return post_result;
+
+    try
+    {
+        const json payload = json::parse(response_body);
+        if (!payload.contains("jobId") || !payload["jobId"].is_string())
+        {
+            out_error = "goal coaching job response missing jobId";
+            return AgentClientResult::parse_error;
+        }
+        return poll_goal_coaching_job(base_url, payload["jobId"].get<std::string>(), out_result, out_error);
+    }
+    catch (const json::exception& e)
+    {
+        out_error = std::string("goal coaching job response parse error: ") + e.what();
         return AgentClientResult::parse_error;
     }
 }

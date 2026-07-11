@@ -22,6 +22,7 @@ void ActionLogStore::record(
     const std::string& action_type,
     const std::string& ref_type,
     int64_t ref_id,
+    const std::optional<std::string>& category,
     const std::optional<Json::Value>& metadata) const
 {
     std::optional<std::string> metadata_json;
@@ -34,8 +35,8 @@ void ActionLogStore::record(
 
     m_client->execSqlSync(
         R"SQL(
-INSERT INTO user_action_log (id, user_id, action_type, ref_type, ref_id, occurred_at, metadata_json)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO user_action_log (id, user_id, action_type, ref_type, ref_id, occurred_at, category, metadata_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 )SQL",
         nextId(),
         user_id,
@@ -43,6 +44,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
         ref_type,
         ref_id,
         formatTimestamp(),
+        category,
         metadata_json);
 }
 

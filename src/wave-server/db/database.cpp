@@ -562,6 +562,81 @@ CREATE INDEX IF NOT EXISTS idx_power_energy_gran_time ON power_energy (granulari
 )SQL",
             },
         },
+        {
+            6,
+            "goal-based habit coaching tables (goal, goal_coaching_report, goal_recommendation)",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS goal (
+    id          INTEGER      PRIMARY KEY,
+    user_id     INTEGER      NOT NULL,
+    title       VARCHAR(200) NOT NULL,
+    category    VARCHAR(10)  NOT NULL,
+    status      VARCHAR(10)  NOT NULL DEFAULT 'active',
+    created_at  VARCHAR(50)  NOT NULL,
+    updated_at  VARCHAR(50)  NOT NULL,
+    CHECK (category IN ('sleep', 'posture', 'mental', 'life', 'diet')),
+    CHECK (status IN ('active', 'archived', 'completed')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_goal_user_status ON goal (user_id, status)
+)SQL",
+                R"SQL(
+CREATE TABLE IF NOT EXISTS goal_coaching_report (
+    id                      INTEGER      PRIMARY KEY,
+    goal_id                 INTEGER      NOT NULL,
+    user_id                 INTEGER      NOT NULL,
+    period_start            VARCHAR(10)  NOT NULL,
+    past_summary_text       VARCHAR(500) NOT NULL,
+    projection_text         VARCHAR(500) NOT NULL,
+    projected_metrics_json  TEXT,
+    created_at              VARCHAR(50)  NOT NULL,
+    UNIQUE (goal_id, period_start),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE TABLE IF NOT EXISTS goal_recommendation (
+    id                 INTEGER      PRIMARY KEY,
+    goal_id            INTEGER      NOT NULL,
+    user_id            INTEGER      NOT NULL,
+    date               VARCHAR(10)  NOT NULL,
+    kind               VARCHAR(10)  NOT NULL,
+    title              VARCHAR(100) NOT NULL,
+    text               VARCHAR(500) NOT NULL,
+    actionable         INTEGER      NOT NULL DEFAULT 0,
+    action_type        VARCHAR(20),
+    approved           INTEGER      NOT NULL DEFAULT 0,
+    rule_json          TEXT,
+    schedule_task_json TEXT,
+    created_at         VARCHAR(50)  NOT NULL,
+    CHECK (kind IN ('action', 'goal', 'tip')),
+    CHECK (actionable IN (0, 1)),
+    CHECK (approved IN (0, 1)),
+    CHECK (actionable = 0 OR action_type IS NOT NULL),
+    CHECK (action_type != 'automation_rule' OR rule_json IS NOT NULL),
+    CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_goal_recommendation_goal_date ON goal_recommendation (goal_id, date)
+)SQL",
+            },
+        },
+        {
+            7,
+            "add category column to user_action_log for goal-coaching filtering",
+            {
+                R"SQL(
+ALTER TABLE user_action_log ADD COLUMN category VARCHAR(10)
+)SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log (user_id, category, occurred_at)
+)SQL",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)

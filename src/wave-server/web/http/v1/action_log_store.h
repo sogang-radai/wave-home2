@@ -27,6 +27,7 @@ public:
         const std::string& action_type,
         const std::string& ref_type,
         int64_t ref_id,
+        const std::optional<std::string>& category = std::nullopt,
         const std::optional<Json::Value>& metadata = std::nullopt) const;
 
 private:

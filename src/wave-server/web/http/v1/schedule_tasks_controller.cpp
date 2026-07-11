@@ -192,7 +192,7 @@ void ScheduleTasksController::createTask(
     if (!demoVirtualDevicesEnabled())
     {
         ActionLogStore(AppState::get().db())
-            .record(*user_id, "schedule_task_created", "schedule_task", created["id"].asInt64());
+            .record(*user_id, "schedule_task_created", "schedule_task", created["id"].asInt64(), created["category"].asString());
     }
 
     if (demoVirtualDevicesEnabled())
@@ -258,15 +258,16 @@ void ScheduleTasksController::updateTask(
     if (!demoVirtualDevicesEnabled() && done_before)
     {
         const bool done_after = updated["done"].asBool();
+        const std::string category = updated["category"].asString();
         if (!*done_before && done_after)
         {
             ActionLogStore(AppState::get().db())
-                .record(*user_id, "schedule_task_completed", "schedule_task", *id);
+                .record(*user_id, "schedule_task_completed", "schedule_task", *id, category);
         }
         else if (*done_before && !done_after)
         {
             ActionLogStore(AppState::get().db())
-                .record(*user_id, "schedule_task_uncompleted", "schedule_task", *id);
+                .record(*user_id, "schedule_task_uncompleted", "schedule_task", *id, category);
         }
     }
 
