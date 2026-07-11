@@ -655,14 +655,20 @@ Json::Value PowerStore::queryReport(
     sql << "SELECT metrics, report_text, period_start FROM power_report WHERE period = '" << *api_period << "'";
     if (exact_match)
     {
-        const std::string exact_value = *api_period == "1h" ? period_start_hint.substr(0, 13) + ":00:00" : period_start_hint;
+        // 24h 도 1h 와 마찬가지로 "YYYY-MM-DD 00:00:00" 전체 타임스탬프로 저장되므로,
+        // 날짜만 담긴 hint(예: "2026-07-11")를 그대로 비교하면 절대 매치되지 않는다.
+        const std::string exact_value = *api_period == "1h"
+            ? period_start_hint.substr(0, 13) + ":00:00"
+            : *api_period == "24h" ? period_start_hint.substr(0, 10) + " 00:00:00" : period_start_hint;
         sql << " AND period_start = '" << exact_value << "'";
     }
     else
     {
-        // 1h 는 "YYYY-MM-DD HH:00:00" 전체 타임스탬프로 저장되므로 날짜만으로 비교하면 안 되고,
-        // 지금 시각(now_full)과 비교해야 "가장 최근 리포트"가 정확히 나온다.
-        const std::string compare_value = *api_period == "1h" ? now_full : today;
+        // 1h/24h 모두 저장 시 시각까지 포함한 전체 타임스탬프를 쓰므로, 날짜만으로 비교하면
+        // (예: period_start <= '2026-07-11') 같은 날짜의 실제 행("2026-07-11 00:00:00")보다
+        // 문자열 비교상 더 크다고 판정되어 방금 생성한 리포트를 못 찾는 문제가 있었다.
+        // 항상 시각까지 포함한 값으로 비교해 "가장 최근 리포트"가 정확히 나오게 한다.
+        const std::string compare_value = *api_period == "1h" ? now_full : today + " 23:59:59";
         sql << " AND period_start <= '" << compare_value << "'";
     }
     if (device_db_id)

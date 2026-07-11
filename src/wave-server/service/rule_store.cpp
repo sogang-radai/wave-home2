@@ -11,6 +11,18 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
+    // nlohmann's json::value(key, default) only substitutes default when the key is ABSENT —
+    // a key present with an explicit JSON null (which pydantic model_dump() emits for every
+    // Optional[...] = None field, e.g. agent-generated ruleJson.repeatIntervalMs) still throws
+    // a type_error on .get<T>(). Treat "present but null" the same as "absent".
+    template <typename T>
+    T valueOrDefault(const json& value, const char* key, T default_value)
+    {
+        if (!value.contains(key) || value[key].is_null())
+            return default_value;
+        return value[key].get<T>();
+    }
+
     json ruleToJson(const Rule& rule, const std::unordered_map<std::string, Trigger>& triggers)
     {
         json out = json::object();
@@ -115,8 +127,8 @@ namespace
         if (!parseRuleAction(value, out_action, out_error))
             return false;
 
-        out_exec_mode = parseExecMode(value.value("execMode", std::string("once")));
-        out_repeat_interval_ms = value.value("repeatIntervalMs", 0u);
+        out_exec_mode = parseExecMode(valueOrDefault(value, "execMode", std::string("once")));
+        out_repeat_interval_ms = valueOrDefault(value, "repeatIntervalMs", 0u);
         return true;
     }
 
@@ -141,10 +153,10 @@ namespace
         out_rule = Rule{};
         out_rule.id = value["id"].get<std::string>();
         out_rule.name = value["name"].get<std::string>();
-        out_rule.enabled = value.value("enabled", true);
-        out_rule.cooldownMs = value.value("cooldownMs", 0u);
-        out_rule.repeatIntervalMs = value.value("repeatIntervalMs", 0u);
-        out_rule.execMode = parseExecMode(value.value("execMode", std::string("once")));
+        out_rule.enabled = valueOrDefault(value, "enabled", true);
+        out_rule.cooldownMs = valueOrDefault(value, "cooldownMs", 0u);
+        out_rule.repeatIntervalMs = valueOrDefault(value, "repeatIntervalMs", 0u);
+        out_rule.execMode = parseExecMode(valueOrDefault(value, "execMode", std::string("once")));
 
         if (!parseRuleAction(value.at("action"), out_rule.action, out_error))
             return false;
@@ -691,10 +703,10 @@ bool RuleStore::applyCreate(const json& payload, RuleView& out_view, std::string
         ? payload["id"].get<std::string>()
         : nextRuleId();
     rule.name = payload["name"].get<std::string>();
-    rule.enabled = payload.value("enabled", true);
-    rule.cooldownMs = payload.value("cooldownMs", 0u);
-    rule.repeatIntervalMs = payload.value("repeatIntervalMs", 0u);
-    rule.execMode = parseExecMode(payload.value("execMode", std::string("once")));
+    rule.enabled = valueOrDefault(payload, "enabled", true);
+    rule.cooldownMs = valueOrDefault(payload, "cooldownMs", 0u);
+    rule.repeatIntervalMs = valueOrDefault(payload, "repeatIntervalMs", 0u);
+    rule.execMode = parseExecMode(valueOrDefault(payload, "execMode", std::string("once")));
 
     if (!parseRuleAction(payload["action"], rule.action, out_error))
         return false;
