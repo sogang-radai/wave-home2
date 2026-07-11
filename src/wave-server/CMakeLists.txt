@@ -62,6 +62,7 @@ set(_wave_server_sources
     web/http/v1/power_store.cpp
     web/http/v1/sleep_controller.cpp
     web/http/v1/sleep_store.cpp
+    web/http/v1/action_log_store.cpp
     web/http/v1/insights_store.cpp
     web/http/v1/insights_controller.cpp
     web/http/v1/dashboard_store.cpp

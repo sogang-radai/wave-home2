@@ -132,6 +132,40 @@ Json::Value InsightsStore::getById(int64_t user_id, int64_t insight_id) const
     return rowToJson(rows[0]);
 }
 
+bool InsightsStore::markApplied(
+    int64_t user_id,
+    int64_t insight_id,
+    const std::optional<Json::Value>& rule_json_override) const
+{
+    if (rule_json_override)
+    {
+        Json::StreamWriterBuilder builder;
+        builder["indentation"] = "";
+        const auto serialized = Json::writeString(builder, *rule_json_override);
+        const auto rows = m_client->execSqlSync(
+            "UPDATE insight SET approved = 1, rule_json = ? WHERE id = ? AND user_id = ?",
+            serialized,
+            insight_id,
+            user_id);
+        return rows.affectedRows() > 0;
+    }
+
+    const auto rows = m_client->execSqlSync(
+        "UPDATE insight SET approved = 1 WHERE id = ? AND user_id = ?",
+        insight_id,
+        user_id);
+    return rows.affectedRows() > 0;
+}
+
+bool InsightsStore::markCanceled(int64_t user_id, int64_t insight_id) const
+{
+    const auto rows = m_client->execSqlSync(
+        "UPDATE insight SET approved = 0 WHERE id = ? AND user_id = ?",
+        insight_id,
+        user_id);
+    return rows.affectedRows() > 0;
+}
+
 Json::Value InsightsStore::dashboardDailyMessage(int64_t user_id) const
 {
     if (!tableExists(m_client, "insight"))

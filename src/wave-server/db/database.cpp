@@ -488,6 +488,31 @@ CREATE TABLE IF NOT EXISTS weekly_plan_report (
 )SQL",
             },
         },
+        {
+            2,
+            "user action log (insight/schedule_task execution history)",
+            {
+                R"SQL(
+CREATE TABLE IF NOT EXISTS user_action_log (
+    id            INTEGER      PRIMARY KEY,
+    user_id       INTEGER      NOT NULL,
+    action_type   VARCHAR(30)  NOT NULL,
+    ref_type      VARCHAR(20)  NOT NULL,
+    ref_id        INTEGER      NOT NULL,
+    occurred_at   VARCHAR(50)  NOT NULL,
+    metadata_json TEXT,
+    CHECK (action_type IN ('insight_applied', 'insight_canceled', 'schedule_task_completed', 'schedule_task_uncompleted', 'schedule_task_created')),
+    CHECK (ref_type IN ('insight', 'schedule_task')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+))SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_action_log_user_time ON user_action_log (user_id, occurred_at)
+)SQL",
+                R"SQL(
+CREATE INDEX IF NOT EXISTS idx_action_log_ref ON user_action_log (ref_type, ref_id)
+)SQL",
+            },
+        },
     };
 
     int currentVersion(const drogon::orm::DbClientPtr& client)
