@@ -9,6 +9,15 @@ WAVE_NAMESPACE_BEGIN
 
 namespace
 {
+    std::string normalizePowerActionName(const std::string& action_name)
+    {
+        if (action_name == "power_on" || action_name == "turn_on" || action_name == "switch_on")
+            return "on";
+        if (action_name == "power_off" || action_name == "turn_off" || action_name == "switch_off")
+            return "off";
+        return action_name;
+    }
+
     int clampInt(int value, int lo, int hi)
     {
         return std::clamp(value, lo, hi);
@@ -172,39 +181,60 @@ Json::Value demoApplyAction(
     const std::string& device_class,
     const Json::Value& prev_state,
     const std::string& action_name,
-    const Json::Value& params)
+    const Json::Value& params,
+    bool& applied)
 {
+    applied = false;
     Json::Value next = prev_state.isObject() ? prev_state : Json::Value(Json::objectValue);
+    // LLMs often invent power_on/power_off; map to the real catalog names.
+    const std::string action = normalizePowerActionName(action_name);
 
     if (device_class == "tuya_ep2h")
     {
-        if (action_name == "on" || action_name == "toggle")
-            next["switch"] = action_name == "toggle" ? !prev_state.get("switch", false).asBool() : true;
-        else if (action_name == "off")
+        if (action == "on" || action == "toggle")
+        {
+            next["switch"] = action == "toggle" ? !prev_state.get("switch", false).asBool() : true;
+            applied = true;
+        }
+        else if (action == "off")
+        {
             next["switch"] = false;
+            applied = true;
+        }
 
-        const bool switch_on = next.get("switch", false).asBool();
-        const double rated_power = next.get("ratedPower", prev_state.get("power", 0.0)).asDouble();
-        next["power"] = switch_on ? rated_power : 0.0;
-        next["current"] = switch_on ? rated_power / 235.0 * 1000.0 : 0.0;
+        if (applied)
+        {
+            const bool switch_on = next.get("switch", false).asBool();
+            const double rated_power = next.get("ratedPower", prev_state.get("power", 0.0)).asDouble();
+            next["power"] = switch_on ? rated_power : 0.0;
+            next["current"] = switch_on ? rated_power / 235.0 * 1000.0 : 0.0;
+        }
     }
     else if (device_class == "philips_wiz_e29_color" || device_class == "philips_wiz_e29_white")
     {
-        if (action_name == "on" || action_name == "toggle")
-            next["on"] = action_name == "toggle" ? !prev_state.get("on", false).asBool() : true;
-        else if (action_name == "off")
+        if (action == "on" || action == "toggle")
+        {
+            next["on"] = action == "toggle" ? !prev_state.get("on", false).asBool() : true;
+            applied = true;
+        }
+        else if (action == "off")
+        {
             next["on"] = false;
-        else if (action_name == "brightness")
+            applied = true;
+        }
+        else if (action == "brightness")
         {
             next["brightness"] = extractBrightness(params, prev_state.get("brightness", 50).asInt());
             next["on"] = next["brightness"].asInt() > 0;
+            applied = true;
         }
-        else if (action_name == "temperature")
+        else if (action == "temperature")
         {
             next["temperature"] = extractTemperature(params, prev_state.get("temperature", 4000).asInt());
             next["on"] = true;
+            applied = true;
         }
-        else if (action_name == "color" && device_class == "philips_wiz_e29_color")
+        else if (action == "color" && device_class == "philips_wiz_e29_color")
         {
             int r = 255;
             int g = 255;
@@ -217,43 +247,90 @@ Json::Value demoApplyAction(
                 color["b"] = b;
                 next["color"] = color;
                 next["on"] = true;
+                applied = true;
             }
         }
     }
     else if (device_class == "samsung_g7" || device_class == "tizen_tv")
     {
-        if (action_name == "on" || action_name == "toggle")
-            next["on"] = action_name == "toggle" ? !prev_state.get("on", false).asBool() : true;
-        else if (action_name == "off")
+        if (action == "on" || action == "toggle")
+        {
+            next["on"] = action == "toggle" ? !prev_state.get("on", false).asBool() : true;
+            applied = true;
+        }
+        else if (action == "off")
+        {
             next["on"] = false;
-        else if (action_name == "volume_up")
+            applied = true;
+        }
+        else if (action == "volume_up")
+        {
             next["volume"] = prev_state.get("volume", 0).asInt() + std::max(1, paramInt(params, "count", 1));
-        else if (action_name == "volume_down")
+            applied = true;
+        }
+        else if (action == "volume_down")
+        {
             next["volume"] = std::max(0, prev_state.get("volume", 0).asInt() - std::max(1, paramInt(params, "count", 1)));
-        else if (action_name == "channel_up")
+            applied = true;
+        }
+        else if (action == "channel_up")
+        {
             next["channel"] = prev_state.get("channel", 0).asInt() + std::max(1, paramInt(params, "count", 1));
-        else if (action_name == "channel_down")
+            applied = true;
+        }
+        else if (action == "channel_down")
+        {
             next["channel"] = std::max(0, prev_state.get("channel", 0).asInt() - std::max(1, paramInt(params, "count", 1)));
-        else if (action_name == "mute")
+            applied = true;
+        }
+        else if (action == "mute")
+        {
             next["muted"] = !prev_state.get("muted", false).asBool();
-        else if (action_name == "open_app")
+            applied = true;
+        }
+        else if (action == "open_app")
+        {
             next["app"] = params.get("app", "").asString();
+            applied = true;
+        }
+        else if (action == "input" || action == "input_source" || action == "nav_up" || action == "nav_down"
+            || action == "nav_left" || action == "nav_right" || action == "select" || action == "home"
+            || action == "back" || action == "play_pause" || action == "send_key")
+        {
+            // Momentary / catalogued remote keys — ack without lasting state.
+            applied = true;
+        }
     }
     else if (device_class == "wave_station")
     {
-        if (action_name == "subscribe")
+        if (action == "subscribe")
+        {
             next["subscribed"] = true;
-        else if (action_name == "unsubscribe")
+            applied = true;
+        }
+        else if (action == "unsubscribe")
+        {
             next["subscribed"] = false;
-        else if (action_name == "send_ir")
+            applied = true;
+        }
+        else if (action == "send_ir")
+        {
             next["lastIrCommandId"] = params.get("commandId", params.get("command", "")).asString();
+            applied = true;
+        }
     }
     else if (device_class == "reolink_e1_pro")
     {
-        if (action_name == "start_stream")
+        if (action == "start_stream")
+        {
             next["streaming"] = true;
-        else if (action_name == "stop_stream")
+            applied = true;
+        }
+        else if (action == "stop_stream")
+        {
             next["streaming"] = false;
+            applied = true;
+        }
     }
 
     return next;

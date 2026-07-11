@@ -20,6 +20,7 @@
 #include "../core/logger.h"
 #include "../app/app_state.h"
 #include "../db/database.h"
+#include "../db/sqlite_vec_support.h"
 #include "demo_policy.h"
 #include "util/exe_path.h"
 
@@ -251,6 +252,10 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
 
     if (!test_mode)
     {
+        // Must run before Drogon opens SQLite connections so every pooled
+        // connection gets vec0 via sqlite3_auto_extension.
+        registerSqliteVecExtension();
+
         drogon::orm::Sqlite3Config db_config;
         db_config.connectionNumber = thread_num > 0 ? thread_num : 1;
         // Drogon uses sqlite3_open(); "?mode=ro" without the file: URI scheme opens a wrong path.
@@ -263,6 +268,16 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         app.registerBeginningAdvice([skip_db, read_only]()
         {
             auto client = drogon::app().getDbClient();
+            try
+            {
+                const auto rows = client->execSqlSync("SELECT vec_version() AS v");
+                if (!rows.empty())
+                    LOG_INFO("sqlite-vec ready: {}", rows[0]["v"].as<std::string>());
+            }
+            catch (const std::exception& e)
+            {
+                LOG_WARN("sqlite-vec probe failed (RAG will use text fallback): {}", e.what());
+            }
             if (read_only)
             {
                 try

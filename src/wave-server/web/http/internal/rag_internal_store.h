@@ -38,11 +38,13 @@ private:
         const Json::Value& target,
         const std::vector<float>* query_embedding) const;
 
+    /** Returns hits; ok=true only when the vec query executed without error. */
     Json::Value searchVecTable(
         const std::string& vec_table,
         const std::string& id_column,
         const std::vector<float>& query_embedding,
-        int top_k) const;
+        int top_k,
+        bool& ok) const;
 
     Json::Value searchSleepStat(const Json::Value& target, const std::vector<float>* query_embedding) const;
     Json::Value searchSleepReport(const Json::Value& target, const std::vector<float>* query_embedding) const;

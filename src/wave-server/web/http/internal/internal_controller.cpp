@@ -101,7 +101,9 @@ namespace
             body["demoRuntimeId"].asString().empty())
         {
             body["demoRuntimeId"] = resolveDemoRuntimeId(req, &body);
+            return;
         }
+        rememberPreferredDemoRuntimeId(body["demoRuntimeId"].asString());
     }
 
     void attachDemoRuntimeCookie(

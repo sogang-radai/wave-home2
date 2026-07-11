@@ -1,6 +1,7 @@
 #include "demo_runtime_id.h"
 
 #include <iomanip>
+#include <mutex>
 #include <random>
 #include <sstream>
 
@@ -8,6 +9,9 @@ WAVE_NAMESPACE_BEGIN
 
 namespace
 {
+    std::mutex g_preferredRuntimeMutex;
+    std::string g_preferredRuntimeId;
+
     std::string randomHex(size_t bytes)
     {
         static thread_local std::mt19937 rng{std::random_device{}()};
@@ -48,6 +52,31 @@ std::string generateDemoRuntimeId()
     return randomHex(16);
 }
 
+void rememberPreferredDemoRuntimeId(const std::string& runtime_id)
+{
+    if (runtime_id.size() < 8)
+        return;
+    std::lock_guard<std::mutex> lock(g_preferredRuntimeMutex);
+    g_preferredRuntimeId = runtime_id;
+}
+
+std::optional<std::string> preferredDemoRuntimeId()
+{
+    std::lock_guard<std::mutex> lock(g_preferredRuntimeMutex);
+    if (g_preferredRuntimeId.size() < 8)
+        return std::nullopt;
+    return g_preferredRuntimeId;
+}
+
+std::string fallbackDemoRuntimeId()
+{
+    if (const auto preferred = preferredDemoRuntimeId())
+        return *preferred;
+    const auto minted = generateDemoRuntimeId();
+    rememberPreferredDemoRuntimeId(minted);
+    return minted;
+}
+
 std::optional<std::string> demoRuntimeIdFromCookie(const drogon::HttpRequestPtr& req)
 {
     if (!req)
@@ -78,6 +107,7 @@ void attachDemoRuntimeCookieIfNeeded(
 {
     if (!resp || runtime_id.empty())
         return;
+    rememberPreferredDemoRuntimeId(runtime_id);
     // Always expose the active runtime id so the SPA can pin the session even
     // when Set-Cookie is not visible to fetch()/document.cookie.
     resp->addHeader(kDemoRuntimeHeaderName, runtime_id);

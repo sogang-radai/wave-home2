@@ -25,6 +25,7 @@ set(_wave_server_sources
     demo/demo_device_backend.cpp
     demo/demo_session_writes.cpp
     demo/demo_power_meter.cpp
+    db/sqlite_vec_support.cpp
     web/http/api_controller.cpp
     web/http/v1/health_controller.cpp
     web/http/v1/session_controller.cpp
@@ -106,6 +107,7 @@ add_executable(wave-server ${_wave_server_sources})
 
 include("${CMAKE_SOURCE_DIR}/cmake/ncnn.cmake")
 include("${CMAKE_SOURCE_DIR}/cmake/opus.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/fetch/sqlite_vec.cmake")
 
 find_package(OpenSSL REQUIRED)
 
@@ -123,7 +125,7 @@ if(WAVE_ARCH_AARCH64)
     target_compile_definitions(wave-server PRIVATE WAVE_ONNX_NEON=1)
 endif()
 
-set(_wave_server_libs drogon wave::asio wave::tuyapp ncnn nlohmann_json::nlohmann_json)
+set(_wave_server_libs drogon wave::asio wave::tuyapp ncnn nlohmann_json::nlohmann_json wave_sqlite_vec)
 if(WAVE_BUILD_TTS)
     include("${CMAKE_SOURCE_DIR}/cmake/sherpa_onnx.cmake")
     list(APPEND _wave_server_libs sherpa-onnx-cxx-api)

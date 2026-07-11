@@ -24,11 +24,18 @@ namespace
 
     std::string packEmbedding(const std::vector<float>& values)
     {
-        std::string blob;
-        blob.resize(values.size() * sizeof(float));
-        if (!values.empty())
-            std::memcpy(blob.data(), values.data(), blob.size());
-        return blob;
+        // sqlite-vec MATCH accepts JSON arrays; Drogon binds std::string as
+        // TEXT, so a float32 blob would be mis-parsed as JSON.
+        std::ostringstream stream;
+        stream << '[';
+        for (size_t i = 0; i < values.size(); ++i)
+        {
+            if (i > 0)
+                stream << ',';
+            stream << values[i];
+        }
+        stream << ']';
+        return stream.str();
     }
 
     Json::Value makeHit(int64_t ref_id, double score, const std::string& text)
@@ -277,8 +284,10 @@ Json::Value RagInternalStore::searchVecTable(
     const std::string& vec_table,
     const std::string& id_column,
     const std::vector<float>& query_embedding,
-    int top_k) const
+    int top_k,
+    bool& ok) const
 {
+    ok = false;
     Json::Value hits(Json::arrayValue);
     if (!tableExists(vec_table))
         return hits;
@@ -303,10 +312,11 @@ Json::Value RagInternalStore::searchVecTable(
             hit["text"] = "";
             hits.append(hit);
         }
+        ok = true;
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("vec search failed for {}: {}", vec_table, e.what());
+        LOG_WARN("vec search failed for {} (falling back to text): {}", vec_table, e.what());
     }
     return hits;
 }
@@ -330,26 +340,31 @@ Json::Value RagInternalStore::searchSleepStat(
 
     if (query_embedding && tableExists("vec_sleep_stat"))
     {
-        hits = searchVecTable("vec_sleep_stat", "stat_id", *query_embedding, top_k);
-        for (auto& hit : hits)
+        bool vec_ok = false;
+        hits = searchVecTable("vec_sleep_stat", "stat_id", *query_embedding, top_k, vec_ok);
+        if (vec_ok && !hits.empty())
         {
-            if (!hit.isMember("refId"))
-                continue;
-            const int64_t ref_id = hit["refId"].asInt64();
-            try
+            for (auto& hit : hits)
             {
-                const auto rows = m_client->execSqlSync(
-                    "SELECT summary_text FROM sleep_stat WHERE id = ? AND summary_text IS NOT NULL LIMIT 1",
-                    ref_id);
-                if (!rows.empty() && !rows[0]["summary_text"].isNull())
-                    hit["text"] = rows[0]["summary_text"].as<std::string>();
+                if (!hit.isMember("refId"))
+                    continue;
+                const int64_t ref_id = hit["refId"].asInt64();
+                try
+                {
+                    const auto rows = m_client->execSqlSync(
+                        "SELECT summary_text FROM sleep_stat WHERE id = ? AND summary_text IS NOT NULL LIMIT 1",
+                        ref_id);
+                    if (!rows.empty() && !rows[0]["summary_text"].isNull())
+                        hit["text"] = rows[0]["summary_text"].as<std::string>();
+                }
+                catch (const std::exception&)
+                {
+                }
             }
-            catch (const std::exception&)
-            {
-            }
+            entry["hits"] = hits;
+            return entry;
         }
-        entry["hits"] = hits;
-        return entry;
+        hits = Json::Value(Json::arrayValue);
     }
 
     if (!tableExists("sleep_stat"))
@@ -400,24 +415,29 @@ Json::Value RagInternalStore::searchSleepReport(
 
     if (query_embedding && tableExists("vec_sleep_report"))
     {
-        hits = searchVecTable("vec_sleep_report", "report_id", *query_embedding, top_k);
-        for (auto& hit : hits)
+        bool vec_ok = false;
+        hits = searchVecTable("vec_sleep_report", "report_id", *query_embedding, top_k, vec_ok);
+        if (vec_ok && !hits.empty())
         {
-            const int64_t ref_id = hit["refId"].asInt64();
-            try
+            for (auto& hit : hits)
             {
-                const auto rows = m_client->execSqlSync(
-                    "SELECT report_text FROM sleep_report WHERE id = ? AND report_text IS NOT NULL LIMIT 1",
-                    ref_id);
-                if (!rows.empty() && !rows[0]["report_text"].isNull())
-                    hit["text"] = rows[0]["report_text"].as<std::string>();
+                const int64_t ref_id = hit["refId"].asInt64();
+                try
+                {
+                    const auto rows = m_client->execSqlSync(
+                        "SELECT report_text FROM sleep_report WHERE id = ? AND report_text IS NOT NULL LIMIT 1",
+                        ref_id);
+                    if (!rows.empty() && !rows[0]["report_text"].isNull())
+                        hit["text"] = rows[0]["report_text"].as<std::string>();
+                }
+                catch (const std::exception&)
+                {
+                }
             }
-            catch (const std::exception&)
-            {
-            }
+            entry["hits"] = hits;
+            return entry;
         }
-        entry["hits"] = hits;
-        return entry;
+        hits = Json::Value(Json::arrayValue);
     }
 
     if (!tableExists("sleep_report"))
@@ -463,24 +483,29 @@ Json::Value RagInternalStore::searchPowerReport(
 
     if (query_embedding && tableExists("vec_power_report"))
     {
-        hits = searchVecTable("vec_power_report", "report_id", *query_embedding, top_k);
-        for (auto& hit : hits)
+        bool vec_ok = false;
+        hits = searchVecTable("vec_power_report", "report_id", *query_embedding, top_k, vec_ok);
+        if (vec_ok && !hits.empty())
         {
-            const int64_t ref_id = hit["refId"].asInt64();
-            try
+            for (auto& hit : hits)
             {
-                const auto rows = m_client->execSqlSync(
-                    "SELECT report_text FROM power_report WHERE id = ? AND report_text IS NOT NULL LIMIT 1",
-                    ref_id);
-                if (!rows.empty() && !rows[0]["report_text"].isNull())
-                    hit["text"] = rows[0]["report_text"].as<std::string>();
+                const int64_t ref_id = hit["refId"].asInt64();
+                try
+                {
+                    const auto rows = m_client->execSqlSync(
+                        "SELECT report_text FROM power_report WHERE id = ? AND report_text IS NOT NULL LIMIT 1",
+                        ref_id);
+                    if (!rows.empty() && !rows[0]["report_text"].isNull())
+                        hit["text"] = rows[0]["report_text"].as<std::string>();
+                }
+                catch (const std::exception&)
+                {
+                }
             }
-            catch (const std::exception&)
-            {
-            }
+            entry["hits"] = hits;
+            return entry;
         }
-        entry["hits"] = hits;
-        return entry;
+        hits = Json::Value(Json::arrayValue);
     }
 
     if (!tableExists("power_report"))

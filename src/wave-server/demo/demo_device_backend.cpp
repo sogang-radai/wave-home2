@@ -57,13 +57,24 @@ std::string resolveDemoRuntimeId(const drogon::HttpRequestPtr& req, const Json::
     {
         const auto id = (*body)["demoRuntimeId"].asString();
         if (!id.empty())
+        {
+            rememberPreferredDemoRuntimeId(id);
             return id;
+        }
     }
     if (const auto from_header = demoRuntimeIdFromHeader(req))
+    {
+        rememberPreferredDemoRuntimeId(*from_header);
         return *from_header;
+    }
     if (const auto from_cookie = demoRuntimeIdFromCookie(req))
+    {
+        rememberPreferredDemoRuntimeId(*from_cookie);
         return *from_cookie;
-    return generateDemoRuntimeId();
+    }
+    // Agent internal calls often omit the id when ContextVar is lost; reuse the
+    // last browser/chat session instead of minting an orphan one.
+    return fallbackDemoRuntimeId();
 }
 
 DemoDeviceBackend::DemoDeviceBackend(drogon::orm::DbClientPtr client) :
@@ -322,7 +333,13 @@ Json::Value DemoDeviceBackend::invokeAction(
         }
     }
 
-    auto next = demoApplyAction(device_class, prev, action_name, params);
+    bool applied = false;
+    auto next = demoApplyAction(device_class, prev, action_name, params, applied);
+    if (!applied)
+    {
+        code = "ACTION_NOT_FOUND";
+        return Json::Value();
+    }
     if (device_class == "tuya_ep2h")
     {
         const double rated = next.get("ratedPower", rated_power_for_device(device_id)).asDouble();
@@ -338,10 +355,15 @@ Json::Value DemoDeviceBackend::invokeAction(
     }
     saveState(runtime_id, device_id, next);
 
+    const std::string echoed_action =
+        (action_name == "power_off" || action_name == "turn_off" || action_name == "switch_off") ? "off"
+        : (action_name == "power_on" || action_name == "turn_on" || action_name == "switch_on") ? "on"
+        : action_name;
+
     Json::Value response;
     response["ok"] = true;
     response["deviceId"] = device_id;
-    response["action"] = action_name;
+    response["action"] = echoed_action;
     response["state"] = next;
     response["deviceName"] = rows[0]["name"].as<std::string>();
     return response;

@@ -111,9 +111,12 @@ namespace
         {
             const auto id = body["demoRuntimeId"].asString();
             if (!id.empty())
+            {
+                rememberPreferredDemoRuntimeId(id);
                 return id;
+            }
         }
-        return generateDemoRuntimeId();
+        return fallbackDemoRuntimeId();
     }
 
     std::string wireIdFromDbRow(int64_t db_id, const std::string& db_name)
@@ -466,7 +469,9 @@ std::optional<Json::Value> DevicesInternalStore::findListedDevice(
             const auto wire_id = wireIdFromDbRow(row->id, row->name);
             const auto runtime_id = demo_runtime_id && !demo_runtime_id->empty()
                 ? *demo_runtime_id
-                : generateDemoRuntimeId();
+                : fallbackDemoRuntimeId();
+            if (demo_runtime_id && !demo_runtime_id->empty())
+                rememberPreferredDemoRuntimeId(*demo_runtime_id);
             DemoDeviceBackend backend(m_client);
             std::string list_code;
             const auto listed = backend.listDevices(runtime_id, list_code);
@@ -555,7 +560,9 @@ Json::Value DevicesInternalStore::listDevices(
         DemoDeviceBackend backend(m_client);
         const auto runtime_id = demo_runtime_id && !demo_runtime_id->empty()
             ? *demo_runtime_id
-            : generateDemoRuntimeId();
+            : fallbackDemoRuntimeId();
+        if (demo_runtime_id && !demo_runtime_id->empty())
+            rememberPreferredDemoRuntimeId(*demo_runtime_id);
         const auto listed = backend.listDevices(runtime_id, code);
         if (!code.empty())
             return Json::Value();
@@ -714,7 +721,9 @@ Json::Value DevicesInternalStore::getState(
         DemoDeviceBackend backend(m_client);
         const auto runtime_id = demo_runtime_id && !demo_runtime_id->empty()
             ? *demo_runtime_id
-            : generateDemoRuntimeId();
+            : fallbackDemoRuntimeId();
+        if (demo_runtime_id && !demo_runtime_id->empty())
+            rememberPreferredDemoRuntimeId(*demo_runtime_id);
         return backend.getState(runtime_id, (*listed).get("id", "").asString(), code);
     }
 
