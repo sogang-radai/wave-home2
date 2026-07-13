@@ -90,11 +90,13 @@ type ChatTurnRequest = {
 
 // SSE 이벤트 (data: <json>\n\n)
 type ChatStreamEvent =
-  | { type: 'tool.start'; name: string; args: object }
-  | { type: 'tool.end'; name: string; ok: boolean; result?: object }
+  | { type: 'tool.start'; id?: string; name: string; args: object }
+  | { type: 'tool.end'; id?: string; name: string; ok: boolean; result?: object }
   | { type: 'message.delta'; content?: string; reasoning?: string }
   | { type: 'message.completed'; content: string; model: string };
 ```
+
+`tool.start` / `tool.end` 의 `id` 는 LangGraph tool run id 이다. 동일 `name` 이 한 턴에 여러 번 호출될 수 있으므로(예: `query_device` 병렬/연속), 클라이언트가 진행 표시를 갱신할 때는 **`id`로 매칭**해야 한다. `id`가 없으면 `tool.start`는 항상 새 항목으로 추가하고, `tool.end`는 같은 `name` 중 아직 `running`인 첫 항목을 갱신한다.
 
 
 
@@ -129,9 +131,9 @@ Connection: keep-alive
 본문 예시:
 
 ```text
-data: {"type":"tool.start","name":"control_device","args":{"room":"거실","appliance":"aircon","action":"on"}}
+data: {"type":"tool.start","id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","name":"control_device","args":{"room":"거실","appliance":"aircon","action":"on"}}
 
-data: {"type":"tool.end","name":"control_device","ok":true,"result":{"temperature":26}}
+data: {"type":"tool.end","id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","name":"control_device","ok":true,"result":{"temperature":26}}
 
 data: {"type":"message.delta","content":"거실 "}
 
@@ -145,7 +147,7 @@ data: [DONE]
 스트리밍 규칙:
 
 - 각 이벤트는 `data: <json>\n\n` 형식이다.
-- `message.delta.content` 를 누적하면 최종 답변이 된다. `tool.start`/`tool.end` 는 진행 표시용이다.
+- `message.delta.content` 를 누적하면 최종 답변이 된다. `tool.start`/`tool.end` 는 진행 표시용이다. 동일 도구가 여러 번 호출되면 `id`로 한 호출을 구분한다.
 - thinking 모델은 `message.delta.reasoning` 으로 추론 구간을 별도 전송한다.
 - 종료는 반드시 `data: [DONE]\n\n` 으로 마무리한다.
 - 스트림 시작 후 오류는 `data: {"type":"error","error":{...}}\n\n` 을 보낸 뒤 연결을 닫는다.

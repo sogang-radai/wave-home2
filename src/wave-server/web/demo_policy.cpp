@@ -81,6 +81,8 @@ namespace
             return true;
         if (path.starts_with("/api/v1/schedule-tasks"))
             return true;
+        if (path == "/api/v1/settings/ai-agent")
+            return true;
         if (path.starts_with("/internal/v1/alarms"))
             return true;
         if (path.starts_with("/internal/v1/schedule-tasks"))

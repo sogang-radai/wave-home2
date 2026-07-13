@@ -25,6 +25,33 @@ namespace
         return std::stoi(time.substr(0, 2)) * 60 + std::stoi(time.substr(3, 2));
     }
 
+    size_t utf8SequenceLength(unsigned char lead)
+    {
+        if (lead < 0x80)
+            return 1;
+        if ((lead & 0xE0) == 0xC0)
+            return 2;
+        if ((lead & 0xF0) == 0xE0)
+            return 3;
+        if ((lead & 0xF8) == 0xF0)
+            return 4;
+        return 0;
+    }
+
+    size_t utf8CodePointCount(const std::string& text)
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < text.size();)
+        {
+            const auto len = utf8SequenceLength(static_cast<unsigned char>(text[i]));
+            if (len == 0 || i + len > text.size())
+                break;
+            i += len;
+            ++count;
+        }
+        return count;
+    }
+
     bool parseJsonText(const std::string& text, Json::Value& out)
     {
         Json::CharReaderBuilder builder;
@@ -411,6 +438,32 @@ bool SettingsStore::putAiAgentSettings(
     out = getAiAgentSettings(user_id);
     for (const auto& key : body.getMemberNames())
         out[key] = body[key];
+
+    if (body.isMember("personalPrompt"))
+    {
+        if (!body["personalPrompt"].isString())
+        {
+            error = "personalPrompt는 문자열이어야 합니다.";
+            field = "personalPrompt";
+            return false;
+        }
+        // Always replace from the request body (never concatenate with the previous value).
+        const auto prompt = body["personalPrompt"].asString();
+        if (utf8CodePointCount(prompt) > kPersonalPromptMaxChars)
+        {
+            error = "개인 프롬프트는 " + std::to_string(kPersonalPromptMaxChars) + "자 이하여야 합니다.";
+            field = "personalPrompt";
+            return false;
+        }
+        const auto start = prompt.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos)
+            out["personalPrompt"] = "";
+        else
+        {
+            const auto end = prompt.find_last_not_of(" \t\r\n");
+            out["personalPrompt"] = prompt.substr(start, end - start + 1);
+        }
+    }
 
     if (out.isMember("selectedModelId") && !modelExists(listAiModels(), out["selectedModelId"].asString()))
     {

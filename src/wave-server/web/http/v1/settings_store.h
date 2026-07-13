@@ -14,6 +14,9 @@ WAVE_NAMESPACE_BEGIN
 namespace web {
 namespace v1 {
 
+/** Matches wave-home-front AiAgentSettings PROMPT_LIMIT (Unicode code points). */
+inline constexpr size_t kPersonalPromptMaxChars = 10000;
+
 class SessionStore;
 
 class SettingsStore

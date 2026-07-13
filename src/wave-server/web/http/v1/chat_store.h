@@ -62,6 +62,12 @@ public:
     int64_t nextMessageId(const Json::Value& messages) const;
     Json::Value makeAssistantShell(int64_t message_id, const std::string& created_at) const;
 
+    /** Accept ChatStore array or mock seed {"messages":[{role,content},...]} and
+     *  normalize to [{id,role,text,createdAt},...] (system rows dropped). */
+    static Json::Value normalizeMessagesJson(
+        Json::Value raw,
+        const std::string& fallback_db_time = {});
+
 private:
     drogon::orm::DbClientPtr m_client;
 

@@ -1,6 +1,9 @@
 #include "settings_controller.h"
 
 #include "../../../app/app_state.h"
+#include "../../../demo/demo_device_backend.h"
+#include "../../../demo/demo_runtime_id.h"
+#include "../../../demo/demo_session_writes.h"
 #include "session_store.h"
 #include "settings_store.h"
 
@@ -31,6 +34,16 @@ namespace
         }
 
         on_ready(*user_id);
+    }
+
+    drogon::HttpResponsePtr demoJsonResponse(
+        const drogon::HttpRequestPtr& req,
+        const Json::Value& body,
+        const std::string& runtime_id)
+    {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        return resp;
     }
 }
 
@@ -160,6 +173,16 @@ void SettingsController::getAiAgent(
 {
     requireDbAndActiveUser(req, callback, [&](int64_t user_id)
     {
+        if (demoVirtualDevicesEnabled())
+        {
+            const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+            callback(demoJsonResponse(
+                req,
+                demoGetAiAgentSettings(runtime_id, user_id, AppState::get().db()),
+                runtime_id));
+            return;
+        }
+
         SettingsStore store(AppState::get().db());
         callback(drogon::HttpResponse::newHttpJsonResponse(store.getAiAgentSettings(user_id)));
     });
@@ -178,13 +201,37 @@ void SettingsController::putAiAgent(
 
     requireDbAndActiveUser(req, callback, [&](int64_t user_id)
     {
+        if (demoVirtualDevicesEnabled())
+        {
+            const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+            std::string error;
+            std::string field;
+            const auto saved = demoPutAiAgentSettings(
+                runtime_id, user_id, *json, AppState::get().db(), error, field);
+            if (saved.isNull() || !saved.isObject())
+            {
+                respondError(
+                    callback,
+                    400,
+                    field == "personalPrompt" ? "PROMPT_TOO_LONG" : "INVALID_BODY",
+                    error.empty() ? "AI 에이전트 설정을 저장하지 못했습니다." : error,
+                    field);
+                return;
+            }
+            callback(demoJsonResponse(req, saved, runtime_id));
+            return;
+        }
+
         SettingsStore store(AppState::get().db());
         Json::Value saved;
         std::string error;
         std::string field;
         if (!store.putAiAgentSettings(user_id, *json, saved, error, field))
         {
-            respondError(callback, 400, "INVALID_MODEL", error);
+            const auto code = field == "personalPrompt"
+                ? "PROMPT_TOO_LONG"
+                : (field == "selectedModelId" ? "INVALID_MODEL" : "INVALID_BODY");
+            respondError(callback, 400, code, error, field);
             return;
         }
         callback(drogon::HttpResponse::newHttpJsonResponse(saved));

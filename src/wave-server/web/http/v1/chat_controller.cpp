@@ -1,8 +1,10 @@
 #include "chat_controller.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -107,6 +109,9 @@ namespace
             {"query_db", "DB 조회"},
             {"rag_search", "메모리 검색"},
             {"list_devices", "기기 목록 조회"},
+            {"get_device_classes", "기기 종류 조회"},
+            {"get_device_capabilities", "기기 기능 조회"},
+            {"query_device", "기기 조회"},
             {"control_device", "기기 제어"},
             {"get_schedule_tasks", "일정 조회"},
             {"update_schedule_task", "일정 수정"},
@@ -168,9 +173,12 @@ namespace
         const std::string& result_summary = {},
         bool failed = false,
         const Json::Value& args = Json::nullValue,
-        const Json::Value& result = Json::nullValue)
+        const Json::Value& result = Json::nullValue,
+        const std::string& id = {})
     {
         Json::Value event;
+        if (!id.empty())
+            event["id"] = id;
         event["name"] = name;
         event["status"] = running ? "running" : (failed ? "failed" : "done");
         event["label"] = toolLabel(name, running, failed);
@@ -181,6 +189,34 @@ namespace
         if (!result.isNull())
             event["result"] = result;
         return event;
+    }
+
+    // Prefer agent run id; fall back to first running row with the same name
+    // so parallel same-name tools (e.g. many query_device) do not overwrite.
+    std::optional<Json::ArrayIndex> findToolEventIndex(
+        const Json::Value& tool_events,
+        const std::unordered_map<std::string, Json::ArrayIndex>& tool_index,
+        const std::string& id,
+        const std::string& name,
+        bool prefer_running)
+    {
+        if (!id.empty())
+        {
+            const auto it = tool_index.find(id);
+            if (it != tool_index.end())
+                return it->second;
+        }
+        if (prefer_running)
+        {
+            for (Json::ArrayIndex i = 0; i < tool_events.size(); ++i)
+            {
+                const auto& te = tool_events[i];
+                if (te.isMember("name") && te["name"].asString() == name
+                    && te.isMember("status") && te["status"].asString() == "running")
+                    return i;
+            }
+        }
+        return std::nullopt;
     }
 
     std::string buildAgentNow()
@@ -265,6 +301,47 @@ namespace
         return out;
     }
 
+    std::string trimPersonalPrompt(const std::string& value)
+    {
+        const auto start = value.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos)
+            return {};
+        const auto end = value.find_last_not_of(" \t\r\n");
+        return value.substr(start, end - start + 1);
+    }
+
+    std::string resolvePersonalPrompt(int64_t user_id, const std::string& demo_runtime_id)
+    {
+        if (!demo_runtime_id.empty())
+            return demoResolvePersonalPrompt(demo_runtime_id, user_id, AppState::get().db());
+
+        SettingsStore settings(AppState::get().db());
+        const auto agent = settings.getAiAgentSettings(user_id);
+        if (!agent.isMember("personalPrompt") || !agent["personalPrompt"].isString())
+            return {};
+        return trimPersonalPrompt(agent["personalPrompt"].asString());
+    }
+
+    void prependPersonalPrompt(
+        std::vector<service::AgentChatMessage>& messages,
+        int64_t user_id,
+        const std::string& demo_runtime_id)
+    {
+        // Drop any prior system rows so an updated personal prompt replaces
+        // rather than stacking on top of an older injection.
+        messages.erase(
+            std::remove_if(
+                messages.begin(),
+                messages.end(),
+                [](const service::AgentChatMessage& message) { return message.role == "system"; }),
+            messages.end());
+
+        const auto prompt = resolvePersonalPrompt(user_id, demo_runtime_id);
+        if (prompt.empty())
+            return;
+        messages.insert(messages.begin(), {"system", prompt});
+    }
+
     std::optional<int64_t> parseRequiredInt64(
         const Json::Value& json,
         const char* field,
@@ -312,23 +389,34 @@ namespace
                 if (type == "tool.start")
                 {
                     const std::string name = event.value("name", "");
+                    const std::string id = event.value("id", "");
                     const Json::Value args = event.contains("args")
                         ? nlohmannToJsonCpp(event["args"])
                         : Json::Value(Json::nullValue);
+                    Json::Value stored = makeToolEvent(name, true, {}, false, args, Json::nullValue, id);
                     Json::Value payload;
                     payload["type"] = "tool_start";
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
-                    payload["toolEvent"] = makeToolEvent(name, true, {}, false, args);
+                    payload["toolEvent"] = stored;
                     if (!sendSseEvent(stream, payload))
                         return false;
 
-                    Json::Value stored = makeToolEvent(name, true, {}, false, args);
-                    if (tool_index.count(name) > 0)
-                        tool_events[tool_index[name]] = stored;
+                    // Never overwrite a completed same-name tool — that caused UI flicker
+                    // when many query_device calls shared one name-keyed slot.
+                    if (!id.empty())
+                    {
+                        const auto it = tool_index.find(id);
+                        if (it != tool_index.end())
+                            tool_events[it->second] = stored;
+                        else
+                        {
+                            tool_index[id] = tool_events.size();
+                            tool_events.append(stored);
+                        }
+                    }
                     else
                     {
-                        tool_index[name] = tool_events.size();
                         tool_events.append(stored);
                     }
                     return true;
@@ -337,6 +425,7 @@ namespace
                 if (type == "tool.end")
                 {
                     const std::string name = event.value("name", "");
+                    const std::string id = event.value("id", "");
                     const bool failed = event.contains("ok") && event["ok"].is_boolean() && !event["ok"].get<bool>();
                     const json& raw_result = event.contains("result") ? event["result"] : json();
                     const std::string result_summary = summarizeToolResult(raw_result);
@@ -344,23 +433,36 @@ namespace
                         ? nlohmannToJsonCpp(raw_result)
                         : Json::Value(Json::nullValue);
                     Json::Value prior_args = Json::nullValue;
-                    if (tool_index.count(name) > 0 && tool_events[tool_index[name]].isMember("args"))
-                        prior_args = tool_events[tool_index[name]]["args"];
+                    const auto existing = findToolEventIndex(tool_events, tool_index, id, name, true);
+                    if (existing && tool_events[*existing].isMember("args"))
+                        prior_args = tool_events[*existing]["args"];
+                    const std::string stored_id = !id.empty()
+                        ? id
+                        : (existing && tool_events[*existing].isMember("id")
+                            ? tool_events[*existing]["id"].asString()
+                            : std::string{});
+                    Json::Value stored = makeToolEvent(
+                        name, false, result_summary, failed, prior_args, result, stored_id);
                     Json::Value payload;
                     payload["type"] = "tool_end";
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
-                    payload["toolEvent"] = makeToolEvent(name, false, result_summary, failed, prior_args, result);
+                    payload["toolEvent"] = stored;
                     if (!sendSseEvent(stream, payload))
                         return false;
 
-                    Json::Value stored = makeToolEvent(name, false, result_summary, failed, prior_args, result);
-                    if (tool_index.count(name) > 0)
-                        tool_events[tool_index[name]] = stored;
+                    if (existing)
+                    {
+                        tool_events[*existing] = stored;
+                        if (!stored_id.empty())
+                            tool_index[stored_id] = *existing;
+                    }
                     else
                     {
-                        tool_index[name] = tool_events.size();
+                        const auto idx = tool_events.size();
                         tool_events.append(stored);
+                        if (!stored_id.empty())
+                            tool_index[stored_id] = idx;
                     }
                     return true;
                 }
@@ -489,12 +591,15 @@ namespace
         std::string accumulated_reasoning;
         Json::Value tool_events(Json::arrayValue);
 
+        auto agent_messages = store.buildAgentMessages(messages);
+        prependPersonalPrompt(agent_messages, user_id, demo_runtime_id);
+
         runAgentStreamCore(
             stream,
             user_id,
             conversation_id,
             assistant_id,
-            store.buildAgentMessages(messages),
+            agent_messages,
             accumulated_text,
             accumulated_reasoning,
             tool_events,
@@ -627,7 +732,7 @@ namespace
         int64_t assistant_message_id,
         const Json::Value& messages_json)
     {
-        const auto agent_messages = buildAgentMessagesFromJson(messages_json);
+        auto agent_messages = buildAgentMessagesFromJson(messages_json);
         if (agent_messages.empty())
         {
             respondError(callback, 400, "INVALID_MESSAGE", "메시지 기록이 비어 있습니다.", "messages");
@@ -637,6 +742,7 @@ namespace
         const auto demo_runtime_id = demoVirtualDevicesEnabled()
             ? resolveDemoRuntimeId(req, nullptr)
             : std::string{};
+        prependPersonalPrompt(agent_messages, user_id, demo_runtime_id);
 
         auto resp = drogon::HttpResponse::newAsyncStreamResponse(
             [user_id, conversation_id, assistant_message_id, agent_messages, demo_runtime_id](
@@ -787,8 +893,10 @@ void ChatController::createConversation(
         std::string assistant_text;
         std::string model;
         std::string agent_error;
-        const auto agent_messages = store.buildAgentMessages((*created)["messages"]);
-        const auto agent_result = callAgentSync(conversation_id, *user_id, agent_messages, assistant_text, model, agent_error);
+        auto agent_messages = store.buildAgentMessages((*created)["messages"]);
+        prependPersonalPrompt(agent_messages, *user_id, runtime_id);
+        const auto agent_result = callAgentSync(
+            conversation_id, *user_id, agent_messages, assistant_text, model, agent_error, runtime_id);
         if (agent_result != service::AgentClientResult::success)
         {
             respondError(callback, 502, "AI_PROVIDER_ERROR", "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.");
@@ -1037,8 +1145,10 @@ void ChatController::appendMessage(
     std::string assistant_text;
     std::string model;
     std::string agent_error;
-    const auto agent_messages = store.buildAgentMessages((*appended)["messages"]);
-    const auto agent_result = callAgentSync(*id, *user_id, agent_messages, assistant_text, model, agent_error);
+    auto agent_messages = store.buildAgentMessages((*appended)["messages"]);
+    prependPersonalPrompt(agent_messages, *user_id, runtime_id);
+    const auto agent_result = callAgentSync(
+        *id, *user_id, agent_messages, assistant_text, model, agent_error, runtime_id);
     if (agent_result != service::AgentClientResult::success)
     {
         respondError(callback, 502, "AI_PROVIDER_ERROR", "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.");
@@ -1193,13 +1303,19 @@ void ChatController::askInsight(
         return;
     }
 
+    const auto demo_runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string{};
+
     std::vector<service::AgentChatMessage> messages;
     messages.push_back({"user", text});
+    prependPersonalPrompt(messages, *user_id, demo_runtime_id);
 
     std::string reply;
     std::string model;
     std::string agent_error;
-    const auto agent_result = callAgentSync(0, *user_id, messages, reply, model, agent_error);
+    const auto agent_result = callAgentSync(
+        0, *user_id, messages, reply, model, agent_error, demo_runtime_id);
     if (agent_result != service::AgentClientResult::success)
     {
         respondError(callback, 502, "AI_PROVIDER_ERROR", "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.");

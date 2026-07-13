@@ -110,6 +110,65 @@ int64_t ChatStore::nextMessageId(const Json::Value& messages) const
     return max_id + 1;
 }
 
+Json::Value ChatStore::normalizeMessagesJson(Json::Value raw, const std::string& fallback_db_time)
+{
+    if (raw.isObject() && raw.isMember("messages"))
+        raw = raw["messages"];
+    if (!raw.isArray())
+        return Json::Value(Json::arrayValue);
+
+    Json::Value out(Json::arrayValue);
+    int64_t next_id = 1;
+    const std::string created_at = fallback_db_time.empty()
+        ? toCreatedAtIso("")
+        : toCreatedAtIso(fallback_db_time);
+
+    for (const auto& entry : raw)
+    {
+        if (!entry.isObject())
+            continue;
+
+        const std::string role = entry.get("role", "").asString();
+        if (role != "user" && role != "assistant")
+            continue;
+
+        std::string text;
+        if (entry.isMember("text") && entry["text"].isString())
+            text = entry["text"].asString();
+        else if (entry.isMember("content") && entry["content"].isString())
+            text = entry["content"].asString();
+        if (text.empty())
+            continue;
+
+        Json::Value message;
+        if (entry.isMember("id") && entry["id"].isIntegral())
+            message["id"] = entry["id"];
+        else
+            message["id"] = static_cast<Json::Int64>(next_id++);
+        message["role"] = role;
+        message["text"] = text;
+        if (entry.isMember("createdAt") && entry["createdAt"].isString())
+            message["createdAt"] = entry["createdAt"].asString();
+        else
+            message["createdAt"] = created_at;
+        if (role == "assistant")
+        {
+            if (entry.isMember("status"))
+                message["status"] = entry["status"];
+            else
+                message["status"] = "done";
+            if (entry.isMember("toolEvents") && entry["toolEvents"].isArray())
+                message["toolEvents"] = entry["toolEvents"];
+            else
+                message["toolEvents"] = Json::Value(Json::arrayValue);
+            if (entry.isMember("reasoning"))
+                message["reasoning"] = entry["reasoning"];
+        }
+        out.append(message);
+    }
+    return out;
+}
+
 Json::Value ChatStore::parseMessagesColumn(const std::string& raw) const
 {
     if (raw.empty())
@@ -119,9 +178,9 @@ Json::Value ChatStore::parseMessagesColumn(const std::string& raw) const
     Json::CharReaderBuilder builder;
     std::string errors;
     std::istringstream stream(raw);
-    if (!Json::parseFromStream(builder, stream, &out, &errors) || !out.isArray())
+    if (!Json::parseFromStream(builder, stream, &out, &errors))
         return Json::Value(Json::arrayValue);
-    return out;
+    return normalizeMessagesJson(std::move(out));
 }
 
 std::string ChatStore::serializeMessages(const Json::Value& messages) const
@@ -490,7 +549,7 @@ Json::Value ChatStore::defaultSuggestions() const
     Json::Value insight_suggestions(Json::arrayValue);
     const char* insight_prompts[] = {
         "오늘 수면 인사이트 알려줘",
-        "자세 점수가 왜 낮아졌어?",
+        "이번 주 전력 사용량 어때?",
         "오늘 심박수 어때?",
     };
     for (size_t i = 0; i < sizeof(insight_prompts) / sizeof(insight_prompts[0]); ++i)
@@ -513,7 +572,7 @@ Json::Value ChatStore::defaultSuggestions() const
 
     const SuggestionSeed pool[] = {
         {"sug_welcome_sleep_analysis", "moon", "수면 분석", "어젯밤 수면 점수를 분석해줘"},
-        {"sug_welcome_posture", "posture", "자세 교정", "거북목 개선 스트레칭 루틴 추천해줘"},
+        {"sug_welcome_power", "energy", "전력 점검", "지금 집 전체 전력 사용량 알려줘"},
         {"sug_welcome_heart", "heart", "심박 트렌드", "오늘 심박수가 평소와 다른 이유가 뭐야?"},
         {"sug_welcome_iot", "home", "가전 자동화", "취침 전 가전 자동화 설정 도와줘"},
         {"sug_welcome_health", "plan", "헬스 루틴", "이번 주 건강 목표를 세워줘"},
