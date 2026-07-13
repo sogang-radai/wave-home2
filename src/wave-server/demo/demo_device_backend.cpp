@@ -30,19 +30,6 @@ namespace
             return "light";
         return "";
     }
-
-    double rated_power_for_device(const std::string& device_id)
-    {
-        if (device_id == "0000000000000006")
-            return 20.0;
-        if (device_id == "0000000000000007")
-            return 100.0;
-        if (device_id == "0000000000000008")
-            return 600.0;
-        if (device_id == "0000000000000009")
-            return 2400.0;
-        return 0.0;
-    }
 }
 
 bool demoVirtualDevicesEnabled()
@@ -105,7 +92,7 @@ Json::Value DemoDeviceBackend::deviceRowToJson(const drogon::orm::Row& row, cons
     if (!row["room_id"].isNull())
     {
         Json::Value room;
-        room["id"] = static_cast<Json::Int64>(row["room_id"].as<int64_t>());
+        room["id"] = dev::wireIdForDbRow(row["room_id"].as<int64_t>());
         room["name"] = row["room_name"].as<std::string>();
         item["room"] = room;
     }
@@ -137,8 +124,9 @@ Json::Value DemoDeviceBackend::stateForDevice(
     auto state = demoSeedStateForClass(device_class);
     if (device_class == "tuya_ep2h")
     {
-        const double rated_power = rated_power_for_device(device_id);
-        const bool switch_on = device_id != "0000000000000009";
+        const double rated_power = DemoPowerMeter::ratedPowerForDevice(device_id);
+        const bool switch_on =
+            device_id != "0000000000000009" && device_id != "000000000000000e";
         state["switch"] = switch_on;
         state["ratedPower"] = rated_power;
         state["voltage"] = 235.0;
@@ -228,11 +216,15 @@ Json::Value DemoDeviceBackend::getState(
     auto state = stateForDevice(runtime_id, device_id, device_class);
     if (device_class == "tuya_ep2h")
     {
+        // Refresh from the shared table so code edits take effect even if the
+        // session already cached an older ratedPower.
+        const double rated_power = DemoPowerMeter::ratedPowerForDevice(device_id);
+        state["ratedPower"] = rated_power;
         const auto reading = DemoPowerMeter::instance().samplePlug(
             runtime_id,
             device_id,
             state.get("switch", false).asBool(),
-            state.get("ratedPower", rated_power_for_device(device_id)).asDouble(),
+            rated_power,
             state.get("voltage", 235.0).asDouble());
         state["power"] = reading.power_w;
         state["current"] = reading.current_ma;
@@ -258,29 +250,36 @@ Json::Value DemoDeviceBackend::queryDevice(
         return Json::Value();
 
     Json::Value state = state_body["state"];
-    if (state.isObject() && state.isMember("ratedPower"))
-    {
-        const auto reading = DemoPowerMeter::instance().samplePlug(
-            runtime_id,
-            device_id,
-            state.get("switch", false).asBool(),
-            state.get("ratedPower", 0.0).asDouble(),
-            state.get("voltage", 235.0).asDouble());
-        state["power"] = reading.power_w;
-        state["current"] = reading.current_ma;
-        state["voltage"] = reading.voltage_v;
-        saveState(runtime_id, device_id, state);
-    }
 
     Json::Value response;
     response["deviceId"] = device_id;
     response["query"] = query_name;
     if (query_name == "status" || query_name == "state")
+    {
         response["result"] = state;
+    }
     else if (state.isObject() && state.isMember(query_name))
-        response["result"] = state[query_name];
+    {
+        // device-tool-api: result 는 항상 object. scalar 는 { queryName: value } 로 감싼다.
+        const auto& value = state[query_name];
+        if (value.isObject())
+        {
+            response["result"] = value;
+        }
+        else
+        {
+            Json::Value wrapped(Json::objectValue);
+            wrapped[query_name] = value;
+            response["result"] = wrapped;
+        }
+    }
     else
-        response["result"] = state;
+    {
+        // Unknown query names used to silently return the whole state, which made
+        // LLM mistakes like query="off" look successful and encouraged retries.
+        code = "QUERY_NOT_FOUND";
+        return Json::Value();
+    }
     return response;
 }
 
@@ -344,7 +343,7 @@ Json::Value DemoDeviceBackend::invokeAction(
     }
     if (device_class == "tuya_ep2h")
     {
-        const double rated = next.get("ratedPower", rated_power_for_device(device_id)).asDouble();
+        const double rated = DemoPowerMeter::ratedPowerForDevice(device_id);
         const bool switch_on = next.get("switch", false).asBool();
         const double voltage = next.get("voltage", 235.0).asDouble();
         DemoPowerMeter::instance().syncPlug(runtime_id, device_id, switch_on, rated, voltage);
@@ -358,8 +357,12 @@ Json::Value DemoDeviceBackend::invokeAction(
     saveState(runtime_id, device_id, next);
 
     const std::string echoed_action =
-        (action_name == "power_off" || action_name == "turn_off" || action_name == "switch_off") ? "off"
-        : (action_name == "power_on" || action_name == "turn_on" || action_name == "switch_on") ? "on"
+        (action_name == "power_off" || action_name == "turn_off" || action_name == "switch_off"
+         || action_name == "powerOff" || action_name == "turnOff" || action_name == "끄기"
+         || action_name == "disable" || action_name == "shutdown") ? "off"
+        : (action_name == "power_on" || action_name == "turn_on" || action_name == "switch_on"
+           || action_name == "powerOn" || action_name == "turnOn" || action_name == "켜기"
+           || action_name == "enable") ? "on"
         : action_name;
 
     Json::Value response;

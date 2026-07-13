@@ -73,17 +73,37 @@ namespace
         std::cout << '\n';
     }
 
+    bool isSensorTarget(const std::string& target)
+    {
+        return target == "ambient_light" || target == "lux"
+            || target == "temperature" || target == "temp"
+            || target == "humidity";
+    }
+
+    std::string normalizeTarget(const std::string& target)
+    {
+        if (target == "lux")
+            return "ambient_light";
+        if (target == "temp")
+            return "temperature";
+        if (target == "ir")
+            return "ir_receive";
+        return target;
+    }
+
     void printHelp()
     {
         std::cout <<
             "commands:\n"
             "  gc gs gst gml genv gir     get caps / session / status / mic_level / env / last_ir\n"
-            "  sub <target>               subscribe (mic_opus|mic_pcm|ir_receive|ambient_light|...)\n"
+            "  sub <target>               subscribe (mic_opus|mic_pcm|ir_receive|\n"
+            "                             ambient_light|temperature|humidity)\n"
             "  unsub <target>             unsubscribe\n"
             "  ir <commandId> [repeat]    send_ir from ir_list.json\n"
             "  irtx <us...> [--carrier N] [--repeat N]\n"
             "                             send raw IR timings (microseconds)\n"
             "  irrx [seconds]             wait for raw IR receive (default 30)\n"
+            "  env [seconds]              subscribe sensors + poll until data (default 10)\n"
             "  rec wav <path> [seconds]   record mic to WAV (default 5)\n"
             "  play wav <path>            play WAV on speaker\n"
             "  mic                        fetch latest mic frame (subscribes if needed)\n"
@@ -145,6 +165,37 @@ namespace
         RadaiWs& m_ws;
         bool m_hadIr = false;
         bool m_subscribed = false;
+    };
+
+    class ScopedEnvSubscription
+    {
+    public:
+        explicit ScopedEnvSubscription(RadaiWs& ws) :
+            m_ws(ws)
+        {
+            const auto state = ws.getSubscriptionState();
+            maybeSubscribe("ambient_light", state.ambientLight);
+            maybeSubscribe("temperature", state.temperature);
+            maybeSubscribe("humidity", state.humidity);
+        }
+
+        ~ScopedEnvSubscription()
+        {
+            for (const auto& target : m_subscribed)
+                (void)m_ws.invoke("unsubscribe", {{"target", target}});
+        }
+
+    private:
+        void maybeSubscribe(const std::string& target, bool already)
+        {
+            if (already)
+                return;
+            if (m_ws.invoke("subscribe", {{"target", target}, {"intervalMs", 1000}}) == 0)
+                m_subscribed.push_back(target);
+        }
+
+        RadaiWs& m_ws;
+        std::vector<std::string> m_subscribed;
     };
 
     struct WavPcm
@@ -364,6 +415,18 @@ namespace
             return false;
         }
 
+        // Keep enough backlog so a slow drain loop does not drop 20ms frames.
+        const size_t prevQueue = source.getAudioQueueSize();
+        source.setAudioQueueSize(std::max<size_t>(prevQueue, 64));
+
+        // Drop stale frames already sitting in the queue.
+        {
+            AudioFrame discard;
+            while (source.popFrame(discard))
+            {
+            }
+        }
+
         std::vector<int16_t> captured;
         captured.reserve(static_cast<size_t>(fmt.sampleRate) * fmt.channels * seconds);
 
@@ -373,10 +436,28 @@ namespace
         while (std::chrono::steady_clock::now() < deadline)
         {
             AudioFrame frame;
-            if (source.getLatestFrame(frame) && !frame.samples.empty())
-                captured.insert(captured.end(), frame.samples.begin(), frame.samples.end());
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            bool got = false;
+            while (source.popFrame(frame))
+            {
+                got = true;
+                if (!frame.samples.empty())
+                    captured.insert(captured.end(), frame.samples.begin(), frame.samples.end());
+            }
+            if (!got)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
+
+        // Drain remaining queued frames that arrived near the deadline.
+        {
+            AudioFrame frame;
+            while (source.popFrame(frame))
+            {
+                if (!frame.samples.empty())
+                    captured.insert(captured.end(), frame.samples.begin(), frame.samples.end());
+            }
+        }
+
+        source.setAudioQueueSize(prevQueue);
 
         if (captured.empty())
         {
@@ -396,7 +477,10 @@ namespace
             return false;
         }
 
-        std::cout << "  saved " << wav.samples.size() << " samples -> " << path << '\n';
+        const double durationSec =
+            static_cast<double>(wav.samples.size()) / static_cast<double>(wav.sampleRate * wav.channels);
+        std::cout << "  saved " << wav.samples.size() << " samples ("
+                  << durationSec << "s) -> " << path << '\n';
         return true;
     }
 
@@ -424,6 +508,9 @@ namespace
 
         std::cout << "  playing " << path << " (" << wav.samples.size() << " samples)\n";
 
+        const auto start = std::chrono::steady_clock::now();
+        size_t samplesSent = 0;
+
         for (size_t offset = 0; offset < wav.samples.size(); offset += frameSamples)
         {
             const size_t count = std::min(frameSamples, wav.samples.size() - offset);
@@ -437,7 +524,11 @@ namespace
                 return false;
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(frameMs));
+            samplesSent += count;
+            const auto target = start + std::chrono::microseconds(
+                static_cast<int64_t>(samplesSent) * 1000000
+                / static_cast<int64_t>(sinkFmt.sampleRate * sinkFmt.channels));
+            std::this_thread::sleep_until(target);
         }
 
         sink.stopPlayback();
@@ -479,10 +570,16 @@ namespace
             in >> target;
             if (target.empty())
             {
-                std::cout << "  usage: sub <mic_opus|mic_pcm|ir_receive|ambient_light|...>\n";
+                std::cout << "  usage: sub <mic_opus|mic_pcm|ir_receive|ambient_light|temperature|humidity>\n";
                 return true;
             }
-            printInvoke("subscribe", ws.invoke("subscribe", {{"target", target}}));
+            target = normalizeTarget(target);
+            json params = {{"target", target}};
+            if (isSensorTarget(target))
+                params["intervalMs"] = 1000;
+            printInvoke("subscribe", ws.invoke("subscribe", params));
+            if (isSensorTarget(target))
+                std::cout << "  tip: use 'genv' or 'env' to read sensor values\n";
             return true;
         }
 
@@ -495,7 +592,48 @@ namespace
                 std::cout << "  usage: unsub <target>\n";
                 return true;
             }
+            target = normalizeTarget(target);
             printInvoke("unsubscribe", ws.invoke("unsubscribe", {{"target", target}}));
+            return true;
+        }
+
+        if (cmd == "env")
+        {
+            int seconds = 10;
+            in >> seconds;
+            if (seconds <= 0)
+                seconds = 10;
+
+            ScopedEnvSubscription guard(ws);
+            json before = ws.query("env", json::object());
+            std::cout << "  waiting for env updates (" << seconds << "s)...\n";
+            if (!before.empty())
+            {
+                std::cout << "  current:\n";
+                printResult(before);
+            }
+
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                json current = ws.query("env", json::object());
+                if (!current.empty() && current != before)
+                {
+                    std::cout << "  env update:\n";
+                    printResult(current);
+                    before = current;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            }
+
+            json finalEnv = ws.query("env", json::object());
+            if (finalEnv.empty())
+                std::cout << "  no env data received (check ESP SensorBody quality!=0)\n";
+            else
+            {
+                std::cout << "  final:\n";
+                printResult(finalEnv);
+            }
             return true;
         }
 

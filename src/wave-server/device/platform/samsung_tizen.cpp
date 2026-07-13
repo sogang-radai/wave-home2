@@ -1449,8 +1449,30 @@ int SamsungTizen::wakeDisplay()
 
 int SamsungTizen::powerOn()
 {
-    if (m_sessionState == SessionState::Connected)
-        return 0;
+    // Soft-off keeps the remote session alive; wake with KEY_POWER instead of WoL.
+    if (m_sessionState == SessionState::Connected && m_impl->ws.isConnected())
+    {
+        std::string power = m_cachedPowerState;
+        json info;
+        if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
+            && info.contains("device"))
+        {
+            power = info["device"].value("PowerState", "");
+            m_cachedPowerState = power;
+            m_restCacheTime = std::chrono::steady_clock::now();
+        }
+
+        if (power == "on")
+            return 0;
+
+        const int rc = sendRemoteKey("KEY_POWER");
+        if (rc == 0)
+        {
+            m_cachedPowerState = "on";
+            m_restCacheTime = std::chrono::steady_clock::now();
+        }
+        return rc;
+    }
 
     wakeDisplay();
     m_sessionState = SessionState::WarmingUp;
@@ -1464,6 +1486,11 @@ int SamsungTizen::powerOn()
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(m_session.warmingTimeMs));
                 m_sessionState = SessionState::Connected;
+                if (info.contains("device"))
+                    m_cachedPowerState = info["device"].value("PowerState", "on");
+                else
+                    m_cachedPowerState = "on";
+                m_restCacheTime = std::chrono::steady_clock::now();
                 return 0;
             }
         }
@@ -1476,23 +1503,53 @@ int SamsungTizen::powerOn()
 
 int SamsungTizen::powerOff()
 {
+    // On modern Tizen (2016+), KEY_POWEROFF is often aliased to KEY_POWER (toggle).
+    // Gate on REST PowerState so off never flips an already-off display back on.
+    // Keep the remote session open across soft-off; only a full power cut drops it.
+    std::string power = m_cachedPowerState;
+    json info;
+    if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
+        && info.contains("device"))
+    {
+        power = info["device"].value("PowerState", "");
+        m_cachedPowerState = power;
+        m_restCacheTime = std::chrono::steady_clock::now();
+    }
+
+    if (power == "off")
+        return 0;
+
+    if (power != "on" && m_sessionState != SessionState::Connected)
+        return 0;
+
     const int rc = sendRemoteKey("KEY_POWER");
-    disconnectSession(true);
-    m_sessionState = SessionState::CoolingDown;
+    if (rc == 0)
+    {
+        m_cachedPowerState = "off";
+        m_restCacheTime = std::chrono::steady_clock::now();
+    }
     return rc;
 }
 
 int SamsungTizen::powerToggle()
 {
+    std::string power = m_cachedPowerState;
     json info;
-    if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs))
+    if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
+        && info.contains("device"))
     {
-        const std::string power = info.contains("device")
-            ? info["device"].value("PowerState", "")
-            : "";
-        if (power == "on" || m_sessionState == SessionState::Connected)
-            return powerOff();
+        power = info["device"].value("PowerState", "");
+        m_cachedPowerState = power;
+        m_restCacheTime = std::chrono::steady_clock::now();
     }
+
+    if (power == "on")
+        return powerOff();
+    if (power == "off")
+        return powerOn();
+
+    if (m_sessionState == SessionState::Connected)
+        return powerOff();
     return powerOn();
 }
 

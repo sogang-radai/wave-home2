@@ -31,6 +31,10 @@ class DemoPowerMeter
 public:
     static DemoPowerMeter& instance();
 
+    // Shared demo plug rated-watt table (wire id). Device backend + power API
+    // both use this so values cannot drift across the two paths.
+    static double ratedPowerForDevice(const std::string& device_id);
+
     void syncPlug(
         const std::string& runtime_id,
         const std::string& device_id,

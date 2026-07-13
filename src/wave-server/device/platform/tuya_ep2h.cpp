@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <string_view>
 #include <unistd.h>
 
 #include "tuyaAPI.hpp"
@@ -29,6 +30,13 @@ namespace
     constexpr const char* kDpCurrentAlt = "18";
     constexpr const char* kDpPowerAlt = "19";
     constexpr const char* kDpVoltageAlt = "20";
+
+    bool isConnectivityFailure(std::string_view message)
+    {
+        return message.find("failed to connect") != std::string_view::npos
+            || message.find("failed to send") != std::string_view::npos
+            || message.find("failed to receive") != std::string_view::npos;
+    }
 
     json makeQueryError(int code, std::string_view message = {})
     {
@@ -293,6 +301,12 @@ json TuyaEP2H::readStatus(bool force_refresh)
     }
     catch (const std::exception& ex)
     {
+        if (isConnectivityFailure(ex.what()))
+        {
+            markOffline(ex.what());
+            return makeQueryError(-5, ex.what());
+        }
+
         LOG_ERROR("TuyaEP2H readStatus failed: {}", ex.what());
         return makeQueryError(-5, ex.what());
     }
@@ -414,6 +428,12 @@ json TuyaEP2H::query(std::string_view name, const json& params)
     }
     catch (const std::exception& ex)
     {
+        if (isConnectivityFailure(ex.what()))
+        {
+            markOffline(ex.what());
+            return makeQueryError(-5, ex.what());
+        }
+
         LOG_ERROR("TuyaEP2H query failed: {}", ex.what());
         return makeQueryError(-5, ex.what());
     }
@@ -452,6 +472,12 @@ int TuyaEP2H::invoke(std::string_view name, const json& params)
         }
         catch (const std::exception& ex)
         {
+            if (isConnectivityFailure(ex.what()))
+            {
+                markOffline(ex.what());
+                return -5;
+            }
+
             LOG_ERROR("TuyaEP2H toggle failed: {}", ex.what());
             return -5;
         }
@@ -514,6 +540,16 @@ void TuyaEP2H::invalidateDatapointCache()
     m_cachedDps.reset();
 }
 
+void TuyaEP2H::markOffline(std::string_view reason)
+{
+    if (m_state != DeviceState::Running)
+        return;
+
+    LOG_WARN("TuyaEP2H offline ({}): {}", m_config.host, reason);
+    m_state = DeviceState::Stopped;
+    invalidateDatapointCache();
+}
+
 int TuyaEP2H::setSwitch(bool on)
 {
     try
@@ -527,6 +563,12 @@ int TuyaEP2H::setSwitch(bool on)
     }
     catch (const std::exception& ex)
     {
+        if (isConnectivityFailure(ex.what()))
+        {
+            markOffline(ex.what());
+            return -5;
+        }
+
         LOG_ERROR("TuyaEP2H setSwitch failed: {}", ex.what());
         return -5;
     }
