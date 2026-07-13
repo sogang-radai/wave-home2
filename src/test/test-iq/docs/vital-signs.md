@@ -2,7 +2,7 @@
 
 Baseline document for the **HR / BR** tab pipeline. When the algorithm changes, append a dated section at the bottom rather than rewriting this file.
 
-**Code:** `src/test/test-vital/vital_signs.py`  
+**Code:** `src/test/test-iq/vital_signs.py`  
 **GUI:** `src/test/test-iq/gui.py`  
 **References:** `src/r4sn/docs/research.md`, `docs/papers/` (Bennya BioCAS 2023, Hao Sci Reports 2025, Ren arXiv 2024)
 
@@ -17,7 +17,7 @@ Baseline document for the **HR / BR** tab pipeline. When the algorithm changes, 
 | Setting | Default | Notes |
 |---------|---------|--------|
 | Buffer frames | 400 | ~20 s @ 20 fps; adjustable in GUI |
-| FFT size | 512 | Zero-padded slow-time FFT |
+| FFT size | 2048 | Zero-padded slow-time FFT (~0.6 bpm/bin @ 20 fps) |
 | HR/BR update | every 8 frames | ~0.4 s @ 20 fps |
 | Live spectrum | every 4 frames | After ≥50% buffer fill |
 | Vital chirp mode | Average (1) | Preserves phase; ~18 dB coherent gain |
