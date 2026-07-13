@@ -1086,7 +1086,8 @@ void IotController::setRadarGestureSet(
     if (demoVirtualDevicesEnabled())
     {
         const auto runtime_id = resolveDemoRuntimeId(req, json.get());
-        auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+        auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+        auto& session = *locked_session;
         session.radar_gesture_sets[deviceId] = gesture_set_id;
         Json::Value body;
         body["deviceId"] = deviceId;

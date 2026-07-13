@@ -129,7 +129,8 @@ Json::Value DemoDeviceBackend::stateForDevice(
     const std::string& device_class) const
 {
     auto& registry = DemoSessionRegistry::instance();
-    auto& session = registry.touch(runtime_id);
+    auto locked_session = registry.lockSession(runtime_id);
+    auto& session = *locked_session;
     const auto it = session.device_state.find(device_id);
     if (it != session.device_state.end())
         return it->second;
@@ -157,7 +158,8 @@ void DemoDeviceBackend::saveState(
     const std::string& device_id,
     const Json::Value& state) const
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto& session = *locked_session;
     session.device_state[device_id] = state;
 }
 

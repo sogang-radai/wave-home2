@@ -20,13 +20,13 @@ DemoSessionRegistry& DemoSessionRegistry::instance()
     return registry;
 }
 
-DemoSessionData& DemoSessionRegistry::touch(const std::string& runtime_id)
+LockedDemoSession DemoSessionRegistry::lockSession(const std::string& runtime_id)
 {
-    std::lock_guard lock(m_mutex);
+    std::unique_lock lock(m_mutex);
     evictExpired();
     auto& session = m_sessions[runtime_id];
     session.last_touch_ms = nowMs();
-    return session;
+    return LockedDemoSession(std::move(lock), session);
 }
 
 std::optional<DemoSessionData> DemoSessionRegistry::get(const std::string& runtime_id) const
@@ -36,6 +36,16 @@ std::optional<DemoSessionData> DemoSessionRegistry::get(const std::string& runti
     if (it == m_sessions.end())
         return std::nullopt;
     return it->second;
+}
+
+std::vector<std::string> DemoSessionRegistry::listRuntimeIds() const
+{
+    std::lock_guard lock(m_mutex);
+    std::vector<std::string> ids;
+    ids.reserve(m_sessions.size());
+    for (const auto& [runtime_id, _] : m_sessions)
+        ids.push_back(runtime_id);
+    return ids;
 }
 
 void DemoSessionRegistry::evictExpired(int64_t ttl_ms, size_t max_sessions)
