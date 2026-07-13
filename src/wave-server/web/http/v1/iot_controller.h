@@ -40,6 +40,7 @@ public:
     ADD_METHOD_TO(IotController::getGestureSetDefinition, "/api/v1/iot/gesture-sets/{gestureSetId}", drogon::Get);
     ADD_METHOD_TO(IotController::getRadarGestureSet, "/api/v1/iot/devices/{deviceId}/gesture-set", drogon::Get);
     ADD_METHOD_TO(IotController::setRadarGestureSet, "/api/v1/iot/devices/{deviceId}/gesture-set", drogon::Put);
+    ADD_METHOD_TO(IotController::listSpeechOverlays, "/api/v1/iot/speech-overlays", drogon::Get);
     METHOD_LIST_END
 
     void getSummary(
@@ -76,6 +77,7 @@ public:
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
+    // Camera stream
     void getCameraStream(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
@@ -101,6 +103,7 @@ public:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         std::string deviceId);
 
+    // Ptz
     void getPtzCapabilities(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
@@ -121,21 +124,25 @@ public:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         std::string deviceId);
 
+    // Snapshot
     void captureSnapshot(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         std::string deviceId);
 
+    // TTS
     void sendTts(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         std::string deviceId);
 
+    // Wave Station telemetry
     void streamWaveStationTelemetry(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         std::string deviceId);
 
+    // IR commands
     void listIrCommands(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
@@ -153,6 +160,7 @@ public:
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
+    // Gesture
     void listGestureSets(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
@@ -171,6 +179,10 @@ public:
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         std::string deviceId);
+
+    void listSpeechOverlays(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 };
 
 } // namespace v1

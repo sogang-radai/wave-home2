@@ -20,6 +20,7 @@
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_runtime_id.h"
 #include "../../../demo/demo_session_registry.h"
+#include "../../../demo/demo_session_writes.h"
 #include "../../../device/platform/droid_cam.h"
 #include "../../../device/platform/radai_ws.h"
 #include "../../../service/go2rtc_service.h"
@@ -1102,6 +1103,20 @@ void IotController::setRadarGestureSet(
         respondError(callback, 404, code, "제스처 셋을 찾을 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
+}
+
+void IotController::listSpeechOverlays(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+{
+    if (!demoVirtualDevicesEnabled())
+    {
+        callback(drogon::HttpResponse::newHttpJsonResponse(Json::Value(Json::objectValue)));
+        return;
+    }
+
+    const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+    respondDemoJson(req, callback, demoListSpeechOverlays(runtime_id), runtime_id);
 }
 
 } // namespace v1
