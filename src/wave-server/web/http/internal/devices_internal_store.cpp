@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <sstream>
 #include <unordered_set>
+#include <vector>
 
 #include "../../../app/app_state.h"
 #include "../../../demo/demo_device_backend.h"
@@ -538,6 +539,56 @@ bool DevicesInternalStore::nameMatches(const std::string& haystack, const std::s
     return lower(haystack).find(lower(needle)) != std::string::npos;
 }
 
+bool DevicesInternalStore::deviceQueryMatches(
+    const std::string& name,
+    const std::string& description,
+    const std::string& needle)
+{
+    if (needle.empty())
+        return false;
+
+    auto lower = [](std::string value) {
+        for (auto& ch : value)
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        return value;
+    };
+
+    const auto needle_l = lower(needle);
+    const auto name_l = lower(name);
+    const auto desc_l = lower(description);
+    if (nameMatches(name, needle) || nameMatches(description, needle))
+        return true;
+
+    std::vector<std::string> tokens;
+    std::string current;
+    for (unsigned char ch : needle_l)
+    {
+        if (std::isspace(ch) || ch == '-' || ch == '_' || ch == '/' || ch == ',')
+        {
+            if (!current.empty())
+            {
+                tokens.push_back(current);
+                current.clear();
+            }
+            continue;
+        }
+        current.push_back(static_cast<char>(ch));
+    }
+    if (!current.empty())
+        tokens.push_back(current);
+
+    if (tokens.size() < 2)
+        return false;
+
+    const auto haystack = name_l + " " + desc_l;
+    for (const auto& token : tokens)
+    {
+        if (haystack.find(token) == std::string::npos)
+            return false;
+    }
+    return true;
+}
+
 std::string DevicesInternalStore::makeEventId()
 {
     const auto now = std::chrono::system_clock::now().time_since_epoch();
@@ -929,7 +980,8 @@ std::optional<ResolvedDevice> DevicesInternalStore::resolveDeviceByName(
         if (!item.isObject())
             continue;
         const auto name = item.get("name", "").asString();
-        if (!nameMatches(name, device_name))
+        const auto description = item.get("description", "").asString();
+        if (!deviceQueryMatches(name, description, device_name))
             continue;
 
         ResolvedDevice resolved;

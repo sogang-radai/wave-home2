@@ -3,19 +3,74 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <optional>
 #include <string>
 
 WAVE_NAMESPACE_BEGIN
 
 namespace
 {
+    std::string toLowerAscii(std::string value)
+    {
+        for (auto& ch : value)
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        return value;
+    }
+
     std::string normalizePowerActionName(const std::string& action_name)
     {
-        if (action_name == "power_on" || action_name == "turn_on" || action_name == "switch_on")
+        const auto action = toLowerAscii(action_name);
+        if (action == "on" || action == "power_on" || action == "turn_on" || action == "switch_on"
+            || action == "poweron" || action == "turnon" || action == "switchon"
+            || action == "enable" || action == "start" || action == "켜기" || action == "전원켜기"
+            || action == "전원_켜기")
             return "on";
-        if (action_name == "power_off" || action_name == "turn_off" || action_name == "switch_off")
+        if (action == "off" || action == "power_off" || action == "turn_off" || action == "switch_off"
+            || action == "poweroff" || action == "turnoff" || action == "switchoff"
+            || action == "disable" || action == "stop" || action == "shutdown" || action == "끄기"
+            || action == "전원끄기" || action == "전원_끄기")
             return "off";
-        return action_name;
+        if (action == "toggle" || action == "power_toggle" || action == "switch_toggle"
+            || action == "토글" || action == "전환")
+            return "toggle";
+        // LLMs often confuse the datapoint name "switch" with an action.
+        if (action == "switch" || action == "set_switch" || action == "set_power")
+            return "switch";
+        return action;
+    }
+
+    std::optional<bool> extractSwitchTarget(const Json::Value& params)
+    {
+        if (!params.isObject())
+            return std::nullopt;
+
+        auto fromValue = [](const Json::Value& value) -> std::optional<bool> {
+            if (value.isBool())
+                return value.asBool();
+            if (value.isInt() || value.isUInt())
+                return value.asInt() != 0;
+            if (value.isDouble())
+                return value.asDouble() != 0.0;
+            if (value.isString())
+            {
+                const auto text = toLowerAscii(value.asString());
+                if (text == "on" || text == "true" || text == "1" || text == "켜기")
+                    return true;
+                if (text == "off" || text == "false" || text == "0" || text == "끄기")
+                    return false;
+            }
+            return std::nullopt;
+        };
+
+        for (const char* key : {"value", "switch", "on", "power", "state", "enabled"})
+        {
+            if (params.isMember(key))
+            {
+                if (const auto parsed = fromValue(params[key]))
+                    return parsed;
+            }
+        }
+        return std::nullopt;
     }
 
     int clampInt(int value, int lo, int hi)
@@ -201,6 +256,14 @@ Json::Value demoApplyAction(
             next["switch"] = false;
             applied = true;
         }
+        else if (action == "switch")
+        {
+            if (const auto target = extractSwitchTarget(params))
+                next["switch"] = *target;
+            else
+                next["switch"] = !prev_state.get("switch", false).asBool();
+            applied = true;
+        }
 
         if (applied)
         {
@@ -220,6 +283,14 @@ Json::Value demoApplyAction(
         else if (action == "off")
         {
             next["on"] = false;
+            applied = true;
+        }
+        else if (action == "switch")
+        {
+            if (const auto target = extractSwitchTarget(params))
+                next["on"] = *target;
+            else
+                next["on"] = !prev_state.get("on", false).asBool();
             applied = true;
         }
         else if (action == "brightness")
@@ -261,6 +332,14 @@ Json::Value demoApplyAction(
         else if (action == "off")
         {
             next["on"] = false;
+            applied = true;
+        }
+        else if (action == "switch")
+        {
+            if (const auto target = extractSwitchTarget(params))
+                next["on"] = *target;
+            else
+                next["on"] = !prev_state.get("on", false).asBool();
             applied = true;
         }
         else if (action == "volume_up")

@@ -230,8 +230,12 @@ void InternalController::listDevices(
     DeviceListFilter filter;
     if (const auto user_id = parseInt64Param(req->getParameter("userId")))
         filter.user_id = *user_id;
+    // roomId <= 0 means "all rooms" (agent device tools use 0 the same way).
     if (const auto room_id = parseInt64Param(req->getParameter("roomId")))
-        filter.room_id = *room_id;
+    {
+        if (*room_id > 0)
+            filter.room_id = *room_id;
+    }
     if (!req->getParameter("class").empty())
         filter.device_class = req->getParameter("class");
     if (const auto connected = parseBoolParam(req->getParameter("connected")))
@@ -678,9 +682,42 @@ void InternalController::listRules(
         const auto client = AppState::get().db();
         const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
         ensureDemoSessionSeeded(runtime_id, client);
+        Json::Value items(Json::arrayValue);
+        for (const auto& raw : demoListRules(runtime_id, 0))
+        {
+            if (!raw.isObject())
+                continue;
+
+            Json::Value item = raw;
+            const bool has_schedule = item.isMember("schedule") && item["schedule"].isObject()
+                && !item["schedule"].isNull() && item["schedule"].isMember("repeat");
+            const bool has_trigger = item.isMember("trigger") && item["trigger"].isObject()
+                && !item["trigger"].isNull() && !item["trigger"].empty();
+
+            if (filter.device_id)
+            {
+                const auto action_id = item.isMember("action") && item["action"].isObject()
+                    ? item["action"].get("deviceId", "").asString()
+                    : std::string{};
+                const auto trigger_id = has_trigger
+                    ? item["trigger"].get("deviceId", "").asString()
+                    : std::string{};
+                if (action_id != *filter.device_id && trigger_id != *filter.device_id)
+                    continue;
+            }
+            if (filter.enabled && item.get("enabled", true).asBool() != *filter.enabled)
+                continue;
+            if (filter.has_schedule && has_schedule != *filter.has_schedule)
+                continue;
+            if (filter.has_trigger && has_trigger != *filter.has_trigger)
+                continue;
+
+            items.append(item);
+        }
+
         Json::Value body;
-        body["items"] = demoListRules(runtime_id, 0);
-        body["count"] = static_cast<Json::UInt>(body["items"].size());
+        body["items"] = items;
+        body["count"] = static_cast<Json::UInt>(items.size());
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
         callback(resp);

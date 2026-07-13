@@ -1333,17 +1333,17 @@ llm_with_tools = llm.bind_tools([
 챗 SSE 매핑:
 
 ```text
-data: {"type":"tool.start","name":"control_device","args":{"roomId":2,"device":"조명","action":"on","params":{}}}
+data: {"type":"tool.start","id":"run-control-1","name":"control_device","args":{"roomId":2,"device":"조명","action":"on","params":{}}}
 
-data: {"type":"tool.end","name":"control_device","ok":true,"result":{"deviceName":"거실 조명","state":{"on":true}}}
+data: {"type":"tool.end","id":"run-control-1","name":"control_device","ok":true,"result":{"deviceName":"거실 조명","state":{"on":true}}}
 
-data: {"type":"tool.start","name":"list_schedules","args":{"roomId":3}}
+data: {"type":"tool.start","id":"run-list-1","name":"list_schedules","args":{"roomId":3}}
 
-data: {"type":"tool.end","name":"list_schedules","ok":true,"result":{"items":[...],"count":2}}
+data: {"type":"tool.end","id":"run-list-1","name":"list_schedules","ok":true,"result":{"items":[...],"count":2}}
 
-data: {"type":"tool.start","name":"cancel_schedule","args":{"ruleId":"rule_schedule_tv_off_once"}}
+data: {"type":"tool.start","id":"run-cancel-1","name":"cancel_schedule","args":{"ruleId":"rule_schedule_tv_off_once"}}
 
-data: {"type":"tool.end","name":"cancel_schedule","ok":true,"result":{"ruleId":"rule_schedule_tv_off_once","name":"30분 뒤 TV 끄기"}}
+data: {"type":"tool.end","id":"run-cancel-1","name":"cancel_schedule","ok":true,"result":{"ruleId":"rule_schedule_tv_off_once","name":"30분 뒤 TV 끄기"}}
 ```
 
 ---

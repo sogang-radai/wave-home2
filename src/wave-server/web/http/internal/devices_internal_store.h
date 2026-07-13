@@ -95,6 +95,10 @@ private:
     std::string externalIdFromDb(int64_t device_row_id) const;
     std::optional<int64_t> internalIdFromExternal(const std::string& external_id) const;
     static bool nameMatches(const std::string& haystack, const std::string& needle);
+    static bool deviceQueryMatches(
+        const std::string& name,
+        const std::string& description,
+        const std::string& needle);
     static std::string makeEventId();
 };
 
