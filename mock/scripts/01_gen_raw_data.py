@@ -80,6 +80,7 @@ def main() -> None:
         "pc_plug": hex_to_pk[devices.PC_PLUG_HEX_ID],
         "aircon_plug": hex_to_pk[devices.AIRCON_PLUG_HEX_ID],
         "induction_plug": hex_to_pk[devices.INDUCTION_PLUG_HEX_ID],
+        "microwave_plug": hex_to_pk[devices.MICROWAVE_PLUG_HEX_ID],
     }
 
     # --- 사용자 설정 ---------------------------------------------------------
@@ -110,7 +111,7 @@ def main() -> None:
         "(user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
         [
-            (1, "차분하고 다정한 말투로 답해줘.", "gemma4:12b-mlx", 1, 1, CREATED_AT),
+            (1, "차분하고 다정한 말투로 답해줘.", "gemma4:12b-mlx", 0, 1, CREATED_AT),
             (2, "핵심만 간결하게 답해줘.", "gemma4:12b-mlx", 0, 1, CREATED_AT),
         ],
     )

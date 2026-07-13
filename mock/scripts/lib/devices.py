@@ -24,7 +24,7 @@ USERS = [
 ROOMS = [
     (1, "거실", "공용 거실. 카메라/에어컨/선풍기/조명, 두 사람 모두 사용."),
     (2, "침실", "김건강 침실. 레이더 2대(하방/책상)/Wave Station/조명/TV/PC 플러그. 박헬스는 사용하지 않음."),
-    (3, "부엌", "공용 부엌. 인덕션 플러그/조명, 두 사람 모두 사용."),
+    (3, "부엌", "공용 부엌. 인덕션·전자레인지 플러그/조명, 두 사람 모두 사용."),
 ]
 ROOM_NAME_TO_ID = {name: rid for rid, name, _ in ROOMS}
 
@@ -55,6 +55,7 @@ TV_HEX_ID = hex_id(10)
 BEDROOM_LIGHT_HEX_ID = hex_id(11)
 LIVING_LIGHT_HEX_ID = hex_id(12)
 KITCHEN_LIGHT_HEX_ID = hex_id(13)
+MICROWAVE_PLUG_HEX_ID = hex_id(14)
 
 
 def load_gesture_sets() -> list[tuple[int, str, int]]:
@@ -80,6 +81,7 @@ PLUG_HEX_TO_APPLIANCE = {
     PC_PLUG_HEX_ID: "pc",
     AIRCON_PLUG_HEX_ID: "aircon",
     INDUCTION_PLUG_HEX_ID: "induction",
+    MICROWAVE_PLUG_HEX_ID: "microwave",
 }
 
 
@@ -112,6 +114,8 @@ def classify_appliance(description: str) -> str | None:
         return "fan"
     if "인덕션" in description:
         return "induction"
+    if "전자레인지" in description or "전자렌지" in description:
+        return "microwave"
     return None
 
 

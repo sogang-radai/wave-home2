@@ -419,6 +419,104 @@ CREATE TABLE weekly_plan_report (
     UNIQUE (user_id, period_start),
     FOREIGN KEY (user_id) REFERENCES user(id)
 );
+
+CREATE TABLE user_action_log (
+    id            INTEGER      PRIMARY KEY,
+    user_id       INTEGER      NOT NULL,
+    action_type   VARCHAR(30)  NOT NULL,
+    ref_type      VARCHAR(20)  NOT NULL,
+    ref_id        INTEGER      NOT NULL,
+    occurred_at   VARCHAR(50)  NOT NULL,
+    metadata_json TEXT,
+    category      VARCHAR(10),
+    CHECK (action_type IN ('insight_applied', 'insight_canceled', 'schedule_task_completed', 'schedule_task_uncompleted', 'schedule_task_created')),
+    CHECK (ref_type IN ('insight', 'schedule_task')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_action_log_user_time ON user_action_log (user_id, occurred_at);
+CREATE INDEX idx_action_log_ref ON user_action_log (ref_type, ref_id);
+CREATE INDEX idx_action_log_user_category_time ON user_action_log (user_id, category, occurred_at);
+
+CREATE TABLE sleep_plan (
+    id                      INTEGER      PRIMARY KEY,
+    user_id                 INTEGER      NOT NULL,
+    plan_date               VARCHAR(10)  NOT NULL,
+    bedtime_minute          INTEGER      NOT NULL,
+    wake_minute             INTEGER      NOT NULL,
+    prep_minute             INTEGER,
+    recommended_temp_c      REAL,
+    target_duration_minutes INTEGER      NOT NULL,
+    rationale_text          VARCHAR(300) NOT NULL,
+    created_at              VARCHAR(50)  NOT NULL,
+    CHECK (bedtime_minute >= 0 AND bedtime_minute <= 1439),
+    CHECK (wake_minute >= 0 AND wake_minute <= 1439),
+    UNIQUE (user_id, plan_date),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_sleep_plan_user_date ON sleep_plan (user_id, plan_date);
+
+CREATE TABLE power_report_embedding (
+    report_id      INTEGER     PRIMARY KEY,
+    dim            INTEGER     NOT NULL,
+    embedding_blob BLOB        NOT NULL,
+    updated_at     VARCHAR(50) NOT NULL,
+    FOREIGN KEY (report_id) REFERENCES power_report(id)
+);
+
+CREATE INDEX idx_power_energy_gran_time ON power_energy (granularity, time_start, device_id);
+
+CREATE TABLE goal (
+    id          INTEGER      PRIMARY KEY,
+    user_id     INTEGER      NOT NULL,
+    title       VARCHAR(200) NOT NULL,
+    category    VARCHAR(10)  NOT NULL,
+    status      VARCHAR(10)  NOT NULL DEFAULT 'active',
+    created_at  VARCHAR(50)  NOT NULL,
+    updated_at  VARCHAR(50)  NOT NULL,
+    CHECK (category IN ('sleep', 'posture', 'mental', 'life', 'diet')),
+    CHECK (status IN ('active', 'archived', 'completed')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_goal_user_status ON goal (user_id, status);
+
+CREATE TABLE goal_coaching_report (
+    id                      INTEGER      PRIMARY KEY,
+    goal_id                 INTEGER      NOT NULL,
+    user_id                 INTEGER      NOT NULL,
+    period_start            VARCHAR(10)  NOT NULL,
+    past_summary_text       VARCHAR(500) NOT NULL,
+    projection_text         VARCHAR(500) NOT NULL,
+    projected_metrics_json  TEXT,
+    created_at              VARCHAR(50)  NOT NULL,
+    UNIQUE (goal_id, period_start),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE TABLE goal_recommendation (
+    id                 INTEGER      PRIMARY KEY,
+    goal_id            INTEGER      NOT NULL,
+    user_id            INTEGER      NOT NULL,
+    date               VARCHAR(10)  NOT NULL,
+    kind               VARCHAR(10)  NOT NULL,
+    title              VARCHAR(100) NOT NULL,
+    text               VARCHAR(500) NOT NULL,
+    actionable         INTEGER      NOT NULL DEFAULT 0,
+    action_type        VARCHAR(20),
+    approved           INTEGER      NOT NULL DEFAULT 0,
+    rule_json          TEXT,
+    schedule_task_json TEXT,
+    created_at         VARCHAR(50)  NOT NULL,
+    CHECK (kind IN ('action', 'goal', 'tip')),
+    CHECK (actionable IN (0, 1)),
+    CHECK (approved IN (0, 1)),
+    CHECK (actionable = 0 OR action_type IS NOT NULL),
+    CHECK (action_type != 'automation_rule' OR rule_json IS NOT NULL),
+    CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_goal_recommendation_goal_date ON goal_recommendation (goal_id, date);
 """
 
 VEC_TABLES: dict[str, str] = {
@@ -511,7 +609,7 @@ def try_load_vec_extension(conn: sqlite3.Connection) -> bool:
         return False
 
 
-def stamp_schema_version(conn: sqlite3.Connection, version: int = 1, description: str = "schema v1 baseline") -> None:
+def stamp_schema_version(conn: sqlite3.Connection, version: int = 7, description: str = "schema v7 (sleep_plan/goals/action_log)") -> None:
     conn.execute(
         "INSERT OR REPLACE INTO schema_version (version, applied_at, description) VALUES (?, datetime('now'), ?)",
         (version, description),
@@ -572,8 +670,118 @@ CREATE TABLE IF NOT EXISTS gesture_device_map (
     FOREIGN KEY (device_id) REFERENCES device(id),
     FOREIGN KEY (gesture_set_id) REFERENCES gesture_set(id)
 );
+
+CREATE TABLE IF NOT EXISTS user_action_log (
+    id            INTEGER      PRIMARY KEY,
+    user_id       INTEGER      NOT NULL,
+    action_type   VARCHAR(30)  NOT NULL,
+    ref_type      VARCHAR(20)  NOT NULL,
+    ref_id        INTEGER      NOT NULL,
+    occurred_at   VARCHAR(50)  NOT NULL,
+    metadata_json TEXT,
+    category      VARCHAR(10),
+    CHECK (action_type IN ('insight_applied', 'insight_canceled', 'schedule_task_completed', 'schedule_task_uncompleted', 'schedule_task_created')),
+    CHECK (ref_type IN ('insight', 'schedule_task')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX IF NOT EXISTS idx_action_log_user_time ON user_action_log (user_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_action_log_ref ON user_action_log (ref_type, ref_id);
+CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log (user_id, category, occurred_at);
+
+CREATE TABLE IF NOT EXISTS sleep_plan (
+    id                      INTEGER      PRIMARY KEY,
+    user_id                 INTEGER      NOT NULL,
+    plan_date               VARCHAR(10)  NOT NULL,
+    bedtime_minute          INTEGER      NOT NULL,
+    wake_minute             INTEGER      NOT NULL,
+    prep_minute             INTEGER,
+    recommended_temp_c      REAL,
+    target_duration_minutes INTEGER      NOT NULL,
+    rationale_text          VARCHAR(300) NOT NULL,
+    created_at              VARCHAR(50)  NOT NULL,
+    CHECK (bedtime_minute >= 0 AND bedtime_minute <= 1439),
+    CHECK (wake_minute >= 0 AND wake_minute <= 1439),
+    UNIQUE (user_id, plan_date),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX IF NOT EXISTS idx_sleep_plan_user_date ON sleep_plan (user_id, plan_date);
+
+CREATE TABLE IF NOT EXISTS power_report_embedding (
+    report_id      INTEGER     PRIMARY KEY,
+    dim            INTEGER     NOT NULL,
+    embedding_blob BLOB        NOT NULL,
+    updated_at     VARCHAR(50) NOT NULL,
+    FOREIGN KEY (report_id) REFERENCES power_report(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_power_energy_gran_time ON power_energy (granularity, time_start, device_id);
+
+CREATE TABLE IF NOT EXISTS goal (
+    id          INTEGER      PRIMARY KEY,
+    user_id     INTEGER      NOT NULL,
+    title       VARCHAR(200) NOT NULL,
+    category    VARCHAR(10)  NOT NULL,
+    status      VARCHAR(10)  NOT NULL DEFAULT 'active',
+    created_at  VARCHAR(50)  NOT NULL,
+    updated_at  VARCHAR(50)  NOT NULL,
+    CHECK (category IN ('sleep', 'posture', 'mental', 'life', 'diet')),
+    CHECK (status IN ('active', 'archived', 'completed')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX IF NOT EXISTS idx_goal_user_status ON goal (user_id, status);
+
+CREATE TABLE IF NOT EXISTS goal_coaching_report (
+    id                      INTEGER      PRIMARY KEY,
+    goal_id                 INTEGER      NOT NULL,
+    user_id                 INTEGER      NOT NULL,
+    period_start            VARCHAR(10)  NOT NULL,
+    past_summary_text       VARCHAR(500) NOT NULL,
+    projection_text         VARCHAR(500) NOT NULL,
+    projected_metrics_json  TEXT,
+    created_at              VARCHAR(50)  NOT NULL,
+    UNIQUE (goal_id, period_start),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE TABLE IF NOT EXISTS goal_recommendation (
+    id                 INTEGER      PRIMARY KEY,
+    goal_id            INTEGER      NOT NULL,
+    user_id            INTEGER      NOT NULL,
+    date               VARCHAR(10)  NOT NULL,
+    kind               VARCHAR(10)  NOT NULL,
+    title              VARCHAR(100) NOT NULL,
+    text               VARCHAR(500) NOT NULL,
+    actionable         INTEGER      NOT NULL DEFAULT 0,
+    action_type        VARCHAR(20),
+    approved           INTEGER      NOT NULL DEFAULT 0,
+    rule_json          TEXT,
+    schedule_task_json TEXT,
+    created_at         VARCHAR(50)  NOT NULL,
+    CHECK (kind IN ('action', 'goal', 'tip')),
+    CHECK (actionable IN (0, 1)),
+    CHECK (approved IN (0, 1)),
+    CHECK (actionable = 0 OR action_type IS NOT NULL),
+    CHECK (action_type != 'automation_rule' OR rule_json IS NOT NULL),
+    CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX IF NOT EXISTS idx_goal_recommendation_goal_date ON goal_recommendation (goal_id, date);
 """
     )
+    # Existing DBs may have user_action_log without category (pre-v7).
+    cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(user_action_log)").fetchall()
+    }
+    if cols and "category" not in cols:
+        conn.execute("ALTER TABLE user_action_log ADD COLUMN category VARCHAR(10)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time "
+            "ON user_action_log (user_id, category, occurred_at)"
+        )
+
     stamp_schema_version(conn)
     vec_ready = False
     if with_vec:

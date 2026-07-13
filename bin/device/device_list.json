@@ -246,6 +246,23 @@
             "name": "부엌 조명",
             "vendor": "Philips",
             "room_id": "0000000000000003"
+        },
+        {
+            "class": "tuya_ep2h",
+            "description": "부엌 전자레인지 스마트 플러그",
+            "enabled": true,
+            "id": "000000000000000e",
+            "interface": {
+                "device_id": "eb9c2f71a0d84e3b12mw01",
+                "host": "192.168.0.61",
+                "local_key": "MwPlugKey#demo01!",
+                "mac": "50:8B:B9:B1:0E:14",
+                "version": "3.3"
+            },
+            "model": "EP2-H",
+            "name": "플러그5 - 전자레인지",
+            "vendor": "Tenpl",
+            "room_id": "0000000000000003"
         }
     ]
 }

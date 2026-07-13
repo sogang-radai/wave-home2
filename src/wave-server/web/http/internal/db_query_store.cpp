@@ -441,24 +441,27 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
     if (table == "power_energy")
     {
         std::ostringstream sql;
-        sql << "SELECT id, device_id, granularity, time_start, energy_wh, coverage, sample_count FROM power_energy"
+        sql << "SELECT pe.id, pe.device_id, pe.granularity, pe.time_start, pe.energy_wh, pe.coverage,"
+            << " pe.sample_count, d.name AS device_name"
+            << " FROM power_energy pe"
+            << " LEFT JOIN device d ON d.id = pe.device_id"
             << " WHERE 1=1";
         if (filter.isMember("deviceId"))
         {
             if (filter["deviceId"].isNull())
-                sql << " AND device_id IS NULL";
+                sql << " AND pe.device_id IS NULL";
             else if (const auto device_id = filterInt(filter, "deviceId"))
-                sql << " AND device_id = " << *device_id;
+                sql << " AND pe.device_id = " << *device_id;
         }
         if (const auto id = filterInt(filter, "id"))
-            sql << " AND id = " << *id;
+            sql << " AND pe.id = " << *id;
         if (const auto granularity = filterString(filter, "granularity"))
-            sql << " AND granularity = '" << *granularity << "'";
+            sql << " AND pe.granularity = '" << *granularity << "'";
         if (const auto from = filterString(filter, "from"))
-            sql << " AND time_start >= '" << *from << "'";
+            sql << " AND pe.time_start >= '" << *from << "'";
         if (const auto to = filterString(filter, "to"))
-            sql << " AND time_start < '" << *to << "'";
-        sql << (desc ? " ORDER BY time_start DESC" : " ORDER BY time_start ASC");
+            sql << " AND pe.time_start < '" << *to << "'";
+        sql << (desc ? " ORDER BY pe.time_start DESC" : " ORDER BY pe.time_start ASC");
         sql << " LIMIT " << limit;
 
         Json::Value items(Json::arrayValue);
@@ -467,9 +470,18 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             Json::Value item;
             item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
             if (row["device_id"].isNull())
+            {
                 item["deviceId"] = Json::nullValue;
+                item["deviceName"] = Json::nullValue;
+            }
             else
+            {
                 item["deviceId"] = static_cast<Json::Int64>(row["device_id"].as<int64_t>());
+                if (row["device_name"].isNull())
+                    item["deviceName"] = Json::nullValue;
+                else
+                    item["deviceName"] = row["device_name"].as<std::string>();
+            }
             item["granularity"] = row["granularity"].as<std::string>();
             item["timeStart"] = row["time_start"].as<std::string>();
             item["energyWh"] = row["energy_wh"].as<double>();
@@ -486,28 +498,31 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             !query.isMember("order") || !query["order"].isString() || query["order"].asString() == "desc";
 
         std::ostringstream sql;
-        sql << "SELECT id, energy_id, device_id, period, period_start, metrics, report_text, created_at"
-            << " FROM power_report WHERE 1=1";
+        sql << "SELECT pr.id, pr.energy_id, pr.device_id, pr.period, pr.period_start, pr.metrics,"
+            << " pr.report_text, pr.created_at, d.name AS device_name"
+            << " FROM power_report pr"
+            << " LEFT JOIN device d ON d.id = pr.device_id"
+            << " WHERE 1=1";
         if (filter.isMember("deviceId"))
         {
             if (filter["deviceId"].isNull())
-                sql << " AND device_id IS NULL";
+                sql << " AND pr.device_id IS NULL";
             else if (const auto device_id = filterInt(filter, "deviceId"))
-                sql << " AND device_id = " << *device_id;
+                sql << " AND pr.device_id = " << *device_id;
         }
         if (const auto id = filterInt(filter, "id"))
-            sql << " AND id = " << *id;
+            sql << " AND pr.id = " << *id;
         if (const auto energy_id = filterInt(filter, "energyId"))
-            sql << " AND energy_id = " << *energy_id;
+            sql << " AND pr.energy_id = " << *energy_id;
         if (const auto period = filterString(filter, "period"))
-            sql << " AND period = '" << *period << "'";
+            sql << " AND pr.period = '" << *period << "'";
         if (const auto period_start = filterString(filter, "periodStart"))
-            sql << " AND period_start = '" << *period_start << "'";
+            sql << " AND pr.period_start = '" << *period_start << "'";
         if (const auto from = filterString(filter, "from"))
-            sql << " AND period_start >= '" << *from << "'";
+            sql << " AND pr.period_start >= '" << *from << "'";
         if (const auto to = filterString(filter, "to"))
-            sql << " AND period_start < '" << *to << "'";
-        sql << (report_desc ? " ORDER BY period_start DESC" : " ORDER BY period_start ASC");
+            sql << " AND pr.period_start < '" << *to << "'";
+        sql << (report_desc ? " ORDER BY pr.period_start DESC" : " ORDER BY pr.period_start ASC");
         sql << " LIMIT " << limit;
 
         Json::Value items(Json::arrayValue);
@@ -517,9 +532,18 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
             item["energyId"] = static_cast<Json::Int64>(row["energy_id"].as<int64_t>());
             if (row["device_id"].isNull())
+            {
                 item["deviceId"] = Json::nullValue;
+                item["deviceName"] = Json::nullValue;
+            }
             else
+            {
                 item["deviceId"] = static_cast<Json::Int64>(row["device_id"].as<int64_t>());
+                if (row["device_name"].isNull())
+                    item["deviceName"] = Json::nullValue;
+                else
+                    item["deviceName"] = row["device_name"].as<std::string>();
+            }
             item["period"] = row["period"].as<std::string>();
             item["periodStart"] = row["period_start"].as<std::string>();
             if (!row["metrics"].isNull())

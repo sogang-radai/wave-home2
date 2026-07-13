@@ -449,14 +449,17 @@ def _turn_count(rng: random.Random) -> int:
 
 
 def gen_chat_histories(rng: random.Random) -> list[tuple]:
-    """id, user_id, title, created_at, updated_at, message(json)"""
+    """id, user_id, title, created_at, updated_at, message(json)
+
+    데모 목록에 같은 제목이 반복되지 않도록 topic bank 를 한 번씩만 사용한다.
+    message 컬럼은 ChatStore 배열 포맷: [{id, role, text, createdAt}, ...]
+    """
     rows: list[tuple] = []
     dates = timeutil.june_dates()
     conv_id = 1
 
-    def build_conv(user_id: int, d, topic_bank, title_prefix) -> tuple:
+    def build_conv(user_id: int, d, question: str, answer_tpl: str) -> tuple:
         nonlocal conv_id
-        question, answer_tpl = rng.choice(topic_bank)
         score = rng.randint(65, 95)
         eff = rng.randint(78, 95)
         kwh = round(rng.uniform(2.5, 6.5), 1)
@@ -464,35 +467,54 @@ def gen_chat_histories(rng: random.Random) -> list[tuple]:
 
         hh, mm = rng.randint(8, 22), rng.randint(0, 59)
         start_ts = f"{timeutil.fmt_date(d)} {hh:02d}:{mm:02d}:00"
+        created_iso = f"{timeutil.fmt_date(d)}T{hh:02d}:{mm:02d}:00+09:00"
+        msg_id = 1
         messages = [
-            {"role": "system", "content": SYSTEM_MSG},
-            {"role": "user", "content": question},
-            {"role": "assistant", "content": answer},
+            {"id": msg_id, "role": "user", "text": question, "createdAt": created_iso},
         ]
-        n_turns = _turn_count(rng)
+        msg_id += 1
+        messages.append({
+            "id": msg_id,
+            "role": "assistant",
+            "text": answer,
+            "status": "done",
+            "toolEvents": [],
+            "createdAt": created_iso,
+        })
+        msg_id += 1
+        # Keep follow-ups short so the seed stays readable in the demo UI.
+        n_turns = rng.randint(1, 3)
         cur_minute = mm
-        last_ts = start_ts
         for _ in range(n_turns - 1):
             fu_q, fu_a_tpl = rng.choice(CHAT_FOLLOWUPS)
             detail = "센서 데이터 기준으로 판단한 결과예요."
             tip = "취침 30분 전 조명을 낮추는 것"
-            messages.append({"role": "user", "content": fu_q})
-            messages.append({"role": "assistant", "content": fu_a_tpl.format(detail=detail, tip=tip)})
             cur_minute = (cur_minute + rng.randint(1, 5)) % 60
-        updated_ts = start_ts
-        title = f"{title_prefix}: {question[:20]}"
-        row = (conv_id, user_id, title, start_ts, updated_ts, json.dumps({"messages": messages}, ensure_ascii=False))
+            ts = f"{timeutil.fmt_date(d)}T{hh:02d}:{cur_minute:02d}:00+09:00"
+            messages.append({"id": msg_id, "role": "user", "text": fu_q, "createdAt": ts})
+            msg_id += 1
+            messages.append({
+                "id": msg_id,
+                "role": "assistant",
+                "text": fu_a_tpl.format(detail=detail, tip=tip),
+                "status": "done",
+                "toolEvents": [],
+                "createdAt": ts,
+            })
+            msg_id += 1
+        title = question if len(question) <= 22 else f"{question[:21]}…"
+        row = (conv_id, user_id, title, start_ts, start_ts, json.dumps(messages, ensure_ascii=False))
         conv_id += 1
         return row
 
-    for _ in range(20):
-        d = rng.choice(dates)
-        rows.append(build_conv(1, d, CHAT_TOPICS_USER1, "김건강"))
-    for _ in range(12):
-        d = rng.choice(dates)
-        rows.append(build_conv(2, d, CHAT_TOPICS_USER2, "박헬스"))
+    # One conversation per topic (newest dates first for a natural list order).
+    for i, (question, answer_tpl) in enumerate(CHAT_TOPICS_USER1):
+        d = dates[-(i + 3)] if len(dates) >= i + 3 else rng.choice(dates)
+        rows.append(build_conv(1, d, question, answer_tpl))
+    for i, (question, answer_tpl) in enumerate(CHAT_TOPICS_USER2):
+        d = dates[-(i + 2)] if len(dates) >= i + 2 else rng.choice(dates)
+        rows.append(build_conv(2, d, question, answer_tpl))
 
     rows.sort(key=lambda r: r[3])
-    # id 재부여(정렬 후 1..N 유지)
     rows = [(i + 1, r[1], r[2], r[3], r[4], r[5]) for i, r in enumerate(rows)]
     return rows

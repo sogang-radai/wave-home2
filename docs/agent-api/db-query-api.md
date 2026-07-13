@@ -109,7 +109,7 @@ type DbQueryResult = {
       "count": 24,
       "items": [
         {
-          "id": 20401, "deviceId": null, "granularity": "1h",
+          "id": 20401, "deviceId": null, "deviceName": null, "granularity": "1h",
           "timeStart": "2026-07-01 22:00:00", "energyWh": 1180.4, "coverage": 0.98, "sampleCount": 12
         }
       ]
@@ -407,6 +407,8 @@ type DbQueryResult = {
   "limit": 24
 }
 ```
+
+응답 행에는 `deviceId`와 함께 `deviceName`(장치 표시 이름)이 포함됩니다. 합산행(`deviceId: null`)은 `deviceName`도 null입니다.
 
 
 

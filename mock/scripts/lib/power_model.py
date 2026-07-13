@@ -1,7 +1,8 @@
 """전력(power_energy) 30일 물리 시뮬레이션.
 
-계측 가능한 장치는 스마트 플러그(tuya_ep2h) 4개뿐이다:
-- 거실 선풍기(fan), 침실 컴퓨터(pc), 침실 에어컨(aircon), 부엌 인덕션(induction)
+계측 가능한 장치는 스마트 플러그(tuya_ep2h) 5개:
+- 거실 선풍기(fan), 침실 컴퓨터(pc), 침실 에어컨(aircon),
+  부엌 인덕션(induction), 부엌 전자레인지(microwave)
 
 30초 1샘플로 와트를 시뮬레이션한 뒤 5분 버킷으로 적분하고, 5m -> 1h -> 24h 로 달력
 롤업, 1h/24h -> 1w(슬라이딩 7일)/1mo(슬라이딩 30일)로 다시 롤업한다. 자세한 시나리오
@@ -35,6 +36,7 @@ PLUG_APPLIANCES = {
     "fan": "선풍기",
     "pc": "컴퓨터",
     "induction": "인덕션",
+    "microwave": "전자레인지",
 }
 
 
@@ -80,6 +82,12 @@ def day_flags(appliance: str, heat: float, irregular: str | None, rng: random.Ra
         return {
             "breakfast": rng.random() < 0.55,
             "dinner": rng.random() < 0.80 or irregular == "gathering",
+        }
+    if appliance == "microwave":
+        return {
+            "lunch": rng.random() < 0.45,
+            "snack": rng.random() < 0.35,
+            "dinner": rng.random() < 0.55 or irregular == "gathering",
         }
     return {}
 
@@ -145,6 +153,27 @@ def _watt_induction(dt: datetime, flags: dict, home: bool, irregular: str | None
     return 0.0
 
 
+def _watt_microwave(dt: datetime, flags: dict, home: bool, irregular: str | None, rng: random.Random) -> float:
+    """부엌 전자레인지 - 짧은 가열 버스트(정격 ~1100W), 그 외 0W."""
+    h = dt.hour + dt.minute / 60.0
+    weekend = dt.weekday() >= 5
+    lunch_win = (12.0 <= h < 13.5) if weekend else (12.0 <= h < 13.0)
+    snack_win = (15.5 <= h < 16.5)
+    dinner_win = (18.5 <= h < 20.5) if weekend else (18.5 <= h < 19.5)
+    if irregular == "gathering":
+        dinner_win = 18.0 <= h < 21.5
+    if not home:
+        return 0.0
+    # 버스트는 드물게 — 한 샘플만 ~1100W 근처로 올라가게 한다.
+    if flags.get("lunch") and lunch_win and rng.random() < 0.18:
+        return _clampf(rng.gauss(1100, 80), 900, 1250)
+    if flags.get("snack") and snack_win and rng.random() < 0.12:
+        return _clampf(rng.gauss(1050, 90), 850, 1200)
+    if flags.get("dinner") and dinner_win and rng.random() < 0.22:
+        return _clampf(rng.gauss(1100, 70), 900, 1250)
+    return 0.0
+
+
 def simulate_plug_5m(appliance: str, rng: random.Random) -> list[tuple[str, float, float, int]]:
     """(time_start, energy_wh, coverage, sample_count) 5분 버킷 목록을 생성한다."""
     out: list[tuple[str, float, float, int]] = []
@@ -175,6 +204,8 @@ def simulate_plug_5m(appliance: str, rng: random.Random) -> list[tuple[str, floa
                 w = _watt_fan(dt, ctx["flags"], home, ctx["irregular"], rng)
             elif appliance == "pc":
                 w = _watt_pc(dt, ctx["flags"], home, rng)
+            elif appliance == "microwave":
+                w = _watt_microwave(dt, ctx["flags"], home, ctx["irregular"], rng)
             else:
                 w = _watt_induction(dt, ctx["flags"], home, ctx["irregular"], rng)
             energy_wh += w * (RAW_STEP_S / 3600.0)
@@ -238,7 +269,7 @@ def _sliding_window_rollup(
 
 
 def generate_power_energy(conn: sqlite3.Connection, plug_pk_by_appliance: dict[str, int]) -> dict[str, int]:
-    """4개 플러그의 5m/1h/24h/1w/1mo power_energy 행을 만들어 DB에 넣는다."""
+    """플러그별 5m/1h/24h/1w/1mo power_energy 행을 만들어 DB에 넣는다."""
     dates = timeutil.june_dates()
     counts: dict[str, int] = {"5m": 0, "1h": 0, "24h": 0, "1w": 0, "1mo": 0}
 
