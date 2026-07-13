@@ -115,6 +115,7 @@ public:
     size_t getAudioQueueSize() const override;
     bool getLatestFrame(AudioFrame& outFrame) override;
     std::future<void> getLatestFrameAsync(AudioFrame& outFrame) override;
+    bool popFrame(AudioFrame& outFrame) override;
 
     // IAudioSink (speaker)
     AudioFormat getSinkFormat() const override;

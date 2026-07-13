@@ -139,6 +139,7 @@ public:
     size_t getAudioQueueSize() const override;
     bool getLatestFrame(AudioFrame& outFrame) override;
     std::future<void> getLatestFrameAsync(AudioFrame& outFrame) override;
+    bool popFrame(AudioFrame& outFrame) override;
 
     // IAudioSink (speaker on WaveStation)
     AudioFormat getSinkFormat() const override;
@@ -221,7 +222,8 @@ Actions:
   speak         { "text": "..." }  — TTS → IAudioSink / SpkComp (planned)
 
 Audio (IAudioSource / IAudioSink):
-  Source — MicPCM or MicComp (Opus→PCM); lazy subscribe on getLatestFrame
+  Source — MicPCM or MicComp (Opus→PCM); lazy subscribe on getLatestFrame/popFrame
+           getLatestFrame peeks newest; popFrame consumes oldest (use for recording)
   Sink   — playFrame → SpkComp or SpkPCM; stopPlayback → LastFrame marker
 
 IR (IIrReceiver / IIrTransmitter):

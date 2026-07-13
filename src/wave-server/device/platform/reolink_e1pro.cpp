@@ -1128,6 +1128,12 @@ std::future<void> ReolinkE1Pro::getLatestFrameAsync(AudioFrame& outFrame)
     });
 }
 
+bool ReolinkE1Pro::popFrame(AudioFrame& outFrame)
+{
+    (void)outFrame;
+    return false; // live frame streaming not implemented; use recordAudioToFile
+}
+
 // ============================================================================
 // IAudioSink (speaker)
 // ============================================================================

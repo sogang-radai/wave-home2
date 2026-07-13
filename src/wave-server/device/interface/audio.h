@@ -34,8 +34,12 @@ public:
     virtual void setAudioQueueSize(size_t size) = 0;
     virtual size_t getAudioQueueSize() const = 0;
 
+    // Peek the newest queued frame (does not consume). For meters / snapshots.
     virtual bool getLatestFrame(AudioFrame& outFrame) = 0;
     virtual std::future<void> getLatestFrameAsync(AudioFrame& outFrame) = 0;
+
+    // Consume the oldest queued frame (FIFO). For recording / streaming.
+    virtual bool popFrame(AudioFrame& outFrame) = 0;
 };
 
 // Speaker / audio output for playback and two-way talk.

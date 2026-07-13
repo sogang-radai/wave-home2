@@ -76,7 +76,7 @@ namespace
             outType = wsp::Type::MicComp;
         else if (name == "ambient_light" || name == "lux")
             outType = wsp::Type::AmbientLight;
-        else if (name == "temperature")
+        else if (name == "temperature" || name == "temp")
             outType = wsp::Type::Temperature;
         else if (name == "humidity")
             outType = wsp::Type::Humidity;
@@ -828,6 +828,16 @@ struct RadaiWs::Impl
         return true;
     }
 
+    bool popMicFrame(AudioFrame& outFrame)
+    {
+        std::lock_guard<std::mutex> lock(m_micMutex);
+        if (m_micFrames.empty())
+            return false;
+        outFrame = std::move(m_micFrames.front());
+        m_micFrames.pop_front();
+        return true;
+    }
+
     void handlePacket(const std::vector<uint8_t>& packet)
     {
         if (packet.size() < wsp::kHeaderSize)
@@ -975,6 +985,14 @@ struct RadaiWs::Impl
                 wsp::SensorBody sensor {};
                 std::memcpy(&sensor, body, sizeof(sensor));
                 m_owner.onSensor(type, sensor);
+            }
+            else
+            {
+                LOG_WARN(
+                    "RadaiWs: sensor type=0x{:04X} payload too small (bodySize={}, need {})",
+                    rawType,
+                    bodySize,
+                    wsp::kSensorBodySize);
             }
             break;
 
@@ -1462,7 +1480,14 @@ int RadaiWs::invoke(std::string_view name, const json& params)
         if (!parseTargetType(params["target"].get<std::string>(), targetType))
             return -1;
 
-        const uint16_t intervalMs = static_cast<uint16_t>(params.value("intervalMs", 0));
+        const bool isSensor =
+            targetType == wsp::Type::AmbientLight
+            || targetType == wsp::Type::Temperature
+            || targetType == wsp::Type::Humidity;
+
+        // Sensors default to 1000ms; audio/IR keep 0 (= max rate).
+        const uint16_t defaultIntervalMs = isSensor ? m_subscriptions.sensorIntervalMs : 0;
+        const uint16_t intervalMs = static_cast<uint16_t>(params.value("intervalMs", defaultIntervalMs));
         uint32_t options = wsp::SubscribeOptionFlag_None;
         if (params.value("compressed", false))
             options |= wsp::SubscribeOptionFlag_CompressedBits;
@@ -1535,6 +1560,12 @@ std::future<void> RadaiWs::getLatestFrameAsync(AudioFrame& outFrame)
     });
 }
 
+bool RadaiWs::popFrame(AudioFrame& outFrame)
+{
+    ensureMicSubscription();
+    return m_impl->popMicFrame(outFrame);
+}
+
 AudioFormat RadaiWs::getSinkFormat() const
 {
     return getSourceFormat();
@@ -1548,8 +1579,28 @@ bool RadaiWs::playFrame(const AudioFrame& frame)
 #ifdef WAVE_HAS_OPUS
     if (m_audio.preferCompressedSpk && m_capabilities.speakerOpus)
     {
+        const size_t frameSamples =
+            static_cast<size_t>(m_audio.sampleRate) * m_audio.frameDurationMs / 1000 * m_audio.channels;
+        if (frameSamples == 0)
+            return false;
+
+        const int16_t* pcm = frame.samples.data();
+        size_t pcmCount = frame.samples.size();
+        std::vector<int16_t> padded;
+        if (pcmCount != frameSamples)
+        {
+            // Opus requires an exact frame size; pad/truncate to match.
+            padded.assign(frameSamples, 0);
+            std::memcpy(
+                padded.data(),
+                frame.samples.data(),
+                std::min(pcmCount, frameSamples) * sizeof(int16_t));
+            pcm = padded.data();
+            pcmCount = frameSamples;
+        }
+
         std::vector<uint8_t> encoded;
-        if (!m_impl->encodeOpus(frame.samples.data(), frame.samples.size(), encoded, false))
+        if (!m_impl->encodeOpus(pcm, pcmCount, encoded, false))
             return false;
         return sendSpkOpus(encoded.data(), encoded.size(), false) == 0;
     }
@@ -1571,12 +1622,49 @@ std::future<bool> RadaiWs::playFrameAsync(const AudioFrame& frame)
 
 void RadaiWs::stopPlayback()
 {
+    const size_t frameSamples =
+        static_cast<size_t>(m_audio.sampleRate) * m_audio.frameDurationMs / 1000 * m_audio.channels;
+    std::vector<int16_t> silence(frameSamples > 0 ? frameSamples : 1, 0);
+
+#ifdef WAVE_HAS_OPUS
+    if (m_audio.preferCompressedSpk && m_capabilities.speakerOpus)
+    {
+        std::vector<uint8_t> encoded;
+        if (!m_impl->encodeOpus(silence.data(), silence.size(), encoded, false))
+            return;
+
+        wsp::AudioCompBody body {};
+        body.codec = static_cast<uint8_t>(wsp::AudioCodec::Opus);
+        body.sampleRate = m_audio.sampleRate;
+        body.channels = m_audio.channels;
+        body.frameDurationMs = m_audio.frameDurationMs;
+        body.encodedSize = static_cast<uint16_t>(encoded.size());
+        (void)m_impl->sendData(
+            wsp::Type::SpkComp,
+            wsp::HeaderFlag_LastFrameBit,
+            &body,
+            sizeof(body),
+            encoded.data(),
+            encoded.size());
+        return;
+    }
+#endif
+
+    if (!m_capabilities.speakerPcm)
+        return;
+
     wsp::AudioPCMBody body {};
     body.sampleRate = m_audio.sampleRate;
     body.channels = m_audio.channels;
     body.bitsPerSample = m_audio.sampleSize;
-    body.sampleCount = 0;
-    (void)m_impl->sendData(wsp::Type::SpkPCM, wsp::HeaderFlag_LastFrameBit, &body, sizeof(body), nullptr, 0);
+    body.sampleCount = static_cast<uint16_t>(silence.size() / m_audio.channels);
+    (void)m_impl->sendData(
+        wsp::Type::SpkPCM,
+        wsp::HeaderFlag_LastFrameBit,
+        &body,
+        sizeof(body),
+        silence.data(),
+        silence.size() * sizeof(int16_t));
 }
 
 int RadaiWs::transmitTimings(
@@ -1902,8 +1990,24 @@ void RadaiWs::onClientConnected()
 
 void RadaiWs::onSensor(wsp::Type type, const wsp::SensorBody& sensor)
 {
+    const char* name = "unknown";
+    switch (type)
+    {
+    case wsp::Type::AmbientLight: name = "ambient_light"; break;
+    case wsp::Type::Temperature: name = "temperature"; break;
+    case wsp::Type::Humidity: name = "humidity"; break;
+    default: break;
+    }
+
     if (sensor.quality == 0)
+    {
+        LOG_WARN(
+            "RadaiWs: sensor {} discarded (quality=0, unit={}, value={})",
+            name,
+            static_cast<unsigned>(sensor.unit),
+            sensor.value);
         return;
+    }
 
     EnvSnapshot env;
     {
@@ -1931,6 +2035,12 @@ void RadaiWs::onSensor(wsp::Type type, const wsp::SensorBody& sensor)
     }
 
     updateEnv(env);
+    LOG_INFO(
+        "RadaiWs: sensor {} = {} (unit={}, quality={})",
+        name,
+        sensor.value,
+        static_cast<unsigned>(sensor.unit),
+        static_cast<unsigned>(sensor.quality));
 }
 
 void RadaiWs::onIrReceived(const wsp::IrReceiveBody& body, const std::vector<uint16_t>& timings)

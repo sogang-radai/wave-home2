@@ -758,6 +758,12 @@ std::future<void> DroidCam::getLatestFrameAsync(AudioFrame& outFrame)
     });
 }
 
+bool DroidCam::popFrame(AudioFrame& outFrame)
+{
+    (void)outFrame;
+    return false;
+}
+
 void DroidCam::registerQueries()
 {
     m_queries = {
