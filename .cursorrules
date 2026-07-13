@@ -1,6 +1,18 @@
 새 채팅의 경우 docs/style.md파일 참조
 
+# 백엔드 빌드 스크립트(백엔드 수정 후 실행 할 것)
 backend server build: scripts/build-server.sh
+
+# 프론트 빌드 스크립트(프론트 수정 후 실행 할 것)
 test front build: scripts/build-site-test.sh
 demo front build: scripts/build-site-demo.sh
 production front build: scripts/build-site.sh
+
+# 서버 포트 정리
+백엔드(wave-home2)
+- 프로덕션: 8500
+- 데모: 8502
+- 테스트: 8503
+
+에이전트 서버(wave-home-agent)
+- 프로덕션/데모: 8501
