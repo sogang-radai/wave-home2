@@ -141,6 +141,8 @@ namespace
         }
         if (!out.isMember("schedule"))
             out["schedule"] = Json::nullValue;
+        else if (out["schedule"].isObject())
+            out["schedule"] = demoNormalizeRuleSchedule(out["schedule"]);
         if (!out.isMember("cooldownMs"))
             out["cooldownMs"] = 0;
         if (!out.isMember("execMode"))

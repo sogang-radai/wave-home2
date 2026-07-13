@@ -27,6 +27,7 @@ set(_wave_server_sources
     demo/demo_device_backend.cpp
     demo/demo_session_writes.cpp
     demo/demo_power_meter.cpp
+    demo/demo_automation_runtime.cpp
     db/sqlite_vec_support.cpp
     web/http/api_controller.cpp
     web/http/v1/health_controller.cpp

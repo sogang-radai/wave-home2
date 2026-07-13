@@ -493,53 +493,58 @@ void TriggerManager::tickSchedule()
 {
     const auto now = std::chrono::system_clock::now();
     std::vector<Rule> due_rules;
+    std::vector<std::string> once_to_disable;
 
-    std::lock_guard lock(m_stateMutex);
-    for (auto& [rule_id, state] : m_scheduleStates)
     {
-        (void)rule_id;
-        if (!state.rule.enabled || !state.rule.schedule)
-            continue;
-
-        const RuleSchedule& schedule = *state.rule.schedule;
-
-        if (schedule.repeat == "once")
+        std::lock_guard lock(m_stateMutex);
+        for (auto& [rule_id, state] : m_scheduleStates)
         {
-            if (!state.firedOnce && now >= state.nextFire)
-            {
-                due_rules.push_back(state.rule);
-                state.firedOnce = true;
-            }
-            continue;
-        }
+            (void)rule_id;
+            if (!state.rule.enabled || !state.rule.schedule)
+                continue;
 
-        if (schedule.repeat == "daily" && schedule.time)
-        {
-            if (localClockMatches(*schedule.time) && !state.firedOnce)
-            {
-                due_rules.push_back(state.rule);
-                state.firedOnce = true;
-            }
-            else if (!localClockMatches(*schedule.time))
-            {
-                state.firedOnce = false;
-            }
-            continue;
-        }
+            const RuleSchedule& schedule = *state.rule.schedule;
 
-        if (schedule.repeat == "weekly" && schedule.time)
-        {
-            const std::string token = weekdayToken(localWeekday());
-            const bool day_match = std::find(schedule.daysOfWeek.begin(), schedule.daysOfWeek.end(), token)
-                != schedule.daysOfWeek.end();
-            if (day_match && localClockMatches(*schedule.time) && !state.firedOnce)
+            if (schedule.repeat == "once")
             {
-                due_rules.push_back(state.rule);
-                state.firedOnce = true;
+                if (!state.firedOnce && now >= state.nextFire)
+                {
+                    due_rules.push_back(state.rule);
+                    state.firedOnce = true;
+                    state.rule.enabled = false;
+                    once_to_disable.push_back(state.rule.id);
+                }
+                continue;
             }
-            else if (!localClockMatches(*schedule.time))
+
+            if (schedule.repeat == "daily" && schedule.time)
             {
-                state.firedOnce = false;
+                if (localClockMatches(*schedule.time) && !state.firedOnce)
+                {
+                    due_rules.push_back(state.rule);
+                    state.firedOnce = true;
+                }
+                else if (!localClockMatches(*schedule.time))
+                {
+                    state.firedOnce = false;
+                }
+                continue;
+            }
+
+            if (schedule.repeat == "weekly" && schedule.time)
+            {
+                const std::string token = weekdayToken(localWeekday());
+                const bool day_match = std::find(schedule.daysOfWeek.begin(), schedule.daysOfWeek.end(), token)
+                    != schedule.daysOfWeek.end();
+                if (day_match && localClockMatches(*schedule.time) && !state.firedOnce)
+                {
+                    due_rules.push_back(state.rule);
+                    state.firedOnce = true;
+                }
+                else if (!localClockMatches(*schedule.time))
+                {
+                    state.firedOnce = false;
+                }
             }
         }
     }
@@ -554,6 +559,21 @@ void TriggerManager::tickSchedule()
         binding.repeatIntervalMs = rule.repeatIntervalMs;
         binding.action = rule.action;
         dispatchBindings({binding}, -1, rule.schedule ? "schedule:" + rule.id : "rule:" + rule.id);
+    }
+
+    // One-shot schedules should turn off after firing so the UI toggle reflects completion.
+    for (const auto& rule_id : once_to_disable)
+    {
+        if (!m_rules)
+            continue;
+        try
+        {
+            m_rules->setEnabledAsync(rule_id, false).get();
+        }
+        catch (const std::exception& e)
+        {
+            LOG_WARN("TriggerManager: disable once schedule failed ({}): {}", rule_id, e.what());
+        }
     }
 }
 

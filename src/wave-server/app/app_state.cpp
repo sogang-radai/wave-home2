@@ -11,6 +11,7 @@
 #include "../service/alarm_manager.h"
 #include "../service/go2rtc_service.h"
 #include "../core/time_util.h"
+#include "../demo/demo_automation_runtime.h"
 #include "../device/device.h"
 #include "../device/platform/droid_cam.h"
 #include "util/exe_path.h"
@@ -615,6 +616,12 @@ void AppState::init(const LaunchOptions& launch)
     server.run();
     running.store(true, std::memory_order_release);
 
+    if (demo_mode)
+    {
+        DemoAutomationRuntime::get().start();
+        LOG_INFO("DemoAutomationRuntime started (demo_mode)");
+    }
+
     if (!test_mode && !no_devices)
     {
         ws::service::PowerManager::get().start();
@@ -644,6 +651,7 @@ void AppState::shutdown()
     running.store(false, std::memory_order_release);
     m_dbReady.store(false, std::memory_order_release);
 
+    DemoAutomationRuntime::get().stop();
     ws::service::PowerManager::get().stop();
     service::SleepManager::get().stop();
     service::AlarmManager::get().stop();
