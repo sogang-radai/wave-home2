@@ -37,8 +37,6 @@ install_deps() {
 
 install_deps
 
-bash "$(dirname "${BASH_SOURCE[0]}")/copy-twin-model.sh"
-
 API_MODE="${WAVE_SITE_API_MODE:-}"
 if [[ -z "$API_MODE" ]]; then
     if [[ "$USE_MOCK" == "true" ]]; then
