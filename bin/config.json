@@ -11,7 +11,6 @@
             "home_page": "index.html",
             "database_path": "data/database.db"
         },
-        "setting_path": "data/settings.json",
         "device_list_path": "device/device_list.json",
         "gesture_sets_path": "gestures/gesture_sets.json",
         "sleep_model_path": "models/sleep0-1/model.json",
@@ -42,7 +41,6 @@
             "skip_migrations": true,
             "read_only": true
         },
-        "setting_path": "data/settings.json",
         "device_list_path": "device/device_list.json",
         "gesture_sets_path": "gestures/gesture_sets.json",
         "sleep_model_path": "models/sleep0-1/model.json",

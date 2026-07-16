@@ -600,7 +600,6 @@ void AppState::init(const LaunchOptions& launch)
 
     if (!test_mode)
     {
-        settings.load(resolvePath(config.setting_path).string());
         if (no_devices && demo_mode)
             LOG_INFO("Devices skipped (demo profile)");
         else if (no_devices)

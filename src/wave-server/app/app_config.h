@@ -30,7 +30,6 @@ struct AppConfig
     PushConfig push;
     AgentConfig agent;
 
-    std::string setting_path = "data/settings.json";
     std::string device_list_path = "device/device_list.json";
     std::string gesture_sets_path = "gestures/gesture_sets.json";
     std::string sleep_model_path = "models/sleep/model.json";

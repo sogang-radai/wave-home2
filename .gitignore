@@ -7,14 +7,7 @@ bin/models/stt/ko-kr/
 bin/models/pose/
 bin/uploads/
 bin/cache/
-bin/data/*.db
-bin/data/*.db-shm
-bin/data/*.db-wal
-bin/data/*.db.backup
-bin/data/*.db.backup*
-bin/data/*.backup
-bin/database.db
-bin/database.db-*
+bin/data/database.db
 bin/*.db
 bin/*.db-shm
 bin/*.db-wal
@@ -30,12 +23,17 @@ mock/ai_manual/
 # Runtime logs
 logs/
 
-# Dataset (too large)
+# SleepNet / GestureNet — large local artifacts
 sleep-net/dataset/
-sleep-net/training/
 sleep-net/samples/
 sleep-net/models/
-sleep-net/test/
+sleep-net/training/
+sleep-net/test/**/*.csv
+sleep-net/test/plots/
+gesture-net/dataset/
+gesture-net/samples/
+gesture-net/models/
+gesture-net/training/
 
 # Plan files (may contain credentials)
 [pP]lan.md
@@ -65,6 +63,8 @@ src/r4sn/disassembly/
 .venv/
 venv/
 **/.venv/
+**/.venv-plot/
+sleep-net/.venv-plot/
 __pycache__/
 *.py[cod]
 *$py.class

@@ -28,7 +28,6 @@ namespace
                 target = root[key].get<std::string>();
         };
 
-        assignPath("setting_path", out.setting_path);
         assignPath("device_list_path", out.device_list_path);
         assignPath("gesture_sets_path", out.gesture_sets_path);
         assignPath("sleep_model_path", out.sleep_model_path);
