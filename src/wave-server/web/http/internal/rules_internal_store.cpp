@@ -13,7 +13,7 @@ namespace web {
 namespace internal {
 namespace
 {
-    ws::json jsonFromRequest(const Json::Value& value)
+    ws::json json_from_request(const Json::Value& value)
     {
         Json::StreamWriterBuilder builder;
         builder["indentation"] = "";
@@ -21,7 +21,7 @@ namespace
         return ws::json::parse(stream);
     }
 
-    Json::Value jsonToResponse(const ws::json& value)
+    Json::Value json_to_response(const ws::json& value)
     {
         Json::CharReaderBuilder reader;
         Json::Value out;
@@ -31,7 +31,7 @@ namespace
         return out;
     }
 
-    Json::Value ruleViewToJson(const service::RuleView& view)
+    Json::Value rule_view_to_json(const service::RuleView& view)
     {
         ws::json payload = ws::json::object();
         payload["id"] = view.rule.id;
@@ -59,10 +59,10 @@ namespace
         if (!view.triggerDeviceName.empty())
             payload["triggerDeviceName"] = view.triggerDeviceName;
 
-        return jsonToResponse(payload);
+        return json_to_response(payload);
     }
 
-    service::RuleView enrichView(dev::DeviceManager& devices, const service::RuleView& view)
+    service::RuleView enrich_view(dev::DeviceManager& devices, const service::RuleView& view)
     {
         service::RuleView out = view;
         const auto device_name = [&](const std::string& external_id) {
@@ -79,7 +79,7 @@ namespace
         return out;
     }
 
-    bool requireRuleStore(std::string& code)
+    bool require_rule_store(std::string& code)
     {
         if (!AppState::get().hasRuleStore())
         {
@@ -89,7 +89,7 @@ namespace
         return true;
     }
 
-    std::optional<int64_t> roomIdForDevice(const std::string& device_id)
+    std::optional<int64_t> room_id_for_device(const std::string& device_id)
     {
         DevicesInternalStore store(AppState::get().db());
         DeviceListFilter filter;
@@ -125,7 +125,7 @@ namespace
         return std::nullopt;
     }
 
-    bool matchesRuleFilter(const service::RuleView& view, const RuleListFilter& filter)
+    bool matches_rule_filter(const service::RuleView& view, const RuleListFilter& filter)
     {
         if (filter.device_id)
         {
@@ -146,7 +146,7 @@ namespace
 
         if (filter.room_id)
         {
-            const auto room_id = roomIdForDevice(view.rule.action.deviceId);
+            const auto room_id = room_id_for_device(view.rule.action.deviceId);
             if (!room_id || *room_id != *filter.room_id)
                 return false;
         }
@@ -156,7 +156,7 @@ namespace
 
 Json::Value RulesInternalStore::listRules(const RuleListFilter& filter, std::string& code) const
 {
-    if (!requireRuleStore(code))
+    if (!require_rule_store(code))
         return Json::Value();
 
     auto& state = AppState::get();
@@ -167,10 +167,10 @@ Json::Value RulesInternalStore::listRules(const RuleListFilter& filter, std::str
     Json::Value items(Json::arrayValue);
     for (const auto& view : views)
     {
-        const auto enriched = enrichView(state.deviceManager, view);
-        if (!matchesRuleFilter(enriched, filter))
+        const auto enriched = enrich_view(state.deviceManager, view);
+        if (!matches_rule_filter(enriched, filter))
             continue;
-        items.append(ruleViewToJson(enriched));
+        items.append(rule_view_to_json(enriched));
     }
 
     Json::Value body;
@@ -181,7 +181,7 @@ Json::Value RulesInternalStore::listRules(const RuleListFilter& filter, std::str
 
 Json::Value RulesInternalStore::getRule(const std::string& rule_id, std::string& code) const
 {
-    if (!requireRuleStore(code))
+    if (!require_rule_store(code))
         return Json::Value();
 
     const auto view = AppState::get().ruleStore().get(rule_id);
@@ -191,18 +191,18 @@ Json::Value RulesInternalStore::getRule(const std::string& rule_id, std::string&
         return Json::Value();
     }
 
-    return ruleViewToJson(enrichView(AppState::get().deviceManager, *view));
+    return rule_view_to_json(enrich_view(AppState::get().deviceManager, *view));
 }
 
 Json::Value RulesInternalStore::createRule(const Json::Value& body, std::string& code) const
 {
-    if (!requireRuleStore(code))
+    if (!require_rule_store(code))
         return Json::Value();
 
     ws::json payload;
     try
     {
-        payload = jsonFromRequest(body);
+        payload = json_from_request(body);
     }
     catch (...)
     {
@@ -211,7 +211,7 @@ Json::Value RulesInternalStore::createRule(const Json::Value& body, std::string&
     }
 
     std::string error;
-    if (!service::RuleStore::validatePayload(payload, error))
+    if (!service::RuleStore::validate_payload(payload, error))
     {
         code = "INVALID_REQUEST";
         return Json::Value();
@@ -219,10 +219,10 @@ Json::Value RulesInternalStore::createRule(const Json::Value& body, std::string&
 
     try
     {
-        const auto view = enrichView(
+        const auto view = enrich_view(
             AppState::get().deviceManager,
             AppState::get().ruleStore().createAsync(payload).get());
-        return ruleViewToJson(view);
+        return rule_view_to_json(view);
     }
     catch (...)
     {
@@ -236,13 +236,13 @@ Json::Value RulesInternalStore::updateRule(
     const Json::Value& body,
     std::string& code) const
 {
-    if (!requireRuleStore(code))
+    if (!require_rule_store(code))
         return Json::Value();
 
     ws::json patch;
     try
     {
-        patch = jsonFromRequest(body);
+        patch = json_from_request(body);
     }
     catch (...)
     {
@@ -252,10 +252,10 @@ Json::Value RulesInternalStore::updateRule(
 
     try
     {
-        const auto view = enrichView(
+        const auto view = enrich_view(
             AppState::get().deviceManager,
             AppState::get().ruleStore().updateAsync(rule_id, patch).get());
-        return ruleViewToJson(view);
+        return rule_view_to_json(view);
     }
     catch (...)
     {
@@ -266,7 +266,7 @@ Json::Value RulesInternalStore::updateRule(
 
 Json::Value RulesInternalStore::deleteRule(const std::string& rule_id, std::string& code) const
 {
-    if (!requireRuleStore(code))
+    if (!require_rule_store(code))
         return Json::Value();
 
     try
@@ -288,15 +288,15 @@ Json::Value RulesInternalStore::setRuleEnabled(
     bool enabled,
     std::string& code) const
 {
-    if (!requireRuleStore(code))
+    if (!require_rule_store(code))
         return Json::Value();
 
     try
     {
-        const auto view = enrichView(
+        const auto view = enrich_view(
             AppState::get().deviceManager,
             AppState::get().ruleStore().setEnabledAsync(rule_id, enabled).get());
-        return ruleViewToJson(view);
+        return rule_view_to_json(view);
     }
     catch (...)
     {
@@ -307,7 +307,7 @@ Json::Value RulesInternalStore::setRuleEnabled(
 
 Json::Value RulesInternalStore::executeRule(const std::string& rule_id, std::string& code) const
 {
-    if (!requireRuleStore(code))
+    if (!require_rule_store(code))
         return Json::Value();
 
     auto& state = AppState::get();

@@ -42,7 +42,7 @@ struct AppConfig
     bool skip_db_migrations = false;
     bool db_read_only = false;
 
-    static bool loadFromFile(
+    static bool load_from_file(
         const std::filesystem::path& path,
         const std::string& profile,
         AppConfig& out);

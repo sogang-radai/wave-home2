@@ -12,7 +12,7 @@ namespace web {
 namespace v1 {
 namespace
 {
-    bool isValidTime(const std::string& value)
+    bool is_valid_time(const std::string& value)
     {
         if (value.size() != 5 || value[2] != ':')
             return false;
@@ -21,12 +21,12 @@ namespace
         return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
     }
 
-    int minutesOf(const std::string& time)
+    int minutes_of(const std::string& time)
     {
         return std::stoi(time.substr(0, 2)) * 60 + std::stoi(time.substr(3, 2));
     }
 
-    size_t utf8SequenceLength(unsigned char lead)
+    size_t utf8_sequence_length(unsigned char lead)
     {
         if (lead < 0x80)
             return 1;
@@ -39,12 +39,12 @@ namespace
         return 0;
     }
 
-    size_t utf8CodePointCount(const std::string& text)
+    size_t utf8_code_point_count(const std::string& text)
     {
         size_t count = 0;
         for (size_t i = 0; i < text.size();)
         {
-            const auto len = utf8SequenceLength(static_cast<unsigned char>(text[i]));
+            const auto len = utf8_sequence_length(static_cast<unsigned char>(text[i]));
             if (len == 0 || i + len > text.size())
                 break;
             i += len;
@@ -68,17 +68,17 @@ namespace
         return Json::writeString(builder, value);
     }
 
-    bool soundExists(const std::string& id)
+    bool sound_exists(const std::string& id)
     {
         return id == "sign-of-the-times" || id == "love-yourself";
     }
 
-    bool speakerExists(int id)
+    bool speaker_exists(int id)
     {
         return id >= 0 && id <= 9;
     }
 
-    bool modelExists(const Json::Value& models, const std::string& id)
+    bool model_exists(const Json::Value& models, const std::string& id)
     {
         for (const auto& model : models)
         {
@@ -219,14 +219,14 @@ bool SettingsStore::putGeneralSettings(
         }
     }
 
-    if (out.isMember("ttsSpeakerId") && !speakerExists(out["ttsSpeakerId"].asInt()))
+    if (out.isMember("ttsSpeakerId") && !speaker_exists(out["ttsSpeakerId"].asInt()))
     {
         error = "존재하지 않는 TTS 스피커입니다.";
         field = "ttsSpeakerId";
         return false;
     }
 
-    if (out.isMember("notificationSound") && !soundExists(out["notificationSound"].asString()))
+    if (out.isMember("notificationSound") && !sound_exists(out["notificationSound"].asString()))
     {
         error = "존재하지 않는 알림음입니다.";
         field = "notificationSound";
@@ -278,8 +278,8 @@ bool SettingsStore::putSleepConfig(
         out[key] = body[key];
 
     if (!out.isMember("bedtime") || !out.isMember("wakeTime")
-        || !isValidTime(out["bedtime"].asString()) || !isValidTime(out["wakeTime"].asString())
-        || minutesOf(out["bedtime"].asString()) == minutesOf(out["wakeTime"].asString()))
+        || !is_valid_time(out["bedtime"].asString()) || !is_valid_time(out["wakeTime"].asString())
+        || minutes_of(out["bedtime"].asString()) == minutes_of(out["wakeTime"].asString()))
     {
         error = "취침 시간과 기상 시간을 확인해주세요.";
         field = "bedtime";
@@ -319,7 +319,7 @@ bool SettingsStore::putSleepConfig(
         }
     }
 
-    if (out.isMember("wakeUpSound") && !soundExists(out["wakeUpSound"].asString()))
+    if (out.isMember("wakeUpSound") && !sound_exists(out["wakeUpSound"].asString()))
     {
         error = "존재하지 않는 알람음입니다.";
         field = "wakeUpSound";
@@ -450,7 +450,7 @@ bool SettingsStore::putAiAgentSettings(
         }
         // Always replace from the request body (never concatenate with the previous value).
         const auto prompt = body["personalPrompt"].asString();
-        if (utf8CodePointCount(prompt) > kPersonalPromptMaxChars)
+        if (utf8_code_point_count(prompt) > kPersonalPromptMaxChars)
         {
             error = "개인 프롬프트는 " + std::to_string(kPersonalPromptMaxChars) + "자 이하여야 합니다.";
             field = "personalPrompt";
@@ -466,7 +466,7 @@ bool SettingsStore::putAiAgentSettings(
         }
     }
 
-    if (out.isMember("selectedModelId") && !modelExists(listAiModels(), out["selectedModelId"].asString()))
+    if (out.isMember("selectedModelId") && !model_exists(listAiModels(), out["selectedModelId"].asString()))
     {
         error = "존재하지 않는 AI 모델입니다.";
         field = "selectedModelId";

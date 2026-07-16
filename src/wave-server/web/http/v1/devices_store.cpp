@@ -28,7 +28,7 @@ namespace
         "wave_station",
     };
 
-    std::string trimCopy(const std::string& value)
+    std::string trim_copy(const std::string& value)
     {
         const auto start = value.find_first_not_of(" \t\n\r");
         if (start == std::string::npos)
@@ -37,7 +37,7 @@ namespace
         return value.substr(start, end - start + 1);
     }
 
-    Json::Value nlohmannToJsonValue(const json& value)
+    Json::Value nlohmann_to_json_value(const json& value)
     {
         Json::CharReaderBuilder builder;
         std::string errors;
@@ -48,7 +48,7 @@ namespace
         return out;
     }
 
-    Json::Value manifestConfigToDeviceJson(const json& cfg)
+    Json::Value manifest_config_to_device_json(const json& cfg)
     {
         Json::Value device;
         device["id"] = cfg.value("id", std::string());
@@ -59,17 +59,17 @@ namespace
         device["room_id"] = Json::nullValue;
 
         if (cfg.contains("interface") && cfg["interface"].is_object())
-            device["interface"] = nlohmannToJsonValue(cfg["interface"]);
+            device["interface"] = nlohmann_to_json_value(cfg["interface"]);
         else
             device["interface"] = Json::Value(Json::objectValue);
 
         if (cfg.contains("settings") && cfg["settings"].is_object())
-            device["settings"] = nlohmannToJsonValue(cfg["settings"]);
+            device["settings"] = nlohmann_to_json_value(cfg["settings"]);
 
         return device;
     }
 
-    bool isInputClassLocal(const std::string& device_class)
+    bool is_input_class_local(const std::string& device_class)
     {
         for (const auto* cls : kInputClasses)
         {
@@ -79,18 +79,18 @@ namespace
         return false;
     }
 
-    void appendDeviceToBuckets(
+    void append_device_to_buckets(
         const Json::Value& device,
         Json::Value& input,
         Json::Value& output)
     {
-        if (isInputClassLocal(device["class"].asString()))
+        if (is_input_class_local(device["class"].asString()))
             input.append(device);
         else
             output.append(device);
     }
 
-    std::optional<int64_t> resolveRoomIdFromJson(const Json::Value& value)
+    std::optional<int64_t> resolve_room_id_from_json(const Json::Value& value)
     {
         if (value.isString())
         {
@@ -112,7 +112,7 @@ DevicesStore::DevicesStore(db::DbClientPtr client) :
 {
 }
 
-bool DevicesStore::parseJsonText(const std::string& text, Json::Value& out)
+bool DevicesStore::parse_json_text(const std::string& text, Json::Value& out)
 {
     Json::CharReaderBuilder builder;
     std::string errors;
@@ -120,14 +120,14 @@ bool DevicesStore::parseJsonText(const std::string& text, Json::Value& out)
     return Json::parseFromStream(builder, stream, &out, &errors);
 }
 
-std::string DevicesStore::jsonToText(const Json::Value& value)
+std::string DevicesStore::json_to_text(const Json::Value& value)
 {
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";
     return Json::writeString(builder, value);
 }
 
-bool DevicesStore::isInputClass(const std::string& device_class)
+bool DevicesStore::is_input_class(const std::string& device_class)
 {
     for (const auto* cls : kInputClasses)
     {
@@ -176,14 +176,14 @@ Json::Value DevicesStore::rowToDeviceJson(const drogon::orm::Row& row, std::opti
         device["room_id"] = Json::Value(Json::nullValue);
 
     Json::Value interface_json;
-    if (!parseJsonText(row["interface_json"].as<std::string>(), interface_json))
+    if (!parse_json_text(row["interface_json"].as<std::string>(), interface_json))
         interface_json = Json::Value(Json::objectValue);
     device["interface"] = interface_json;
 
     if (!row["settings_json"].isNull())
     {
         Json::Value settings_json;
-        if (parseJsonText(row["settings_json"].as<std::string>(), settings_json))
+        if (parse_json_text(row["settings_json"].as<std::string>(), settings_json))
             device["settings"] = settings_json;
     }
 
@@ -230,10 +230,10 @@ ORDER BY d.id
                 device = db_it->second;
         }
         if (!device.isObject() || device.empty())
-            device = manifestConfigToDeviceJson(entry.config);
+            device = manifest_config_to_device_json(entry.config);
 
         emitted.insert(wire_id);
-        appendDeviceToBuckets(device, input, output);
+        append_device_to_buckets(device, input, output);
     }
 
     for (const auto& [db_id, device] : db_by_id)
@@ -242,7 +242,7 @@ ORDER BY d.id
         if (emitted.contains(wire_id))
             continue;
         (void)db_id;
-        appendDeviceToBuckets(device, input, output);
+        append_device_to_buckets(device, input, output);
     }
 
     body["input_devices"] = input;
@@ -285,7 +285,7 @@ std::optional<Json::Value> DevicesStore::createDevice(
         return std::nullopt;
     }
 
-    const auto name = trimCopy(body["name"].asString());
+    const auto name = trim_copy(body["name"].asString());
     if (name.empty())
     {
         error = "기기 이름을 입력해주세요.";
@@ -305,7 +305,7 @@ std::optional<Json::Value> DevicesStore::createDevice(
     std::optional<int64_t> room_id;
     if (body.isMember("room_id") && !body["room_id"].isNull())
     {
-        room_id = resolveRoomIdFromJson(body["room_id"]);
+        room_id = resolve_room_id_from_json(body["room_id"]);
         if (!room_id || !roomExists(*room_id))
         {
             error = "방을 찾을 수 없습니다.";
@@ -318,7 +318,7 @@ std::optional<Json::Value> DevicesStore::createDevice(
         ? body["id"].asString()
         : makeHexId();
     const auto description = body.isMember("description") && body["description"].isString()
-        ? trimCopy(body["description"].asString())
+        ? trim_copy(body["description"].asString())
         : name;
     const auto device_class = body["class"].asString();
     const bool enabled = !body.isMember("enabled") || body["enabled"].asBool();
@@ -343,8 +343,8 @@ VALUES (?, ?, ?, ?, 0, ?, ?, ?)
                 description.empty() ? name : description,
                 device_class,
                 enabled ? 1 : 0,
-                jsonToText(interface_json),
-                jsonToText(settings_json));
+                json_to_text(interface_json),
+                json_to_text(settings_json));
         }
         else
         {
@@ -358,7 +358,7 @@ VALUES (?, ?, ?, ?, 0, ?, ?, NULL)
                 description.empty() ? name : description,
                 device_class,
                 enabled ? 1 : 0,
-                jsonToText(interface_json));
+                json_to_text(interface_json));
         }
 
         if (room_id)
@@ -428,14 +428,14 @@ std::optional<Json::Value> DevicesStore::updateDevice(
     auto enabled = rows[0]["enabled"].as<int>() != 0;
 
     Json::Value interface_json;
-    parseJsonText(rows[0]["interface_json"].as<std::string>(), interface_json);
+    parse_json_text(rows[0]["interface_json"].as<std::string>(), interface_json);
     Json::Value settings_json;
     const bool had_settings = !rows[0]["settings_json"].isNull()
-        && parseJsonText(rows[0]["settings_json"].as<std::string>(), settings_json);
+        && parse_json_text(rows[0]["settings_json"].as<std::string>(), settings_json);
 
     if (body.isMember("name"))
     {
-        name = trimCopy(body["name"].asString());
+        name = trim_copy(body["name"].asString());
         if (name.empty())
         {
             error = "기기 이름을 입력해주세요.";
@@ -444,7 +444,7 @@ std::optional<Json::Value> DevicesStore::updateDevice(
         }
     }
     if (body.isMember("description") && body["description"].isString())
-        description = trimCopy(body["description"].asString()).empty() ? name : trimCopy(body["description"].asString());
+        description = trim_copy(body["description"].asString()).empty() ? name : trim_copy(body["description"].asString());
     if (body.isMember("class") && body["class"].isString())
         device_class = body["class"].asString();
     if (body.isMember("enabled"))
@@ -459,7 +459,7 @@ std::optional<Json::Value> DevicesStore::updateDevice(
         m_client->execSqlSync("DELETE FROM device_room_map WHERE device_id = ?", internal_id);
         if (!body["room_id"].isNull())
         {
-            const auto room_id = resolveRoomIdFromJson(body["room_id"]);
+            const auto room_id = resolve_room_id_from_json(body["room_id"]);
             if (!room_id || !roomExists(*room_id))
             {
                 error = "방을 찾을 수 없습니다.";
@@ -488,8 +488,8 @@ WHERE id = ?
                 description,
                 device_class,
                 enabled ? 1 : 0,
-                jsonToText(interface_json),
-                jsonToText(settings_json),
+                json_to_text(interface_json),
+                json_to_text(settings_json),
                 internal_id);
         }
         else
@@ -504,7 +504,7 @@ WHERE id = ?
                 description,
                 device_class,
                 enabled ? 1 : 0,
-                jsonToText(interface_json),
+                json_to_text(interface_json),
                 internal_id);
         }
     }

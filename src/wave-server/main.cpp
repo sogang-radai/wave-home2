@@ -18,7 +18,7 @@ namespace
 {
     std::atomic<bool> g_forceExit{false};
 
-    void installShutdownHandlers()
+    void install_shutdown_handlers()
     {
         struct sigaction action {};
         action.sa_handler = [](int signal)
@@ -46,12 +46,12 @@ namespace
         sigaction(SIGTERM, &action, nullptr);
     }
 
-    bool isValidProfile(const std::string& profile)
+    bool is_valid_profile(const std::string& profile)
     {
         return profile == "real" || profile == "demo" || profile == "test";
     }
 
-    ws::LaunchOptions parseLaunchOptions(int argc, const char* argv[])
+    ws::LaunchOptions parse_launch_options(int argc, const char* argv[])
     {
         ArgParser parser(
             "wave-server",
@@ -75,7 +75,7 @@ namespace
         ws::LaunchOptions launch;
         launch.config_path = parser.get<std::string>("config");
         launch.profile = parser.get<std::string>("profile");
-        if (!isValidProfile(launch.profile))
+        if (!is_valid_profile(launch.profile))
         {
             throw std::runtime_error(
                 "Invalid --profile \"" + launch.profile + "\": use real, demo, or test");
@@ -95,7 +95,7 @@ int main(int argc, const char* argv[])
     ws::LaunchOptions launch;
     try
     {
-        launch = parseLaunchOptions(argc, argv);
+        launch = parse_launch_options(argc, argv);
     }
     catch (const std::exception& e)
     {
@@ -110,7 +110,7 @@ int main(int argc, const char* argv[])
         return 1;
     }
 
-    installShutdownHandlers();
+    install_shutdown_handlers();
 
     ws::AppState app;
     app.init(launch);

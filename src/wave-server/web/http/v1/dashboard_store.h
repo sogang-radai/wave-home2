@@ -24,8 +24,8 @@ public:
 private:
     db::DbClientPtr m_client;
 
-    static Json::Value parseJsonColumn(const drogon::orm::Field& field);
-    static Json::Value parseDaysJson(const std::string& raw);
+    static Json::Value parse_json_column(const drogon::orm::Field& field);
+    static Json::Value parse_days_json(const std::string& raw);
 };
 
 } // namespace v1

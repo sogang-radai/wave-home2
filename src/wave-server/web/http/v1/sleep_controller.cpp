@@ -12,7 +12,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
@@ -31,7 +31,7 @@ void SleepController::todaySummary(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -53,7 +53,7 @@ void SleepController::todayPlan(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -91,7 +91,7 @@ void SleepController::todayAutomationSummary(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -113,7 +113,7 @@ void SleepController::dailySessions(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -149,7 +149,7 @@ void SleepController::dailyReport(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -187,7 +187,7 @@ void SleepController::weeklyReport(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");

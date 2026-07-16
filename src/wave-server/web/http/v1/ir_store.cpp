@@ -17,8 +17,8 @@ namespace v1 {
 namespace
 {
 
-std::string slugify(const std::string& input)
-{
+    std::string slugify(const std::string& input)
+    {
     std::string out;
     out.reserve(input.size());
     bool prev_sep = true;
@@ -38,11 +38,11 @@ std::string slugify(const std::string& input)
     while (!out.empty() && out.back() == '_')
         out.pop_back();
     return out.empty() ? "command" : out;
-}
+    }
 
-} // namespace
+    } // namespace
 
-std::string IrStore::isoNowKst()
+std::string IrStore::iso_now_kst()
 {
     const auto now = formatTimestamp();
     if (now.size() >= 19)
@@ -50,7 +50,7 @@ std::string IrStore::isoNowKst()
     return now;
 }
 
-std::string IrStore::makeCommandId(const std::string& name)
+std::string IrStore::make_command_id(const std::string& name)
 {
     const auto base = slugify(name);
     const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -58,7 +58,7 @@ std::string IrStore::makeCommandId(const std::string& name)
     return "ir_" + base + "_" + std::to_string(stamp % 100000);
 }
 
-IrStore::Command IrStore::commandFromJson(const Json::Value& value)
+IrStore::Command IrStore::command_from_json(const Json::Value& value)
 {
     Command command;
     if (value.isMember("id") && value["id"].isString())
@@ -86,7 +86,7 @@ IrStore::Command IrStore::commandFromJson(const Json::Value& value)
     return command;
 }
 
-Json::Value IrStore::commandToJson(const Command& command, bool include_timings)
+Json::Value IrStore::command_to_json(const Command& command, bool include_timings)
 {
     Json::Value out;
     out["id"] = command.id;
@@ -144,7 +144,7 @@ bool IrStore::load(const std::filesystem::path& path, std::string& out_error)
     }
 
     for (const auto& item : root["commands"])
-        m_commands.push_back(commandFromJson(item));
+        m_commands.push_back(command_from_json(item));
 
     out_error.clear();
     return true;
@@ -170,7 +170,7 @@ bool IrStore::persistLocked(std::string& code) const
     Json::Value root;
     Json::Value commands(Json::arrayValue);
     for (const auto& command : m_commands)
-        commands.append(commandToJson(command, true));
+        commands.append(command_to_json(command, true));
     root["commands"] = commands;
 
     const auto tmp_path = m_path.string() + ".tmp";
@@ -202,7 +202,7 @@ Json::Value IrStore::listCommands() const
     std::lock_guard lock(m_mutex);
     Json::Value items(Json::arrayValue);
     for (const auto& command : m_commands)
-        items.append(commandToJson(command, true));
+        items.append(command_to_json(command, true));
     return items;
 }
 
@@ -217,7 +217,7 @@ Json::Value IrStore::getCommand(const std::string& command_id, std::string& code
     }
 
     code.clear();
-    return commandToJson(*command, true);
+    return command_to_json(*command, true);
 }
 
 Json::Value IrStore::saveCommand(const Json::Value& body, std::string& code)
@@ -235,7 +235,7 @@ Json::Value IrStore::saveCommand(const Json::Value& body, std::string& code)
     }
 
     std::lock_guard lock(m_mutex);
-    auto command = commandFromJson(body);
+    auto command = command_from_json(body);
     if (command.timings.empty())
     {
         code = "INVALID_TIMINGS";
@@ -253,9 +253,9 @@ Json::Value IrStore::saveCommand(const Json::Value& body, std::string& code)
     if (!is_update)
     {
         if (command.id.empty())
-            command.id = makeCommandId(command.name);
+            command.id = make_command_id(command.name);
         if (command.createdAt.empty())
-            command.createdAt = isoNowKst();
+            command.createdAt = iso_now_kst();
         if (command.source.empty())
             command.source = "manual";
         m_commands.push_back(std::move(command));
@@ -284,7 +284,7 @@ Json::Value IrStore::saveCommand(const Json::Value& body, std::string& code)
         return Json::Value();
 
     code.clear();
-    return commandToJson(command, true);
+    return command_to_json(command, true);
 }
 
 Json::Value IrStore::deleteCommand(const std::string& command_id, std::string& code)

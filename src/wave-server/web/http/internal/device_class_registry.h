@@ -13,9 +13,9 @@ namespace internal {
 class DeviceClassRegistry
 {
 public:
-    static Json::Value listClasses();
-    static Json::Value capabilitiesForClass(const std::string& class_name);
-    static std::string labelForClass(const std::string& class_name);
+    static Json::Value list_classes();
+    static Json::Value capabilities_for_class(const std::string& class_name);
+    static std::string label_for_class(const std::string& class_name);
 };
 
 } // namespace internal

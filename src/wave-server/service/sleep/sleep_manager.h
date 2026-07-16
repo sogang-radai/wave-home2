@@ -109,7 +109,7 @@ private:
     bool initPipeline(SleepRuntime& runtime, std::string& out_error);
     std::vector<SleepRoomConfig> loadRoomConfigs();
     void tickVitals(SleepRuntime& runtime);
-    static bool isSleepEnabledRadar(const std::string& external_id);
+    static bool is_sleep_enabled_radar(const std::string& external_id);
     std::optional<double> queryStationEnv(const std::string& external_id, const char* field);
     void storeAgentEmbeddings(SleepJobKind kind, int64_t row_id, const std::vector<float>& embedding);
 

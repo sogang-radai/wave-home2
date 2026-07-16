@@ -20,7 +20,7 @@ namespace
     constexpr const char* kReset = "\033[0m";
     constexpr const char* kDim = "\033[2m";
 
-    const LevelStyle& levelStyle(LogLevel level)
+    const LevelStyle& level_style(LogLevel level)
     {
         static const LevelStyle styles[] = {
             {"TRACE", "\033[90m", "\033[90m"},
@@ -53,7 +53,7 @@ namespace
         return s;
     }
 
-    std::string pathBasename(const std::string& path)
+    std::string path_basename(const std::string& path)
     {
         const auto pos = path.find_last_of("/\\");
         if (pos == std::string::npos)
@@ -62,7 +62,7 @@ namespace
         return path.substr(pos + 1);
     }
 
-    std::string formatTimestamp(log_time_t timestamp)
+    std::string format_timestamp(log_time_t timestamp)
     {
         const auto timeT = log_clock_t::to_time_t(timestamp);
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -83,13 +83,13 @@ namespace
         return oss.str();
     }
 
-    void appendLocation(std::ostringstream& oss, const LogItem& item)
+    void append_location(std::ostringstream& oss, const LogItem& item)
     {
         bool hasLocation = false;
 
         if ((item.mask & LOG_MASK_FILE) != 0 && !item.file.empty())
         {
-            oss << pathBasename(item.file);
+            oss << path_basename(item.file);
             hasLocation = true;
         }
 
@@ -124,15 +124,15 @@ namespace
             oss << " | ";
     }
 
-    void defaultOutput(const LogItem& item)
+    void default_output(const LogItem& item)
     {
-        const auto& style = levelStyle(item.level);
+        const auto& style = level_style(item.level);
 
         std::ostringstream oss;
-        oss << kDim << formatTimestamp(item.timestamp) << kReset << ' ';
+        oss << kDim << format_timestamp(item.timestamp) << kReset << ' ';
         oss << style.color << '[' << style.label << ']' << kReset << ' ';
 
-        appendLocation(oss, item);
+        append_location(oss, item);
 
         if ((item.mask & LOG_MASK_MESSAGE) != 0 && !item.message.empty())
             oss << style.messageColor << item.message << kReset;
@@ -143,17 +143,17 @@ namespace
             std::abort();
     }
 
-    void emitItem(const LogItem& item)
+    void emit_item(const LogItem& item)
     {
         auto& loggerState = state();
         if (loggerState.useDefaultOutput || !loggerState.outputFunction)
-            defaultOutput(item);
+            default_output(item);
         else
             loggerState.outputFunction(item);
     }
 }
 
-void Logger::setQueueSize(size_t size)
+void Logger::set_queue_size(size_t size)
 {
     auto& loggerState = state();
     std::lock_guard<std::mutex> lock(loggerState.mutex);
@@ -163,7 +163,7 @@ void Logger::setQueueSize(size_t size)
         loggerState.items.pop_front();
 }
 
-void Logger::addItem(const LogItem& item)
+void Logger::add_item(const LogItem& item)
 {
     auto& loggerState = state();
     {
@@ -173,10 +173,10 @@ void Logger::addItem(const LogItem& item)
             loggerState.items.pop_front();
     }
 
-    emitItem(item);
+    emit_item(item);
 }
 
-void Logger::enumerateItems(std::function<void(const LogItem& item)> callback)
+void Logger::enumerate_items(std::function<void(const LogItem& item)> callback)
 {
     if (!callback)
         return;
@@ -187,7 +187,7 @@ void Logger::enumerateItems(std::function<void(const LogItem& item)> callback)
         callback(item);
 }
 
-void Logger::enumerateItems(
+void Logger::enumerate_items(
     log_time_t start,
     log_time_t end,
     std::function<void(const LogItem& item)> callback)
@@ -204,7 +204,7 @@ void Logger::enumerateItems(
     }
 }
 
-void Logger::setOutputFunction(std::function<void(const LogItem& item)> outputFunction)
+void Logger::set_output_function(std::function<void(const LogItem& item)> outputFunction)
 {
     auto& loggerState = state();
     std::lock_guard<std::mutex> lock(loggerState.mutex);
@@ -240,7 +240,7 @@ void Logger::log(
     item.function = function ? function : "";
     item.message = message;
 
-    addItem(item);
+    add_item(item);
 }
 
 WAVE_NAMESPACE_END

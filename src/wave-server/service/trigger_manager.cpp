@@ -15,7 +15,7 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::string weekdayToken(int wday)
+    std::string weekday_token(int wday)
     {
         switch (wday)
         {
@@ -38,7 +38,7 @@ namespace
         }
     }
 
-    bool parseClock(const std::string& hhmm, int& out_hour, int& out_minute)
+    bool parse_clock(const std::string& hhmm, int& out_hour, int& out_minute)
     {
         const auto colon = hhmm.find(':');
         if (colon == std::string::npos)
@@ -48,11 +48,11 @@ namespace
         return true;
     }
 
-    bool localClockMatches(const std::string& hhmm)
+    bool local_clock_matches(const std::string& hhmm)
     {
         int hour = 0;
         int minute = 0;
-        if (!parseClock(hhmm, hour, minute))
+        if (!parse_clock(hhmm, hour, minute))
             return false;
 
         const std::time_t now_t = std::time(nullptr);
@@ -65,7 +65,7 @@ namespace
         return local_tm.tm_hour == hour && local_tm.tm_min == minute;
     }
 
-    int localWeekday()
+    int local_weekday()
     {
         const std::time_t now_t = std::time(nullptr);
         std::tm local_tm {};
@@ -519,12 +519,12 @@ void TriggerManager::tickSchedule()
 
             if (schedule.repeat == "daily" && schedule.time)
             {
-                if (localClockMatches(*schedule.time) && !state.firedOnce)
+                if (local_clock_matches(*schedule.time) && !state.firedOnce)
                 {
                     due_rules.push_back(state.rule);
                     state.firedOnce = true;
                 }
-                else if (!localClockMatches(*schedule.time))
+                else if (!local_clock_matches(*schedule.time))
                 {
                     state.firedOnce = false;
                 }
@@ -533,15 +533,15 @@ void TriggerManager::tickSchedule()
 
             if (schedule.repeat == "weekly" && schedule.time)
             {
-                const std::string token = weekdayToken(localWeekday());
+                const std::string token = weekday_token(local_weekday());
                 const bool day_match = std::find(schedule.daysOfWeek.begin(), schedule.daysOfWeek.end(), token)
                     != schedule.daysOfWeek.end();
-                if (day_match && localClockMatches(*schedule.time) && !state.firedOnce)
+                if (day_match && local_clock_matches(*schedule.time) && !state.firedOnce)
                 {
                     due_rules.push_back(state.rule);
                     state.firedOnce = true;
                 }
-                else if (!localClockMatches(*schedule.time))
+                else if (!local_clock_matches(*schedule.time))
                 {
                     state.firedOnce = false;
                 }

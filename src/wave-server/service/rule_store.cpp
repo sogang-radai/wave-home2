@@ -17,14 +17,14 @@ namespace
     // Optional[...] = None field, e.g. agent-generated ruleJson.repeatIntervalMs) still throws
     // a type_error on .get<T>(). Treat "present but null" the same as "absent".
     template <typename T>
-    T valueOrDefault(const json& value, const char* key, T default_value)
+    T value_or_default(const json& value, const char* key, T default_value)
     {
         if (!value.contains(key) || value[key].is_null())
             return default_value;
         return value[key].get<T>();
     }
 
-    json ruleToJson(const Rule& rule, const std::unordered_map<std::string, Trigger>& triggers)
+    json rule_to_json(const Rule& rule, const std::unordered_map<std::string, Trigger>& triggers)
     {
         json out = json::object();
         out["id"] = rule.id;
@@ -56,7 +56,7 @@ namespace
         return out;
     }
 
-    bool parseRuleAction(const json& value, RuleAction& out_action, std::string& out_error)
+    bool parse_rule_action(const json& value, RuleAction& out_action, std::string& out_error)
     {
         if (!value.is_object())
         {
@@ -81,7 +81,7 @@ namespace
         return true;
     }
 
-    json actionsPayloadFromRule(const Rule& rule)
+    json actions_payload_from_rule(const Rule& rule)
     {
         json out = json::object();
         out["deviceId"] = rule.action.deviceId;
@@ -92,7 +92,7 @@ namespace
         return out;
     }
 
-    bool parseActionsPayload(
+    bool parse_actions_payload(
         const std::string& text,
         RuleAction& out_action,
         ExecMode& out_exec_mode,
@@ -125,15 +125,15 @@ namespace
             return false;
         }
 
-        if (!parseRuleAction(value, out_action, out_error))
+        if (!parse_rule_action(value, out_action, out_error))
             return false;
 
-        out_exec_mode = parseExecMode(valueOrDefault(value, "execMode", std::string("once")));
-        out_repeat_interval_ms = valueOrDefault(value, "repeatIntervalMs", 0u);
+        out_exec_mode = parseExecMode(value_or_default(value, "execMode", std::string("once")));
+        out_repeat_interval_ms = value_or_default(value, "repeatIntervalMs", 0u);
         return true;
     }
 
-    bool parseRuleFromJson(const json& value, Rule& out_rule, std::string& out_error)
+    bool parse_rule_from_json(const json& value, Rule& out_rule, std::string& out_error)
     {
         if (!value.is_object())
         {
@@ -154,12 +154,12 @@ namespace
         out_rule = Rule{};
         out_rule.id = value["id"].get<std::string>();
         out_rule.name = value["name"].get<std::string>();
-        out_rule.enabled = valueOrDefault(value, "enabled", true);
-        out_rule.cooldownMs = valueOrDefault(value, "cooldownMs", 0u);
-        out_rule.repeatIntervalMs = valueOrDefault(value, "repeatIntervalMs", 0u);
-        out_rule.execMode = parseExecMode(valueOrDefault(value, "execMode", std::string("once")));
+        out_rule.enabled = value_or_default(value, "enabled", true);
+        out_rule.cooldownMs = value_or_default(value, "cooldownMs", 0u);
+        out_rule.repeatIntervalMs = value_or_default(value, "repeatIntervalMs", 0u);
+        out_rule.execMode = parseExecMode(value_or_default(value, "execMode", std::string("once")));
 
-        if (!parseRuleAction(value.at("action"), out_rule.action, out_error))
+        if (!parse_rule_action(value.at("action"), out_rule.action, out_error))
             return false;
 
         const bool has_trigger = value.contains("trigger") && !value["trigger"].is_null();
@@ -190,7 +190,7 @@ namespace
         return true;
     }
 
-    bool hydrateTriggersFromRule(Rule& rule, std::unordered_map<std::string, Trigger>& triggers, std::string& out_error)
+    bool hydrate_triggers_from_rule(Rule& rule, std::unordered_map<std::string, Trigger>& triggers, std::string& out_error)
     {
         if (!rule.triggerJson.is_object() || rule.triggerJson.empty())
             return true;
@@ -204,7 +204,7 @@ namespace
         return true;
     }
 
-    bool rowToRule(const drogon::orm::Row& row, Rule& out_rule, std::string& out_error)
+    bool row_to_rule(const drogon::orm::Row& row, Rule& out_rule, std::string& out_error)
     {
         out_rule = Rule{};
         out_rule.id = row["external_id"].as<std::string>();
@@ -212,7 +212,7 @@ namespace
         out_rule.enabled = row["enabled"].as<int>() != 0;
         out_rule.cooldownMs = static_cast<uint32_t>(row["cooldown_ms"].as<int>());
 
-        if (!parseActionsPayload(
+        if (!parse_actions_payload(
                 row["actions_json"].as<std::string>(),
                 out_rule.action,
                 out_rule.execMode,
@@ -255,7 +255,7 @@ namespace
         return true;
     }
 
-    void insertAutomationRuleRow(
+    void insert_automation_rule_row(
         const db::DbClientPtr& db,
         int64_t user_id,
         const Rule& rule,
@@ -264,7 +264,7 @@ namespace
     {
         const std::string trigger_text = rule.triggerJson.is_object() ? rule.triggerJson.dump() : std::string();
         const std::string schedule_text = rule.schedule ? ruleScheduleToJson(*rule.schedule).dump() : std::string();
-        const std::string actions_text = actionsPayloadFromRule(rule).dump();
+        const std::string actions_text = actions_payload_from_rule(rule).dump();
 
         auto binder = *db
                       << "INSERT INTO automation_rule "
@@ -290,7 +290,7 @@ namespace
         binder.exec();
     }
 
-    void updateAutomationRuleRow(
+    void update_automation_rule_row(
         const db::DbClientPtr& db,
         int64_t user_id,
         const Rule& rule,
@@ -298,7 +298,7 @@ namespace
     {
         const std::string trigger_text = rule.triggerJson.is_object() ? rule.triggerJson.dump() : std::string();
         const std::string schedule_text = rule.schedule ? ruleScheduleToJson(*rule.schedule).dump() : std::string();
-        const std::string actions_text = actionsPayloadFromRule(rule).dump();
+        const std::string actions_text = actions_payload_from_rule(rule).dump();
 
         drogon::orm::Result result(nullptr);
         auto binder = *db
@@ -368,7 +368,7 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
         for (const auto& row : rows)
         {
             Rule rule;
-            if (!rowToRule(row, rule, out_error))
+            if (!row_to_rule(row, rule, out_error))
             {
                 LOG_WARN(
                     "Skipping automation_rule {}: {}",
@@ -381,7 +381,7 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
             if (rule.triggerJson.is_object() && !rule.triggerJson.empty())
             {
                 std::string trigger_error;
-                if (!hydrateTriggersFromRule(rule, m_triggers, trigger_error))
+                if (!hydrate_triggers_from_rule(rule, m_triggers, trigger_error))
                 {
                     LOG_WARN("Rule {} has unsupported legacy trigger, trigger ignored: {}", rule.id, trigger_error);
                     rule.triggerJson = json();
@@ -422,7 +422,7 @@ bool RuleStore::insertRuleToDatabase(const Rule& rule, int64_t user_id, std::str
     try
     {
         const auto now = formatTimestamp();
-        insertAutomationRuleRow(m_db, user_id, rule, now, now);
+        insert_automation_rule_row(m_db, user_id, rule, now, now);
         return true;
     }
     catch (const std::exception& e)
@@ -443,7 +443,7 @@ bool RuleStore::updateRuleInDatabase(const Rule& rule, int64_t user_id, std::str
     try
     {
         const auto now = formatTimestamp();
-        updateAutomationRuleRow(m_db, user_id, rule, now);
+        update_automation_rule_row(m_db, user_id, rule, now);
         return true;
     }
     catch (const std::exception& e)
@@ -581,7 +581,7 @@ std::vector<RuleView> RuleStore::list() const
     std::vector<RuleView> out;
     out.reserve(m_rules.size());
     for (const auto& rule : m_rules)
-        out.push_back(toView(rule, m_triggers));
+        out.push_back(to_view(rule, m_triggers));
     return out;
 }
 
@@ -595,7 +595,7 @@ std::vector<RuleView> RuleStore::listForDevice(const std::string& device_id) con
         if (!match && rule.triggerJson.is_object() && rule.triggerJson.contains("deviceId"))
             match = rule.triggerJson["deviceId"].get<std::string>() == device_id;
         if (match)
-            out.push_back(toView(rule, m_triggers));
+            out.push_back(to_view(rule, m_triggers));
     }
     return out;
 }
@@ -606,7 +606,7 @@ std::optional<RuleView> RuleStore::get(const std::string& rule_id) const
     for (const auto& rule : m_rules)
     {
         if (rule.id == rule_id)
-            return toView(rule, m_triggers);
+            return to_view(rule, m_triggers);
     }
     return std::nullopt;
 }
@@ -629,7 +629,7 @@ TriggerIndexSnapshot RuleStore::snapshot() const
     return m_index;
 }
 
-RuleView RuleStore::toView(const Rule& rule, const std::unordered_map<std::string, Trigger>& triggers)
+RuleView RuleStore::to_view(const Rule& rule, const std::unordered_map<std::string, Trigger>& triggers)
 {
     RuleView view;
     view.rule = rule;
@@ -647,7 +647,7 @@ RuleView RuleStore::toView(const Rule& rule, const std::unordered_map<std::strin
     return view;
 }
 
-bool RuleStore::validatePayload(const json& payload, std::string& out_error)
+bool RuleStore::validate_payload(const json& payload, std::string& out_error)
 {
     if (!payload.is_object())
     {
@@ -666,7 +666,7 @@ bool RuleStore::validatePayload(const json& payload, std::string& out_error)
     }
 
     RuleAction action;
-    if (!parseRuleAction(payload["action"], action, out_error))
+    if (!parse_rule_action(payload["action"], action, out_error))
         return false;
 
     const bool has_trigger = payload.contains("trigger") && !payload["trigger"].is_null();
@@ -696,7 +696,7 @@ bool RuleStore::validatePayload(const json& payload, std::string& out_error)
 
 bool RuleStore::applyCreate(const json& payload, RuleView& out_view, std::string& out_error)
 {
-    if (!validatePayload(payload, out_error))
+    if (!validate_payload(payload, out_error))
         return false;
 
     Rule rule;
@@ -704,18 +704,18 @@ bool RuleStore::applyCreate(const json& payload, RuleView& out_view, std::string
         ? payload["id"].get<std::string>()
         : nextRuleId();
     rule.name = payload["name"].get<std::string>();
-    rule.enabled = valueOrDefault(payload, "enabled", true);
-    rule.cooldownMs = valueOrDefault(payload, "cooldownMs", 0u);
-    rule.repeatIntervalMs = valueOrDefault(payload, "repeatIntervalMs", 0u);
-    rule.execMode = parseExecMode(valueOrDefault(payload, "execMode", std::string("once")));
+    rule.enabled = value_or_default(payload, "enabled", true);
+    rule.cooldownMs = value_or_default(payload, "cooldownMs", 0u);
+    rule.repeatIntervalMs = value_or_default(payload, "repeatIntervalMs", 0u);
+    rule.execMode = parseExecMode(value_or_default(payload, "execMode", std::string("once")));
 
-    if (!parseRuleAction(payload["action"], rule.action, out_error))
+    if (!parse_rule_action(payload["action"], rule.action, out_error))
         return false;
 
     if (payload.contains("trigger") && !payload["trigger"].is_null())
     {
         rule.triggerJson = payload["trigger"];
-        if (!hydrateTriggersFromRule(rule, m_triggers, out_error))
+        if (!hydrate_triggers_from_rule(rule, m_triggers, out_error))
             return false;
     }
 
@@ -732,7 +732,7 @@ bool RuleStore::applyCreate(const json& payload, RuleView& out_view, std::string
 
     m_rules.push_back(rule);
     rebuildIndex();
-    out_view = toView(rule, m_triggers);
+    out_view = to_view(rule, m_triggers);
     return true;
 }
 
@@ -748,16 +748,16 @@ bool RuleStore::applyUpdate(const std::string& rule_id, const json& patch, RuleV
         return false;
     }
 
-    json merged = ruleToJson(*it, m_triggers);
+    json merged = rule_to_json(*it, m_triggers);
     for (auto& [key, value] : patch.items())
         merged[key] = value;
     merged["id"] = rule_id;
 
     Rule updated;
-    if (!parseRuleFromJson(merged, updated, out_error))
+    if (!parse_rule_from_json(merged, updated, out_error))
         return false;
 
-    if (!hydrateTriggersFromRule(updated, m_triggers, out_error))
+    if (!hydrate_triggers_from_rule(updated, m_triggers, out_error))
         return false;
 
     if (!updateRuleInDatabase(updated, m_defaultUserId, out_error))
@@ -765,7 +765,7 @@ bool RuleStore::applyUpdate(const std::string& rule_id, const json& patch, RuleV
 
     *it = std::move(updated);
     rebuildIndex();
-    out_view = toView(*it, m_triggers);
+    out_view = to_view(*it, m_triggers);
     return true;
 }
 
@@ -799,7 +799,7 @@ bool RuleStore::applySetEnabled(const std::string& rule_id, bool enabled, RuleVi
             if (!updateRuleInDatabase(rule, m_defaultUserId, out_error))
                 return false;
             rebuildIndex();
-            out_view = toView(rule, m_triggers);
+            out_view = to_view(rule, m_triggers);
             return true;
         }
     }
@@ -809,7 +809,7 @@ bool RuleStore::applySetEnabled(const std::string& rule_id, bool enabled, RuleVi
 
 std::future<RuleView> RuleStore::createAsync(const json& payload)
 {
-    return TaskQueue::enqueueAsync([this, payload]()
+    return TaskQueue::enqueue_async([this, payload]()
     {
         RuleView view;
         std::string error;
@@ -828,7 +828,7 @@ std::future<RuleView> RuleStore::createAsync(const json& payload)
 
 std::future<RuleView> RuleStore::updateAsync(const std::string& rule_id, const json& patch)
 {
-    return TaskQueue::enqueueAsync([this, rule_id, patch]()
+    return TaskQueue::enqueue_async([this, rule_id, patch]()
     {
         RuleView view;
         std::string error;
@@ -847,7 +847,7 @@ std::future<RuleView> RuleStore::updateAsync(const std::string& rule_id, const j
 
 std::future<bool> RuleStore::deleteAsync(const std::string& rule_id)
 {
-    return TaskQueue::enqueueAsync([this, rule_id]()
+    return TaskQueue::enqueue_async([this, rule_id]()
     {
         std::string error;
         ChangedCallback callback;
@@ -867,7 +867,7 @@ std::future<bool> RuleStore::deleteAsync(const std::string& rule_id)
 
 std::future<RuleView> RuleStore::setEnabledAsync(const std::string& rule_id, bool enabled)
 {
-    return TaskQueue::enqueueAsync([this, rule_id, enabled]()
+    return TaskQueue::enqueue_async([this, rule_id, enabled]()
     {
         RuleView view;
         std::string error;

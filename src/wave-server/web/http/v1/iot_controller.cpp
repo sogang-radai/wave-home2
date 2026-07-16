@@ -32,7 +32,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    bool requireDevices(
+    bool require_devices(
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
         IotStore& store)
     {
@@ -46,7 +46,7 @@ namespace
         return true;
     }
 
-    void respondDemoJson(
+    void respond_demo_json(
         const drogon::HttpRequestPtr& req,
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
         const Json::Value& body,
@@ -60,7 +60,7 @@ namespace
     class PhoneMjpegStream
     {
     public:
-        void setStopFlag(std::shared_ptr<std::atomic<bool>> flag)
+        void set_stop_flag(std::shared_ptr<std::atomic<bool>> flag)
         {
             m_stop = std::move(flag);
         }
@@ -218,12 +218,12 @@ void IotController::getSummary(
         if (!code.empty())
             respondError(callback, 503, code, "장치 요약을 조회할 수 없습니다.");
         else
-            respondDemoJson(req, callback, body, runtime_id);
+            respond_demo_json(req, callback, body, runtime_id);
         return;
     }
 
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
     callback(drogon::HttpResponse::newHttpJsonResponse(store.getSummary()));
 }
@@ -247,12 +247,12 @@ void IotController::listDevices(
         if (!code.empty())
             respondError(callback, 503, code, "장치 목록을 조회할 수 없습니다.");
         else
-            respondDemoJson(req, callback, body.isMember("items") ? body["items"] : body, runtime_id);
+            respond_demo_json(req, callback, body.isMember("items") ? body["items"] : body, runtime_id);
         return;
     }
 
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listDevices()));
 }
@@ -281,12 +281,12 @@ void IotController::getDeviceState(
         else if (!code.empty())
             respondError(callback, 500, code, "상태 조회에 실패했습니다.");
         else
-            respondDemoJson(req, callback, body.isMember("state") ? body["state"] : body, runtime_id);
+            respond_demo_json(req, callback, body.isMember("state") ? body["state"] : body, runtime_id);
         return;
     }
 
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string code;
@@ -328,12 +328,12 @@ void IotController::queryDevice(
         else if (!code.empty())
             respondError(callback, 500, code, "조회에 실패했습니다.");
         else
-            respondDemoJson(req, callback, body.isMember("result") ? body["result"] : body, runtime_id);
+            respond_demo_json(req, callback, body.isMember("result") ? body["result"] : body, runtime_id);
         return;
     }
 
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string code;
@@ -383,12 +383,12 @@ void IotController::invokeDevice(
         else if (!code.empty())
             respondError(callback, 500, code, "제어에 실패했습니다.");
         else
-            respondDemoJson(req, callback, response, runtime_id);
+            respond_demo_json(req, callback, response, runtime_id);
         return;
     }
 
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -419,7 +419,7 @@ void IotController::reconnectDevice(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string error;
@@ -446,12 +446,12 @@ void IotController::listEvents(
     {
         // Virtual demo has no shared event ring; keep empty so UI matches summary.
         const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        respondDemoJson(req, callback, Json::Value(Json::arrayValue), runtime_id);
+        respond_demo_json(req, callback, Json::Value(Json::arrayValue), runtime_id);
         return;
     }
 
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     const auto device_id = req->getParameter("deviceId");
@@ -460,7 +460,7 @@ void IotController::listEvents(
 
 namespace
 {
-    int mapCameraErrorStatus(const std::string& code)
+    int map_camera_error_status(const std::string& code)
     {
         if (code == "NOT_FOUND" || code == "UNSUPPORTED_DEVICE")
             return 404;
@@ -479,13 +479,13 @@ void IotController::getCameraStream(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string code;
     const auto body = store.getCameraStream(deviceId, code);
     if (!code.empty())
-        respondError(callback, mapCameraErrorStatus(code), code, "스트림 정보를 가져올 수 없습니다.");
+        respondError(callback, map_camera_error_status(code), code, "스트림 정보를 가져올 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -497,7 +497,7 @@ void IotController::setCameraStream(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -510,7 +510,7 @@ void IotController::setCameraStream(
     std::string code;
     const auto body = store.setCameraStream(deviceId, (*json)["streaming"].asBool(), code);
     if (!code.empty())
-        respondError(callback, mapCameraErrorStatus(code), code, "스트림을 시작할 수 없습니다.");
+        respondError(callback, map_camera_error_status(code), code, "스트림을 시작할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -522,7 +522,7 @@ void IotController::exchangeCameraWebRtc(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string offer_sdp;
@@ -541,7 +541,7 @@ void IotController::exchangeCameraWebRtc(
     std::string answer_sdp;
     std::string code;
     if (!store.exchangeCameraWebRtc(deviceId, offer_sdp, answer_sdp, code))
-        respondError(callback, mapCameraErrorStatus(code), code, "WebRTC 연결에 실패했습니다.");
+        respondError(callback, map_camera_error_status(code), code, "WebRTC 연결에 실패했습니다.");
     else
     {
         Json::Value body;
@@ -558,14 +558,14 @@ void IotController::streamMp4(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string stream_name;
     std::string code;
     if (!store.openCameraMp4Stream(deviceId, stream_name, code))
     {
-        respondError(callback, mapCameraErrorStatus(code), code, "스트림을 열 수 없습니다.");
+        respondError(callback, map_camera_error_status(code), code, "스트림을 열 수 없습니다.");
         return;
     }
 
@@ -612,7 +612,7 @@ void IotController::streamMjpeg(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string code;
@@ -621,13 +621,13 @@ void IotController::streamMjpeg(
     std::string path;
     if (!store.openCameraMjpegStream(deviceId, host, port, path, code))
     {
-        respondError(callback, mapCameraErrorStatus(code), code, "스트림을 열 수 없습니다.");
+        respondError(callback, map_camera_error_status(code), code, "스트림을 열 수 없습니다.");
         return;
     }
 
     auto stream = std::make_shared<PhoneMjpegStream>();
     const auto stop_flag = AppState::get().iot.beginDroidMjpegProxy(deviceId);
-    stream->setStopFlag(stop_flag);
+    stream->set_stop_flag(stop_flag);
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
         [stream, deviceId, stop_flag, host = std::move(host), port, path = std::move(path)](
             drogon::ResponseStreamPtr response_stream)
@@ -676,13 +676,13 @@ void IotController::getPtzCapabilities(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string code;
     const auto body = store.getPtzCapabilities(deviceId, code);
     if (!code.empty())
-        respondError(callback, mapCameraErrorStatus(code), code, "PTZ 기능을 조회할 수 없습니다.");
+        respondError(callback, map_camera_error_status(code), code, "PTZ 기능을 조회할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -694,7 +694,7 @@ void IotController::movePtz(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -704,7 +704,7 @@ void IotController::movePtz(
 
     std::string code;
     if (!store.moveCameraPtz(deviceId, vector, code))
-        respondError(callback, mapCameraErrorStatus(code), code, "PTZ 이동에 실패했습니다.");
+        respondError(callback, map_camera_error_status(code), code, "PTZ 이동에 실패했습니다.");
     else
     {
         Json::Value body;
@@ -720,12 +720,12 @@ void IotController::stopPtz(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string code;
     if (!store.stopCameraPtz(deviceId, code))
-        respondError(callback, mapCameraErrorStatus(code), code, "PTZ 정지에 실패했습니다.");
+        respondError(callback, map_camera_error_status(code), code, "PTZ 정지에 실패했습니다.");
     else
     {
         Json::Value body;
@@ -741,7 +741,7 @@ void IotController::zoomPtz(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -750,7 +750,7 @@ void IotController::zoomPtz(
     std::string code;
     const auto body = store.zoomCameraPtz(deviceId, delta, code);
     if (!code.empty())
-        respondError(callback, mapCameraErrorStatus(code), code, "줌 조정에 실패했습니다.");
+        respondError(callback, map_camera_error_status(code), code, "줌 조정에 실패했습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -762,7 +762,7 @@ void IotController::captureSnapshot(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::thread([deviceId, callback = std::move(callback), &state]() mutable
@@ -773,7 +773,7 @@ void IotController::captureSnapshot(
         std::string code;
         if (!worker.captureCameraSnapshot(deviceId, jpeg, occurred_at, code))
         {
-            respondError(callback, mapCameraErrorStatus(code), code, "스냅샷 캡처에 실패했습니다.");
+            respondError(callback, map_camera_error_status(code), code, "스냅샷 캡처에 실패했습니다.");
             return;
         }
 
@@ -792,7 +792,7 @@ void IotController::sendTts(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -848,7 +848,7 @@ void IotController::streamWaveStationTelemetry(
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     std::string code;
@@ -975,7 +975,7 @@ void IotController::learnIrCommand(
     }
 
     IotStore store(state.deviceManager);
-    if (!requireDevices(callback, store))
+    if (!require_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -1072,7 +1072,7 @@ void IotController::getRadarGestureSet(
                 body["gestureSetId"] = mapped["gestureSetId"];
         }
 
-        respondDemoJson(req, callback, body, runtime_id);
+        respond_demo_json(req, callback, body, runtime_id);
         return;
     }
 
@@ -1120,7 +1120,7 @@ void IotController::setRadarGestureSet(
         Json::Value body;
         body["deviceId"] = deviceId;
         body["gestureSetId"] = gesture_set_id.empty() ? Json::Value() : Json::Value(gesture_set_id);
-        respondDemoJson(req, callback, body, runtime_id);
+        respond_demo_json(req, callback, body, runtime_id);
         return;
     }
 
@@ -1143,7 +1143,7 @@ void IotController::listSpeechOverlays(
     }
 
     const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-    respondDemoJson(req, callback, demoListSpeechOverlays(runtime_id), runtime_id);
+    respond_demo_json(req, callback, demoListSpeechOverlays(runtime_id), runtime_id);
 }
 
 } // namespace v1

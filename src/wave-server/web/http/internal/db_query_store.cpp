@@ -19,7 +19,7 @@ namespace
     constexpr int kDefaultLimit = 100;
     constexpr int kMaxLimit = 1000;
 
-    Json::Value makeQueryError(
+    Json::Value make_query_error(
         const std::string& table,
         const std::string& code,
         const std::string& message,
@@ -38,7 +38,7 @@ namespace
         return result;
     }
 
-    Json::Value makeQuerySuccess(const std::string& table, Json::Value items)
+    Json::Value make_query_success(const std::string& table, Json::Value items)
     {
         Json::Value result;
         result["table"] = table;
@@ -47,7 +47,7 @@ namespace
         return result;
     }
 
-    std::optional<int64_t> filterInt(const Json::Value& filter, const char* key)
+    std::optional<int64_t> filter_int(const Json::Value& filter, const char* key)
     {
         if (!filter.isMember(key))
             return std::nullopt;
@@ -61,14 +61,14 @@ namespace
         return std::nullopt;
     }
 
-    std::optional<std::string> filterString(const Json::Value& filter, const char* key)
+    std::optional<std::string> filter_string(const Json::Value& filter, const char* key)
     {
         if (!filter.isMember(key) || !filter[key].isString())
             return std::nullopt;
         return filter[key].asString();
     }
 
-    bool hasAnyFilter(const Json::Value& filter, std::initializer_list<const char*> keys)
+    bool has_any_filter(const Json::Value& filter, std::initializer_list<const char*> keys)
     {
         for (const char* key : keys)
         {
@@ -78,7 +78,7 @@ namespace
         return false;
     }
 
-    int clampLimit(const Json::Value& query)
+    int clamp_limit(const Json::Value& query)
     {
         int limit = kDefaultLimit;
         if (query.isMember("limit") && query["limit"].isInt())
@@ -86,16 +86,16 @@ namespace
         return std::max(1, std::min(limit, kMaxLimit));
     }
 
-    bool orderDesc(const Json::Value& query)
+    bool order_desc(const Json::Value& query)
     {
         return query.isMember("order") && query["order"].isString() && query["order"].asString() == "desc";
     }
 
-    std::string toIsoOrNull(const drogon::orm::Field& field)
+    std::string to_iso_or_null(const drogon::orm::Field& field)
     {
         if (field.isNull())
             return {};
-        return v1::ChatStore::toCreatedAtIso(field.as<std::string>());
+        return v1::ChatStore::to_created_at_iso(field.as<std::string>());
     }
 }
 
@@ -134,7 +134,7 @@ Json::Value DbQueryStore::executeOne(const Json::Value& query) const
 {
     if (!query.isObject() || !query.isMember("table") || !query["table"].isString())
     {
-        return makeQueryError("", "INVALID_FILTER", "table 필드가 필요합니다.", "table");
+        return make_query_error("", "INVALID_FILTER", "table 필드가 필요합니다.", "table");
     }
 
     const std::string table = query["table"].asString();
@@ -146,7 +146,7 @@ Json::Value DbQueryStore::executeOne(const Json::Value& query) const
     catch (const std::exception& e)
     {
         LOG_WARN("db_query failed for table {}: {}", table, e.what());
-        return makeQueryError(table, "INTERNAL_ERROR", "조회 중 오류가 발생했습니다.", "table");
+        return make_query_error(table, "INTERNAL_ERROR", "조회 중 오류가 발생했습니다.", "table");
     }
 }
 
@@ -155,14 +155,14 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
     const Json::Value filter = query.isMember("filter") && query["filter"].isObject()
         ? query["filter"]
         : Json::Value(Json::objectValue);
-    const int limit = clampLimit(query);
-    const bool desc = orderDesc(query);
+    const int limit = clamp_limit(query);
+    const bool desc = order_desc(query);
 
     if (table == "user")
     {
         std::string sql = "SELECT id, name, created_at FROM user";
         std::vector<std::string> clauses;
-        if (const auto id = filterInt(filter, "id"))
+        if (const auto id = filter_int(filter, "id"))
             clauses.push_back("id = " + std::to_string(*id));
         if (!clauses.empty())
             sql += " WHERE " + clauses[0];
@@ -176,20 +176,20 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
             item["name"] = row["name"].as<std::string>();
             if (!row["created_at"].isNull())
-                item["createdAt"] = toIsoOrNull(row["created_at"]);
+                item["createdAt"] = to_iso_or_null(row["created_at"]);
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "room")
     {
         std::ostringstream sql;
         sql << "SELECT DISTINCT r.id, r.name, r.description FROM room r";
-        if (const auto user_id = filterInt(filter, "userId"))
+        if (const auto user_id = filter_int(filter, "userId"))
             sql << " JOIN room_user_map m ON m.room_id = r.id WHERE m.user_id = " << *user_id;
-        if (const auto id = filterInt(filter, "id"))
-            sql << (filterInt(filter, "userId") ? " AND" : " WHERE") << " r.id = " << *id;
+        if (const auto id = filter_int(filter, "id"))
+            sql << (filter_int(filter, "userId") ? " AND" : " WHERE") << " r.id = " << *id;
         sql << (desc ? " ORDER BY r.id DESC" : " ORDER BY r.id ASC");
         sql << " LIMIT " << limit;
 
@@ -202,19 +202,19 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["description"] = row["description"].as<std::string>();
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "room_user_map")
     {
-        if (!hasAnyFilter(filter, {"roomId", "userId"}))
-            return makeQueryError(table, "INVALID_FILTER", "roomId|userId 중 최소 1개는 필수입니다.", "roomId|userId");
+        if (!has_any_filter(filter, {"roomId", "userId"}))
+            return make_query_error(table, "INVALID_FILTER", "roomId|userId 중 최소 1개는 필수입니다.", "roomId|userId");
 
         std::ostringstream sql;
         sql << "SELECT room_id, user_id FROM room_user_map WHERE 1=1";
-        if (const auto room_id = filterInt(filter, "roomId"))
+        if (const auto room_id = filter_int(filter, "roomId"))
             sql << " AND room_id = " << *room_id;
-        if (const auto user_id = filterInt(filter, "userId"))
+        if (const auto user_id = filter_int(filter, "userId"))
             sql << " AND user_id = " << *user_id;
         sql << " LIMIT " << limit;
 
@@ -226,7 +226,7 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "device")
@@ -236,25 +236,25 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             << " FROM device d";
         bool joined_room = false;
         bool joined_user = false;
-        if (filterInt(filter, "roomId"))
+        if (filter_int(filter, "roomId"))
         {
             sql << " JOIN device_room_map drm ON drm.device_id = d.id";
             joined_room = true;
         }
-        if (filterInt(filter, "userId"))
+        if (filter_int(filter, "userId"))
         {
             sql << " JOIN device_user_map dum ON dum.device_id = d.id";
             joined_user = true;
         }
 
         std::vector<std::string> clauses;
-        if (const auto id = filterInt(filter, "id"))
+        if (const auto id = filter_int(filter, "id"))
             clauses.push_back("d.id = " + std::to_string(*id));
-        if (const auto room_id = filterInt(filter, "roomId"))
+        if (const auto room_id = filter_int(filter, "roomId"))
             clauses.push_back("drm.room_id = " + std::to_string(*room_id));
-        if (const auto user_id = filterInt(filter, "userId"))
+        if (const auto user_id = filter_int(filter, "userId"))
             clauses.push_back("dum.user_id = " + std::to_string(*user_id));
-        if (const auto class_name = filterString(filter, "class"))
+        if (const auto class_name = filter_string(filter, "class"))
             clauses.push_back("d.class = '" + *class_name + "'");
         const int archived = filter.isMember("archived") ? filter["archived"].asInt() : 0;
         clauses.push_back("d.archived = " + std::to_string(archived));
@@ -288,16 +288,16 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["enabled"] = row["enabled"].as<int>() != 0;
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "device_user_map" || table == "device_room_map")
     {
         const bool is_user_map = table == "device_user_map";
-        if (!hasAnyFilter(filter, is_user_map ? std::initializer_list<const char*>{"deviceId", "userId"}
+        if (!has_any_filter(filter, is_user_map ? std::initializer_list<const char*>{"deviceId", "userId"}
                                               : std::initializer_list<const char*>{"deviceId", "roomId"}))
         {
-            return makeQueryError(
+            return make_query_error(
                 table,
                 "INVALID_FILTER",
                 is_user_map ? "deviceId|userId 중 최소 1개는 필수입니다." : "deviceId|roomId 중 최소 1개는 필수입니다.",
@@ -310,14 +310,14 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
         else
             sql << "SELECT device_id, room_id FROM device_room_map WHERE 1=1";
 
-        if (const auto device_id = filterInt(filter, "deviceId"))
+        if (const auto device_id = filter_int(filter, "deviceId"))
             sql << " AND device_id = " << *device_id;
         if (is_user_map)
         {
-            if (const auto user_id = filterInt(filter, "userId"))
+            if (const auto user_id = filter_int(filter, "userId"))
                 sql << " AND user_id = " << *user_id;
         }
-        else if (const auto room_id = filterInt(filter, "roomId"))
+        else if (const auto room_id = filter_int(filter, "roomId"))
         {
             sql << " AND room_id = " << *room_id;
         }
@@ -334,24 +334,24 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
                 item["roomId"] = static_cast<Json::Int64>(row["room_id"].as<int64_t>());
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "notification")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, type, message, read, created_at FROM notification WHERE user_id = "
-            << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
         if (filter.isMember("read"))
             sql << " AND read = " << filter["read"].asInt();
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND created_at >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND created_at < '" << *to << "'";
         sql << (desc ? " ORDER BY created_at DESC, id DESC" : " ORDER BY created_at ASC, id ASC");
         sql << " LIMIT " << limit;
@@ -365,25 +365,25 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["type"] = row["type"].as<std::string>();
             item["message"] = row["message"].as<std::string>();
             item["read"] = row["read"].as<int>() != 0;
-            item["createdAt"] = toIsoOrNull(row["created_at"]);
+            item["createdAt"] = to_iso_or_null(row["created_at"]);
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "chat_history")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, title, created_at, updated_at FROM chat_history WHERE user_id = "
-            << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND updated_at >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND updated_at < '" << *to << "'";
         sql << (desc ? " ORDER BY updated_at DESC, id DESC" : " ORDER BY updated_at ASC, id ASC");
         sql << " LIMIT " << limit;
@@ -395,22 +395,22 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
             item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
             item["title"] = row["title"].as<std::string>();
-            item["createdAt"] = toIsoOrNull(row["created_at"]);
-            item["updatedAt"] = toIsoOrNull(row["updated_at"]);
+            item["createdAt"] = to_iso_or_null(row["created_at"]);
+            item["updatedAt"] = to_iso_or_null(row["updated_at"]);
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "automation_rule")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, external_id, name, enabled, cooldown_ms, trigger_json, schedule_json, actions_json,"
-            << " created_at, updated_at FROM automation_rule WHERE user_id = " << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << " created_at, updated_at FROM automation_rule WHERE user_id = " << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
         if (filter.isMember("enabled"))
             sql << " AND enabled = " << filter["enabled"].asInt();
@@ -432,11 +432,11 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             if (!row["schedule_json"].isNull())
                 item["scheduleJson"] = row["schedule_json"].as<std::string>();
             item["actionsJson"] = row["actions_json"].as<std::string>();
-            item["createdAt"] = toIsoOrNull(row["created_at"]);
-            item["updatedAt"] = toIsoOrNull(row["updated_at"]);
+            item["createdAt"] = to_iso_or_null(row["created_at"]);
+            item["updatedAt"] = to_iso_or_null(row["updated_at"]);
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "power_energy")
@@ -451,16 +451,16 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
         {
             if (filter["deviceId"].isNull())
                 sql << " AND pe.device_id IS NULL";
-            else if (const auto device_id = filterInt(filter, "deviceId"))
+            else if (const auto device_id = filter_int(filter, "deviceId"))
                 sql << " AND pe.device_id = " << *device_id;
         }
-        if (const auto id = filterInt(filter, "id"))
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND pe.id = " << *id;
-        if (const auto granularity = filterString(filter, "granularity"))
+        if (const auto granularity = filter_string(filter, "granularity"))
             sql << " AND pe.granularity = '" << *granularity << "'";
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND pe.time_start >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND pe.time_start < '" << *to << "'";
         sql << (desc ? " ORDER BY pe.time_start DESC" : " ORDER BY pe.time_start ASC");
         sql << " LIMIT " << limit;
@@ -490,7 +490,7 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["sampleCount"] = static_cast<Json::Int64>(row["sample_count"].as<int64_t>());
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "power_report")
@@ -508,20 +508,20 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
         {
             if (filter["deviceId"].isNull())
                 sql << " AND pr.device_id IS NULL";
-            else if (const auto device_id = filterInt(filter, "deviceId"))
+            else if (const auto device_id = filter_int(filter, "deviceId"))
                 sql << " AND pr.device_id = " << *device_id;
         }
-        if (const auto id = filterInt(filter, "id"))
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND pr.id = " << *id;
-        if (const auto energy_id = filterInt(filter, "energyId"))
+        if (const auto energy_id = filter_int(filter, "energyId"))
             sql << " AND pr.energy_id = " << *energy_id;
-        if (const auto period = filterString(filter, "period"))
+        if (const auto period = filter_string(filter, "period"))
             sql << " AND pr.period = '" << *period << "'";
-        if (const auto period_start = filterString(filter, "periodStart"))
+        if (const auto period_start = filter_string(filter, "periodStart"))
             sql << " AND pr.period_start = '" << *period_start << "'";
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND pr.period_start >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND pr.period_start < '" << *to << "'";
         sql << (report_desc ? " ORDER BY pr.period_start DESC" : " ORDER BY pr.period_start ASC");
         sql << " LIMIT " << limit;
@@ -552,40 +552,40 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             if (!row["report_text"].isNull())
                 item["reportText"] = row["report_text"].as<std::string>();
             if (!row["created_at"].isNull())
-                item["createdAt"] = toIsoOrNull(row["created_at"]);
+                item["createdAt"] = to_iso_or_null(row["created_at"]);
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "schedule_task")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, title, created_at, created_by, category, schedule_kind, day_of_week,"
             << " event_date, start_minute, end_minute, done, source_insight_id"
-            << " FROM schedule_task WHERE user_id = " << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << " FROM schedule_task WHERE user_id = " << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
-        if (const auto category = filterString(filter, "category"))
+        if (const auto category = filter_string(filter, "category"))
             sql << " AND category = '" << *category << "'";
-        if (const auto schedule_kind = filterString(filter, "scheduleKind"))
+        if (const auto schedule_kind = filter_string(filter, "scheduleKind"))
             sql << " AND schedule_kind = '" << *schedule_kind << "'";
-        if (const auto day = filterString(filter, "dayOfWeek"))
+        if (const auto day = filter_string(filter, "dayOfWeek"))
             sql << " AND day_of_week = '" << *day << "'";
-        if (const auto event_date = filterString(filter, "eventDate"))
+        if (const auto event_date = filter_string(filter, "eventDate"))
             sql << " AND event_date = '" << *event_date << "'";
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND event_date >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND event_date < '" << *to << "'";
         if (filter.isMember("done"))
             sql << " AND done = " << filter["done"].asInt();
-        if (const auto created_by = filterString(filter, "createdBy"))
+        if (const auto created_by = filter_string(filter, "createdBy"))
             sql << " AND created_by = '" << *created_by << "'";
-        if (const auto source_insight_id = filterInt(filter, "sourceInsightId"))
+        if (const auto source_insight_id = filter_int(filter, "sourceInsightId"))
             sql << " AND source_insight_id = " << *source_insight_id;
         sql << " ORDER BY schedule_kind ASC, event_date ASC, day_of_week ASC, start_minute ASC";
         sql << " LIMIT " << limit;
@@ -598,7 +598,7 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
             item["title"] = row["title"].as<std::string>();
             if (!row["created_at"].isNull())
-                item["createdAt"] = toIsoOrNull(row["created_at"]);
+                item["createdAt"] = to_iso_or_null(row["created_at"]);
             else
                 item["createdAt"] = Json::nullValue;
             item["createdBy"] = row["created_by"].as<std::string>();
@@ -624,13 +624,13 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
                 item["sourceInsightId"] = static_cast<Json::Int64>(row["source_insight_id"].as<int64_t>());
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "insight")
     {
-        if (!hasAnyFilter(filter, {"userId", "surface", "date", "from", "to"}))
-            return makeQueryError(
+        if (!has_any_filter(filter, {"userId", "surface", "date", "from", "to"}))
+            return make_query_error(
                 table,
                 "INVALID_FILTER",
                 "userId|surface|date|from|to 중 최소 1개는 필수입니다.",
@@ -639,15 +639,15 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
         std::ostringstream sql;
         sql << "SELECT id, user_id, surface, kind, date, label, title, text, actionable, action_type,"
             << " approved, rule_json, schedule_task_json, created_at FROM insight WHERE 1=1";
-        if (const auto user_id = filterInt(filter, "userId"))
+        if (const auto user_id = filter_int(filter, "userId"))
             sql << " AND user_id = " << *user_id;
-        if (const auto surface = filterString(filter, "surface"))
+        if (const auto surface = filter_string(filter, "surface"))
             sql << " AND surface = '" << *surface << "'";
-        if (const auto date = filterString(filter, "date"))
+        if (const auto date = filter_string(filter, "date"))
             sql << " AND date = '" << *date << "'";
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND date >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND date < '" << *to << "'";
         sql << (desc ? " ORDER BY date DESC, id DESC" : " ORDER BY date ASC, id ASC");
         sql << " LIMIT " << limit;
@@ -681,31 +681,31 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
                 item["scheduleTaskJson"] = Json::nullValue;
             else
                 item["scheduleTaskJson"] = row["schedule_task_json"].as<std::string>();
-            item["createdAt"] = toIsoOrNull(row["created_at"]);
+            item["createdAt"] = to_iso_or_null(row["created_at"]);
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "user_action_log")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, action_type, ref_type, ref_id, occurred_at, category"
-            << " FROM user_action_log WHERE user_id = " << *filterInt(filter, "userId");
-        if (const auto action_type = filterString(filter, "actionType"))
+            << " FROM user_action_log WHERE user_id = " << *filter_int(filter, "userId");
+        if (const auto action_type = filter_string(filter, "actionType"))
             sql << " AND action_type = '" << *action_type << "'";
-        if (const auto ref_type = filterString(filter, "refType"))
+        if (const auto ref_type = filter_string(filter, "refType"))
             sql << " AND ref_type = '" << *ref_type << "'";
-        if (const auto ref_id = filterInt(filter, "refId"))
+        if (const auto ref_id = filter_int(filter, "refId"))
             sql << " AND ref_id = " << *ref_id;
-        if (const auto category = filterString(filter, "category"))
+        if (const auto category = filter_string(filter, "category"))
             sql << " AND category = '" << *category << "'";
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND occurred_at >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND occurred_at < '" << *to << "'";
         sql << (desc ? " ORDER BY occurred_at DESC, id DESC" : " ORDER BY occurred_at ASC, id ASC");
         sql << " LIMIT " << limit;
@@ -726,20 +726,20 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
                 item["category"] = row["category"].as<std::string>();
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "goal")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, title, category, status, created_at, updated_at"
-            << " FROM goal WHERE user_id = " << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << " FROM goal WHERE user_id = " << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
-        if (const auto status = filterString(filter, "status"))
+        if (const auto status = filter_string(filter, "status"))
             sql << " AND status = '" << *status << "'";
         sql << (desc ? " ORDER BY created_at DESC, id DESC" : " ORDER BY created_at ASC, id ASC");
         sql << " LIMIT " << limit;
@@ -753,29 +753,29 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["title"] = row["title"].as<std::string>();
             item["category"] = row["category"].as<std::string>();
             item["status"] = row["status"].as<std::string>();
-            item["createdAt"] = toIsoOrNull(row["created_at"]);
-            item["updatedAt"] = toIsoOrNull(row["updated_at"]);
+            item["createdAt"] = to_iso_or_null(row["created_at"]);
+            item["updatedAt"] = to_iso_or_null(row["updated_at"]);
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "sleep_session")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, room_id, radar_id, station_id, night_date, onset, final_wake,"
             << " time_in_bed_s, asleep_total_s, efficiency, stage_totals, toss_events, hr_mean, br_mean, snore_ratio"
-            << " FROM sleep_session WHERE user_id = " << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << " FROM sleep_session WHERE user_id = " << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
-        if (const auto night_date = filterString(filter, "nightDate"))
+        if (const auto night_date = filter_string(filter, "nightDate"))
             sql << " AND night_date = '" << *night_date << "'";
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND night_date >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND night_date < '" << *to << "'";
         sql << (desc ? " ORDER BY night_date DESC, id DESC" : " ORDER BY night_date ASC, id ASC");
         sql << " LIMIT " << limit;
@@ -807,29 +807,29 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
                 item["tossEvents"] = static_cast<Json::Int64>(row["toss_events"].as<int64_t>());
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "sleep_stat")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, room_id, session_id, granularity, time_start, time_end, coverage,"
             << " stage_label, stage_ratio, stage_confidence, status_ratio, toss_mean, toss_max, toss_p90,"
             << " toss_events, toss_ratio, hr_mean, hr_min, hr_max, hr_std, hr_confidence,"
             << " br_mean, br_min, br_max, br_std, snore_ratio, env_temp, env_lux, env_noise, summary_text"
-            << " FROM sleep_stat WHERE user_id = " << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << " FROM sleep_stat WHERE user_id = " << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
-        if (const auto granularity = filterString(filter, "granularity"))
+        if (const auto granularity = filter_string(filter, "granularity"))
             sql << " AND granularity = '" << *granularity << "'";
-        if (const auto session_id = filterInt(filter, "sessionId"))
+        if (const auto session_id = filter_int(filter, "sessionId"))
             sql << " AND session_id = " << *session_id;
-        if (const auto from = filterString(filter, "from"))
+        if (const auto from = filter_string(filter, "from"))
             sql << " AND time_start >= '" << *from << "'";
-        if (const auto to = filterString(filter, "to"))
+        if (const auto to = filter_string(filter, "to"))
             sql << " AND time_start < '" << *to << "'";
         sql << (desc ? " ORDER BY time_start DESC" : " ORDER BY time_start ASC");
         sql << " LIMIT " << limit;
@@ -858,22 +858,22 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
                 item["summaryText"] = row["summary_text"].as<std::string>();
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "sleep_report")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, period, period_start, session_id, metrics, report_text"
-            << " FROM sleep_report WHERE user_id = " << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << " FROM sleep_report WHERE user_id = " << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
-        if (const auto period = filterString(filter, "period"))
+        if (const auto period = filter_string(filter, "period"))
             sql << " AND period = '" << *period << "'";
-        if (const auto period_start = filterString(filter, "periodStart"))
+        if (const auto period_start = filter_string(filter, "periodStart"))
             sql << " AND period_start = '" << *period_start << "'";
         sql << (desc ? " ORDER BY period_start DESC" : " ORDER BY period_start ASC");
         sql << " LIMIT " << limit;
@@ -896,27 +896,27 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
                 item["reportText"] = row["report_text"].as<std::string>();
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     if (table == "alarm")
     {
-        if (!filterInt(filter, "userId"))
-            return makeQueryError(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+        if (!filter_int(filter, "userId"))
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, name, time_minute, days_of_week, smart_wake, radar_device_id,"
             << " device_id, method, enabled, created_at, updated_at"
-            << " FROM alarm WHERE user_id = " << *filterInt(filter, "userId");
-        if (const auto id = filterInt(filter, "id"))
+            << " FROM alarm WHERE user_id = " << *filter_int(filter, "userId");
+        if (const auto id = filter_int(filter, "id"))
             sql << " AND id = " << *id;
         if (filter.isMember("enabled"))
             sql << " AND enabled = " << (filter["enabled"].asBool() ? 1 : 0);
         if (filter.isMember("smartWake"))
             sql << " AND smart_wake = " << (filter["smartWake"].asBool() ? 1 : 0);
-        if (const auto device_id = filterInt(filter, "deviceId"))
+        if (const auto device_id = filter_int(filter, "deviceId"))
             sql << " AND device_id = " << *device_id;
-        if (const auto radar_id = filterInt(filter, "radarDeviceId"))
+        if (const auto radar_id = filter_int(filter, "radarDeviceId"))
             sql << " AND radar_device_id = " << *radar_id;
         sql << (desc ? " ORDER BY id DESC" : " ORDER BY id ASC");
         sql << " LIMIT " << limit;
@@ -946,7 +946,7 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["updatedAt"] = row["updated_at"].as<std::string>();
             items.append(item);
         }
-        return makeQuerySuccess(table, std::move(items));
+        return make_query_success(table, std::move(items));
     }
 
     static const std::unordered_set<std::string> kUnavailableTables = {
@@ -958,10 +958,10 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
     };
     if (kUnavailableTables.count(table) > 0)
     {
-        return makeQueryError(table, "TABLE_NOT_AVAILABLE", "테이블이 아직 준비되지 않았습니다.", "table");
+        return make_query_error(table, "TABLE_NOT_AVAILABLE", "테이블이 아직 준비되지 않았습니다.", "table");
     }
 
-    return makeQueryError(table, "INVALID_FILTER", "알 수 없는 테이블입니다: " + table, "table");
+    return make_query_error(table, "INVALID_FILTER", "알 수 없는 테이블입니다: " + table, "table");
 }
 
 } // namespace internal

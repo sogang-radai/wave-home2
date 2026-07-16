@@ -13,7 +13,7 @@ namespace web {
 namespace v1 {
 namespace
 {
-    std::string trimCopy(const std::string& value)
+    std::string trim_copy(const std::string& value)
     {
         const auto start = value.find_first_not_of(" \t\n\r");
         if (start == std::string::npos)
@@ -36,7 +36,7 @@ int64_t AccountsStore::nextAccountId() const
 
 std::optional<AccountView> AccountsStore::createAccount(const std::string& name, std::string& error, std::string& field)
 {
-    const auto trimmed = trimCopy(name);
+    const auto trimmed = trim_copy(name);
     if (trimmed.empty())
     {
         error = "이름을 입력해주세요.";
@@ -73,7 +73,7 @@ std::optional<AccountView> AccountsStore::updateAccount(
     std::string& error,
     std::string& field)
 {
-    const auto trimmed = trimCopy(name);
+    const auto trimmed = trim_copy(name);
     if (trimmed.empty())
     {
         error = "이름을 입력해주세요.";

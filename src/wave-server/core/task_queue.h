@@ -25,7 +25,7 @@ public:
     void shutdown();
 
     template<typename Func, typename... Args>
-    static auto enqueueAsync(Func&& func, Args&&... args)
+    static auto enqueue_async(Func&& func, Args&&... args)
         -> std::future<std::invoke_result_t<std::decay_t<Func>, std::decay_t<Args>...>>
     {
         using Res = std::invoke_result_t<std::decay_t<Func>, std::decay_t<Args>...>;

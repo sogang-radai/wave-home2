@@ -27,7 +27,7 @@ WEB_NAMESPACE_BEGIN
 namespace internal {
 namespace
 {
-    std::optional<int64_t> parseInt64Param(const std::string& raw)
+    std::optional<int64_t> parse_int64_param(const std::string& raw)
     {
         if (raw.empty())
             return std::nullopt;
@@ -41,7 +41,7 @@ namespace
         }
     }
 
-    std::optional<bool> parseBoolParam(const std::string& raw)
+    std::optional<bool> parse_bool_param(const std::string& raw)
     {
         if (raw == "true" || raw == "1")
             return true;
@@ -50,7 +50,7 @@ namespace
         return std::nullopt;
     }
 
-    db::DbClientPtr requireDb(
+    db::DbClientPtr require_db(
         const std::function<void(const drogon::HttpResponsePtr&)>& callback)
     {
         auto& state = AppState::get();
@@ -62,7 +62,7 @@ namespace
         return state.db();
     }
 
-    int mapDeviceErrorStatus(const std::string& code)
+    int map_device_error_status(const std::string& code)
     {
         if (code == "NOT_FOUND" || code == "ACTION_NOT_FOUND" || code == "QUERY_NOT_FOUND")
             return 404;
@@ -79,22 +79,22 @@ namespace
         return 500;
     }
 
-    std::optional<std::string> resolveDevicePathId(
+    std::optional<std::string> resolve_device_path_id(
         const db::DbClientPtr& client,
         const std::string& device_id)
     {
-        return DevicesInternalStore::resolveWireDeviceId(client, device_id);
+        return DevicesInternalStore::resolve_wire_device_id(client, device_id);
     }
 
-    void respondDeviceError(
+    void respond_device_error(
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
         const std::string& code,
         const std::string& message)
     {
-        v1::respondError(callback, mapDeviceErrorStatus(code), code, message);
+        v1::respondError(callback, map_device_error_status(code), code, message);
     }
 
-    void enrichDemoRuntimeBody(const drogon::HttpRequestPtr& req, Json::Value& body)
+    void enrich_demo_runtime_body(const drogon::HttpRequestPtr& req, Json::Value& body)
     {
         if (!demoVirtualDevicesEnabled())
             return;
@@ -107,7 +107,7 @@ namespace
         rememberPreferredDemoRuntimeId(body["demoRuntimeId"].asString());
     }
 
-    void attachDemoRuntimeCookie(
+    void attach_demo_runtime_cookie(
         const drogon::HttpRequestPtr& req,
         const drogon::HttpResponsePtr& resp,
         const Json::Value& body)
@@ -120,7 +120,7 @@ namespace
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
     }
 
-    int mapCameraErrorStatus(const std::string& code)
+    int map_camera_error_status(const std::string& code)
     {
         if (code == "NOT_FOUND" || code == "UNSUPPORTED_DEVICE")
             return 404;
@@ -133,7 +133,7 @@ namespace
         return 500;
     }
 
-    bool requireIotDevices(
+    bool require_iot_devices(
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
         v1::IotStore& store)
     {
@@ -145,7 +145,7 @@ namespace
         return true;
     }
 
-    std::vector<std::string> splitCsv(const std::string& raw)
+    std::vector<std::string> split_csv(const std::string& raw)
     {
         std::vector<std::string> parts;
         std::stringstream stream(raw);
@@ -163,7 +163,7 @@ void InternalController::queryDb(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -191,7 +191,7 @@ void InternalController::searchRag(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -224,24 +224,24 @@ void InternalController::listDevices(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
     DeviceListFilter filter;
-    if (const auto user_id = parseInt64Param(req->getParameter("userId")))
+    if (const auto user_id = parse_int64_param(req->getParameter("userId")))
         filter.user_id = *user_id;
     // roomId <= 0 means "all rooms" (agent device tools use 0 the same way).
-    if (const auto room_id = parseInt64Param(req->getParameter("roomId")))
+    if (const auto room_id = parse_int64_param(req->getParameter("roomId")))
     {
         if (*room_id > 0)
             filter.room_id = *room_id;
     }
     if (!req->getParameter("class").empty())
         filter.device_class = req->getParameter("class");
-    if (const auto connected = parseBoolParam(req->getParameter("connected")))
+    if (const auto connected = parse_bool_param(req->getParameter("connected")))
         filter.connected = *connected;
-    if (const auto enabled = parseBoolParam(req->getParameter("enabled")))
+    if (const auto enabled = parse_bool_param(req->getParameter("enabled")))
         filter.enabled = *enabled;
     else
         filter.enabled = true;
@@ -253,7 +253,7 @@ void InternalController::listDevices(
         : std::nullopt;
     const auto body = store.listDevices(filter, code, runtime_id);
     if (!code.empty())
-        respondDeviceError(callback, code, "장치 목록을 조회할 수 없습니다.");
+        respond_device_error(callback, code, "장치 목록을 조회할 수 없습니다.");
     else
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
@@ -268,12 +268,12 @@ void InternalController::getDevice(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
     std::optional<int64_t> user_id;
-    if (const auto parsed = parseInt64Param(req->getParameter("userId")))
+    if (const auto parsed = parse_int64_param(req->getParameter("userId")))
         user_id = *parsed;
 
     DevicesInternalStore store(client);
@@ -283,7 +283,7 @@ void InternalController::getDevice(
         : std::nullopt;
     const auto body = store.getDevice(deviceId, user_id, code, runtime_id);
     if (!code.empty())
-        respondDeviceError(callback, code, "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, code, "기기를 찾을 수 없습니다.");
     else
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
@@ -297,7 +297,7 @@ void InternalController::listDeviceClasses(
     const drogon::HttpRequestPtr& /*req*/,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    callback(drogon::HttpResponse::newHttpJsonResponse(DeviceClassRegistry::listClasses()));
+    callback(drogon::HttpResponse::newHttpJsonResponse(DeviceClassRegistry::list_classes()));
 }
 
 void InternalController::getDeviceState(
@@ -305,12 +305,12 @@ void InternalController::getDeviceState(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
     std::optional<int64_t> user_id;
-    if (const auto parsed = parseInt64Param(req->getParameter("userId")))
+    if (const auto parsed = parse_int64_param(req->getParameter("userId")))
         user_id = *parsed;
 
     DevicesInternalStore store(client);
@@ -320,7 +320,7 @@ void InternalController::getDeviceState(
         : std::nullopt;
     const auto body = store.getState(deviceId, user_id, code, runtime_id);
     if (!code.empty())
-        respondDeviceError(callback, code, "상태 조회에 실패했습니다.");
+        respond_device_error(callback, code, "상태 조회에 실패했습니다.");
     else
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
@@ -336,7 +336,7 @@ void InternalController::queryDevice(
     std::string deviceId,
     std::string queryName)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -344,17 +344,17 @@ void InternalController::queryDevice(
     const auto json = req->getJsonObject();
     if (json && json->isObject())
         body = *json;
-    enrichDemoRuntimeBody(req, body);
+    enrich_demo_runtime_body(req, body);
 
     DevicesInternalStore store(client);
     std::string code;
     const auto response = store.queryDevice(deviceId, queryName, body, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "조회에 실패했습니다.");
+        respond_device_error(callback, code, "조회에 실패했습니다.");
     else
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-        attachDemoRuntimeCookie(req, resp, body);
+        attach_demo_runtime_cookie(req, resp, body);
         callback(resp);
     }
 }
@@ -365,7 +365,7 @@ void InternalController::invokeDeviceAction(
     std::string deviceId,
     std::string actionName)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -373,17 +373,17 @@ void InternalController::invokeDeviceAction(
     const auto json = req->getJsonObject();
     if (json && json->isObject())
         body = *json;
-    enrichDemoRuntimeBody(req, body);
+    enrich_demo_runtime_body(req, body);
 
     DevicesInternalStore store(client);
     std::string code;
     const auto response = store.invokeAction(deviceId, actionName, body, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "제어에 실패했습니다.");
+        respond_device_error(callback, code, "제어에 실패했습니다.");
     else
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-        attachDemoRuntimeCookie(req, resp, body);
+        attach_demo_runtime_cookie(req, resp, body);
         callback(resp);
     }
 }
@@ -393,26 +393,26 @@ void InternalController::getPtzCapabilities(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    const auto manifest_id = resolve_device_path_id(client, deviceId);
     if (!manifest_id)
     {
-        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
         return;
     }
 
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
-    if (!requireIotDevices(callback, store))
+    if (!require_iot_devices(callback, store))
         return;
 
     std::string code;
     const auto body = store.getPtzCapabilities(*manifest_id, code);
     if (!code.empty())
-        v1::respondError(callback, mapCameraErrorStatus(code), code, "PTZ 기능을 조회할 수 없습니다.");
+        v1::respondError(callback, map_camera_error_status(code), code, "PTZ 기능을 조회할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -422,20 +422,20 @@ void InternalController::movePtz(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    const auto manifest_id = resolve_device_path_id(client, deviceId);
     if (!manifest_id)
     {
-        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
         return;
     }
 
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
-    if (!requireIotDevices(callback, store))
+    if (!require_iot_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -445,7 +445,7 @@ void InternalController::movePtz(
 
     std::string code;
     if (!store.moveCameraPtz(*manifest_id, vector, code))
-        v1::respondError(callback, mapCameraErrorStatus(code), code, "PTZ 이동에 실패했습니다.");
+        v1::respondError(callback, map_camera_error_status(code), code, "PTZ 이동에 실패했습니다.");
     else
     {
         Json::Value body;
@@ -459,25 +459,25 @@ void InternalController::stopPtz(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    const auto manifest_id = resolve_device_path_id(client, deviceId);
     if (!manifest_id)
     {
-        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
         return;
     }
 
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
-    if (!requireIotDevices(callback, store))
+    if (!require_iot_devices(callback, store))
         return;
 
     std::string code;
     if (!store.stopCameraPtz(*manifest_id, code))
-        v1::respondError(callback, mapCameraErrorStatus(code), code, "PTZ 정지에 실패했습니다.");
+        v1::respondError(callback, map_camera_error_status(code), code, "PTZ 정지에 실패했습니다.");
     else
     {
         Json::Value body;
@@ -491,20 +491,20 @@ void InternalController::zoomPtz(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    const auto manifest_id = resolve_device_path_id(client, deviceId);
     if (!manifest_id)
     {
-        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
         return;
     }
 
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
-    if (!requireIotDevices(callback, store))
+    if (!require_iot_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -513,7 +513,7 @@ void InternalController::zoomPtz(
     std::string code;
     const auto body = store.zoomCameraPtz(*manifest_id, delta, code);
     if (!code.empty())
-        v1::respondError(callback, mapCameraErrorStatus(code), code, "줌 조정에 실패했습니다.");
+        v1::respondError(callback, map_camera_error_status(code), code, "줌 조정에 실패했습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -523,26 +523,26 @@ void InternalController::getCameraStream(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    const auto manifest_id = resolve_device_path_id(client, deviceId);
     if (!manifest_id)
     {
-        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
         return;
     }
 
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
-    if (!requireIotDevices(callback, store))
+    if (!require_iot_devices(callback, store))
         return;
 
     std::string code;
     const auto body = store.getCameraStream(*manifest_id, code);
     if (!code.empty())
-        v1::respondError(callback, mapCameraErrorStatus(code), code, "스트림 정보를 가져올 수 없습니다.");
+        v1::respondError(callback, map_camera_error_status(code), code, "스트림 정보를 가져올 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -552,20 +552,20 @@ void InternalController::setCameraStream(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    const auto manifest_id = resolve_device_path_id(client, deviceId);
     if (!manifest_id)
     {
-        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
         return;
     }
 
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
-    if (!requireIotDevices(callback, store))
+    if (!require_iot_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -578,7 +578,7 @@ void InternalController::setCameraStream(
     std::string code;
     const auto body = store.setCameraStream(*manifest_id, (*json)["streaming"].asBool(), code);
     if (!code.empty())
-        v1::respondError(callback, mapCameraErrorStatus(code), code, "스트림을 시작할 수 없습니다.");
+        v1::respondError(callback, map_camera_error_status(code), code, "스트림을 시작할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -588,20 +588,20 @@ void InternalController::captureSnapshot(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    const auto manifest_id = resolve_device_path_id(client, deviceId);
     if (!manifest_id)
     {
-        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
         return;
     }
 
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
-    if (!requireIotDevices(callback, store))
+    if (!require_iot_devices(callback, store))
         return;
 
     std::thread([manifest_id = *manifest_id, callback = std::move(callback), &state]() mutable
@@ -612,7 +612,7 @@ void InternalController::captureSnapshot(
         std::string code;
         if (!worker.captureCameraSnapshot(manifest_id, jpeg, occurred_at, code))
         {
-            v1::respondError(callback, mapCameraErrorStatus(code), code, "스냅샷 캡처에 실패했습니다.");
+            v1::respondError(callback, map_camera_error_status(code), code, "스냅샷 캡처에 실패했습니다.");
             return;
         }
 
@@ -629,20 +629,20 @@ void InternalController::sendTts(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string deviceId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto manifest_id = resolveDevicePathId(client, deviceId);
+    const auto manifest_id = resolve_device_path_id(client, deviceId);
     if (!manifest_id)
     {
-        respondDeviceError(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "기기를 찾을 수 없습니다.");
         return;
     }
 
     auto& state = AppState::get();
     v1::IotStore store(state.deviceManager);
-    if (!requireIotDevices(callback, store))
+    if (!require_iot_devices(callback, store))
         return;
 
     const auto json = req->getJsonObject();
@@ -669,11 +669,11 @@ void InternalController::listRules(
     RuleListFilter filter;
     if (!req->getParameter("deviceId").empty())
         filter.device_id = req->getParameter("deviceId");
-    if (const auto enabled = parseBoolParam(req->getParameter("enabled")))
+    if (const auto enabled = parse_bool_param(req->getParameter("enabled")))
         filter.enabled = *enabled;
-    if (const auto has_schedule = parseBoolParam(req->getParameter("hasSchedule")))
+    if (const auto has_schedule = parse_bool_param(req->getParameter("hasSchedule")))
         filter.has_schedule = *has_schedule;
-    if (const auto has_trigger = parseBoolParam(req->getParameter("hasTrigger")))
+    if (const auto has_trigger = parse_bool_param(req->getParameter("hasTrigger")))
         filter.has_trigger = *has_trigger;
 
     RulesInternalStore store;
@@ -727,7 +727,7 @@ void InternalController::listRules(
 
     const auto body = store.listRules(filter, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "룰 목록을 조회할 수 없습니다.");
+        respond_device_error(callback, code, "룰 목록을 조회할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -751,7 +751,7 @@ void InternalController::getRule(
                 return;
             }
         }
-        respondDeviceError(callback, "NOT_FOUND", "룰을 찾을 수 없습니다.");
+        respond_device_error(callback, "NOT_FOUND", "룰을 찾을 수 없습니다.");
         return;
     }
 
@@ -759,7 +759,7 @@ void InternalController::getRule(
     std::string code;
     const auto body = store.getRule(ruleId, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "룰을 찾을 수 없습니다.");
+        respond_device_error(callback, code, "룰을 찾을 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -780,17 +780,17 @@ void InternalController::createRule(
     if (demoVirtualDevicesEnabled())
     {
         Json::Value body = *json;
-        enrichDemoRuntimeBody(req, body);
+        enrich_demo_runtime_body(req, body);
         const auto runtime_id = body["demoRuntimeId"].asString();
         ensureDemoSessionSeeded(runtime_id, AppState::get().db());
         const auto created = demoCreateRule(runtime_id, body, code);
         if (created.isNull())
-            respondDeviceError(callback, code.empty() ? "INVALID_REQUEST" : code, "룰을 생성할 수 없습니다.");
+            respond_device_error(callback, code.empty() ? "INVALID_REQUEST" : code, "룰을 생성할 수 없습니다.");
         else
         {
             auto resp = drogon::HttpResponse::newHttpJsonResponse(created);
             resp->setStatusCode(drogon::k201Created);
-            attachDemoRuntimeCookie(req, resp, body);
+            attach_demo_runtime_cookie(req, resp, body);
             callback(resp);
         }
         return;
@@ -798,7 +798,7 @@ void InternalController::createRule(
 
     const auto body = store.createRule(*json, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "룰을 생성할 수 없습니다.");
+        respond_device_error(callback, code, "룰을 생성할 수 없습니다.");
     else
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
@@ -822,17 +822,17 @@ void InternalController::updateRule(
     if (demoVirtualDevicesEnabled())
     {
         Json::Value body = *json;
-        enrichDemoRuntimeBody(req, body);
+        enrich_demo_runtime_body(req, body);
         const auto runtime_id = body["demoRuntimeId"].asString();
         ensureDemoSessionSeeded(runtime_id, AppState::get().db());
         std::string code;
         const auto updated = demoUpdateRule(runtime_id, ruleId, body, code);
         if (!code.empty())
-            respondDeviceError(callback, code, "룰을 수정할 수 없습니다.");
+            respond_device_error(callback, code, "룰을 수정할 수 없습니다.");
         else
         {
             auto resp = drogon::HttpResponse::newHttpJsonResponse(updated);
-            attachDemoRuntimeCookie(req, resp, body);
+            attach_demo_runtime_cookie(req, resp, body);
             callback(resp);
         }
         return;
@@ -842,7 +842,7 @@ void InternalController::updateRule(
     std::string code;
     const auto body = store.updateRule(ruleId, *json, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "룰을 수정할 수 없습니다.");
+        respond_device_error(callback, code, "룰을 수정할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -858,7 +858,7 @@ void InternalController::deleteRule(
         ensureDemoSessionSeeded(runtime_id, AppState::get().db());
         if (!demoDeleteRule(runtime_id, ruleId))
         {
-            respondDeviceError(callback, "NOT_FOUND", "룰을 삭제할 수 없습니다.");
+            respond_device_error(callback, "NOT_FOUND", "룰을 삭제할 수 없습니다.");
             return;
         }
         Json::Value body;
@@ -873,7 +873,7 @@ void InternalController::deleteRule(
     std::string code;
     const auto body = store.deleteRule(ruleId, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "룰을 삭제할 수 없습니다.");
+        respond_device_error(callback, code, "룰을 삭제할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -894,17 +894,17 @@ void InternalController::setRuleEnabled(
     {
         Json::Value body;
         body["enabled"] = (*json)["enabled"].asBool();
-        enrichDemoRuntimeBody(req, body);
+        enrich_demo_runtime_body(req, body);
         const auto runtime_id = body["demoRuntimeId"].asString();
         ensureDemoSessionSeeded(runtime_id, AppState::get().db());
         std::string code;
         const auto updated = demoUpdateRule(runtime_id, ruleId, body, code);
         if (!code.empty())
-            respondDeviceError(callback, code, "룰 상태를 변경할 수 없습니다.");
+            respond_device_error(callback, code, "룰 상태를 변경할 수 없습니다.");
         else
         {
             auto resp = drogon::HttpResponse::newHttpJsonResponse(updated);
-            attachDemoRuntimeCookie(req, resp, body);
+            attach_demo_runtime_cookie(req, resp, body);
             callback(resp);
         }
         return;
@@ -914,7 +914,7 @@ void InternalController::setRuleEnabled(
     std::string code;
     const auto body = store.setRuleEnabled(ruleId, (*json)["enabled"].asBool(), code);
     if (!code.empty())
-        respondDeviceError(callback, code, "룰 상태를 변경할 수 없습니다.");
+        respond_device_error(callback, code, "룰 상태를 변경할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -928,7 +928,7 @@ void InternalController::executeRule(
     std::string code;
     const auto body = store.executeRule(ruleId, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "룰 실행에 실패했습니다.");
+        respond_device_error(callback, code, "룰 실행에 실패했습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -995,27 +995,27 @@ void InternalController::listEvents(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
     EventsListFilter filter;
     if (!req->getParameter("types").empty())
-        filter.types = splitCsv(req->getParameter("types"));
+        filter.types = split_csv(req->getParameter("types"));
     if (!req->getParameter("deviceId").empty())
         filter.device_id = req->getParameter("deviceId");
     if (!req->getParameter("from").empty())
         filter.from = req->getParameter("from");
     if (!req->getParameter("to").empty())
         filter.to = req->getParameter("to");
-    if (const auto limit = parseInt64Param(req->getParameter("limit")))
+    if (const auto limit = parse_int64_param(req->getParameter("limit")))
         filter.limit = static_cast<int>(*limit);
 
     DevicesInternalStore store(client);
     std::string code;
     const auto body = store.listEvents(filter, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "이벤트를 조회할 수 없습니다.");
+        respond_device_error(callback, code, "이벤트를 조회할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -1024,7 +1024,7 @@ void InternalController::toolListDevices(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -1039,7 +1039,7 @@ void InternalController::toolListDevices(
     std::string code;
     const auto body = store.toolListDevices(*json, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "장치 목록을 조회할 수 없습니다.");
+        respond_device_error(callback, code, "장치 목록을 조회할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -1048,7 +1048,7 @@ void InternalController::toolControlDevice(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -1060,17 +1060,17 @@ void InternalController::toolControlDevice(
     }
 
     Json::Value body = *json;
-    enrichDemoRuntimeBody(req, body);
+    enrich_demo_runtime_body(req, body);
 
     DevicesInternalStore store(client);
     std::string code;
     const auto response = store.toolControlDevice(body, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "제어에 실패했습니다.");
+        respond_device_error(callback, code, "제어에 실패했습니다.");
     else
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-        attachDemoRuntimeCookie(req, resp, body);
+        attach_demo_runtime_cookie(req, resp, body);
         callback(resp);
     }
 }
@@ -1079,7 +1079,7 @@ void InternalController::toolQueryDevice(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -1094,7 +1094,7 @@ void InternalController::toolQueryDevice(
     std::string code;
     const auto body = store.toolQueryDevice(*json, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "조회에 실패했습니다.");
+        respond_device_error(callback, code, "조회에 실패했습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -1114,7 +1114,7 @@ void InternalController::toolSchedule(
     std::string code;
     const auto body = store.toolSchedule(*json, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "예약을 생성할 수 없습니다.");
+        respond_device_error(callback, code, "예약을 생성할 수 없습니다.");
     else
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
@@ -1138,7 +1138,7 @@ void InternalController::toolScheduleList(
     std::string code;
     const auto body = store.toolScheduleList(*json, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "예약 목록을 조회할 수 없습니다.");
+        respond_device_error(callback, code, "예약 목록을 조회할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -1158,7 +1158,7 @@ void InternalController::toolScheduleCancel(
     std::string code;
     const auto body = store.toolScheduleCancel(*json, code);
     if (!code.empty())
-        respondDeviceError(callback, code, "예약을 취소할 수 없습니다.");
+        respond_device_error(callback, code, "예약을 취소할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
@@ -1167,11 +1167,11 @@ void InternalController::listAlarms(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto user_id = parseInt64Param(req->getParameter("userId"));
+    const auto user_id = parse_int64_param(req->getParameter("userId"));
     if (!user_id)
     {
         v1::respondError(callback, 400, "INVALID_REQUEST", "userId가 필요합니다.", "userId");
@@ -1180,7 +1180,7 @@ void InternalController::listAlarms(
 
     AlarmListFilter filter;
     filter.user_id = *user_id;
-    if (const auto enabled = parseBoolParam(req->getParameter("enabled")))
+    if (const auto enabled = parse_bool_param(req->getParameter("enabled")))
         filter.enabled = *enabled;
 
     AlarmsInternalStore store(client);
@@ -1188,7 +1188,7 @@ void InternalController::listAlarms(
     {
         const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
         std::optional<bool> enabled_filter;
-        if (const auto enabled = parseBoolParam(req->getParameter("enabled")))
+        if (const auto enabled = parse_bool_param(req->getParameter("enabled")))
             enabled_filter = *enabled;
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             demoListAlarms(runtime_id, *user_id, client, enabled_filter));
@@ -1203,7 +1203,7 @@ void InternalController::createAlarm(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -1220,7 +1220,7 @@ void InternalController::createAlarm(
     if (demoVirtualDevicesEnabled())
     {
         Json::Value body = *json;
-        enrichDemoRuntimeBody(req, body);
+        enrich_demo_runtime_body(req, body);
         const auto runtime_id = body["demoRuntimeId"].asString();
         const auto created = demoCreateAlarm(runtime_id, body, client, error, field);
         if (created.isNull())
@@ -1229,7 +1229,7 @@ void InternalController::createAlarm(
         {
             auto resp = drogon::HttpResponse::newHttpJsonResponse(created);
             resp->setStatusCode(drogon::k201Created);
-            attachDemoRuntimeCookie(req, resp, body);
+            attach_demo_runtime_cookie(req, resp, body);
             callback(resp);
         }
         return;
@@ -1252,12 +1252,12 @@ void InternalController::updateAlarm(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string id)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto user_id = parseInt64Param(req->getParameter("userId"));
-    const auto alarm_id = parseInt64Param(id);
+    const auto user_id = parse_int64_param(req->getParameter("userId"));
+    const auto alarm_id = parse_int64_param(id);
     if (!user_id)
     {
         v1::respondError(callback, 400, "INVALID_REQUEST", "userId가 필요합니다.", "userId");
@@ -1313,12 +1313,12 @@ void InternalController::deleteAlarm(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string id)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto user_id = parseInt64Param(req->getParameter("userId"));
-    const auto alarm_id = parseInt64Param(id);
+    const auto user_id = parse_int64_param(req->getParameter("userId"));
+    const auto alarm_id = parse_int64_param(id);
     if (!user_id)
     {
         v1::respondError(callback, 400, "INVALID_REQUEST", "userId가 필요합니다.", "userId");
@@ -1362,11 +1362,11 @@ void InternalController::listScheduleTasks(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto user_id = parseInt64Param(req->getParameter("userId"));
+    const auto user_id = parse_int64_param(req->getParameter("userId"));
     if (!user_id)
     {
         v1::respondError(callback, 400, "INVALID_REQUEST", "userId 가 필요합니다.", "userId");
@@ -1385,7 +1385,7 @@ void InternalController::listScheduleTasks(
         filter.from = req->getParameter("from");
     if (!req->getParameter("to").empty())
         filter.to = req->getParameter("to");
-    if (const auto done = parseBoolParam(req->getParameter("done")))
+    if (const auto done = parse_bool_param(req->getParameter("done")))
         filter.done = *done;
 
     ScheduleTasksInternalStore store(client);
@@ -1406,7 +1406,7 @@ void InternalController::createScheduleTask(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
@@ -1423,7 +1423,7 @@ void InternalController::createScheduleTask(
     if (demoVirtualDevicesEnabled())
     {
         Json::Value body = *json;
-        enrichDemoRuntimeBody(req, body);
+        enrich_demo_runtime_body(req, body);
         const auto runtime_id = body["demoRuntimeId"].asString();
         ensureDemoSessionSeeded(runtime_id, client);
         const auto created = demoCreateScheduleTask(runtime_id, body, error, field);
@@ -1434,7 +1434,7 @@ void InternalController::createScheduleTask(
         }
         auto resp = drogon::HttpResponse::newHttpJsonResponse(created);
         resp->setStatusCode(drogon::k201Created);
-        attachDemoRuntimeCookie(req, resp, body);
+        attach_demo_runtime_cookie(req, resp, body);
         callback(resp);
         return;
     }
@@ -1456,12 +1456,12 @@ void InternalController::updateScheduleTask(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string taskId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto user_id = parseInt64Param(req->getParameter("userId"));
-    const auto id = parseInt64Param(taskId);
+    const auto user_id = parse_int64_param(req->getParameter("userId"));
+    const auto id = parse_int64_param(taskId);
     if (!user_id)
     {
         v1::respondError(callback, 400, "INVALID_REQUEST", "userId 가 필요합니다.", "userId");
@@ -1516,12 +1516,12 @@ void InternalController::deleteScheduleTask(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string taskId)
 {
-    const auto client = requireDb(callback);
+    const auto client = require_db(callback);
     if (!client)
         return;
 
-    const auto user_id = parseInt64Param(req->getParameter("userId"));
-    const auto id = parseInt64Param(taskId);
+    const auto user_id = parse_int64_param(req->getParameter("userId"));
+    const auto id = parse_int64_param(taskId);
     if (!user_id)
     {
         v1::respondError(callback, 400, "INVALID_REQUEST", "userId 가 필요합니다.", "userId");

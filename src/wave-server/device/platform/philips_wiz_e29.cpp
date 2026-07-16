@@ -29,7 +29,7 @@ namespace
         return out;
     }
 
-    PhilipsWizE29::Config parseConfig(const json& config)
+    PhilipsWizE29::Config parse_config(const json& config)
     {
         const auto& iface = config.at("interface");
 
@@ -41,7 +41,7 @@ namespace
         return out;
     }
 
-    void validateConfig(const json& config)
+    void validate_config(const json& config)
     {
         if (config.at("class").get<std::string>().rfind("philips_wiz_e29", 0) != 0)
             throw std::invalid_argument("philips_wiz_e29 config field 'class' must start with 'philips_wiz_e29'");
@@ -56,7 +56,7 @@ namespace
 
     // Derives capabilities from the WiZ moduleName (e.g. "ESP01_SHRGB1C_31"),
     // cross-checked against the fields the bulb reports in getPilot.
-    PhilipsWizE29::Capabilities deriveCapabilities(const std::string& moduleName, const json& pilot)
+    PhilipsWizE29::Capabilities derive_capabilities(const std::string& moduleName, const json& pilot)
     {
         PhilipsWizE29::Capabilities caps;
         caps.module = moduleName;
@@ -189,9 +189,9 @@ const PhilipsWizE29::Capabilities& PhilipsWizE29::getCapabilities() const
 
 int PhilipsWizE29::init(const json& config)
 {
-    validateConfig(config);
+    validate_config(config);
     loadBaseConfig(config);
-    m_config = parseConfig(config);
+    m_config = parse_config(config);
     m_impl->config = m_config;
 
     if (!isEnabled())
@@ -222,7 +222,7 @@ int PhilipsWizE29::init(const json& config)
         }
 
         const json pilot = m_impl->getPilot();
-        m_capabilities = deriveCapabilities(moduleName, pilot);
+        m_capabilities = derive_capabilities(moduleName, pilot);
         registerActionsAndQueries();
 
         m_state = DeviceState::Running;

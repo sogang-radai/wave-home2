@@ -20,8 +20,8 @@ class ChatStore
 public:
     explicit ChatStore(db::DbClientPtr client);
 
-    static std::string toCreatedAtIso(const std::string& db_time);
-    static std::string titleFromText(const std::string& text);
+    static std::string to_created_at_iso(const std::string& db_time);
+    static std::string title_from_text(const std::string& text);
 
     Json::Value listSummaries(int64_t user_id) const;
     std::optional<Json::Value> getConversation(int64_t user_id, int64_t conversation_id) const;
@@ -64,7 +64,7 @@ public:
 
     /** Accept ChatStore array or mock seed {"messages":[{role,content},...]} and
      *  normalize to [{id,role,text,createdAt},...] (system rows dropped). */
-    static Json::Value normalizeMessagesJson(
+    static Json::Value normalize_messages_json(
         Json::Value raw,
         const std::string& fallback_db_time = {});
 

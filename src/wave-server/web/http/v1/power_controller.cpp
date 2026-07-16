@@ -95,7 +95,7 @@ void PowerController::periodTrend(
     }
 
     callback(drogon::HttpResponse::newHttpJsonResponse(
-        PowerStore::periodTrend(client, device_id, period, ref_date)));
+        PowerStore::period_trend(client, device_id, period, ref_date)));
 }
 
 void PowerController::powerReport(
@@ -119,7 +119,7 @@ void PowerController::powerReport(
     }
 
     callback(drogon::HttpResponse::newHttpJsonResponse(
-        PowerStore::queryReport(client, device_id, period, period_start)));
+        PowerStore::query_report(client, device_id, period, period_start)));
 }
 
 } // namespace v1

@@ -18,7 +18,7 @@ WAVE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::string nowIso()
+    std::string now_iso()
     {
         const auto now = std::chrono::system_clock::now();
         const std::time_t t = std::chrono::system_clock::to_time_t(now);
@@ -50,7 +50,7 @@ namespace
         return buffer;
     }
 
-    int64_t nextNumericId(const Json::Value& items)
+    int64_t next_numeric_id(const Json::Value& items)
     {
         int64_t max_id = 0;
         if (items.isArray())
@@ -77,7 +77,7 @@ namespace
         return value;
     }
 
-    Json::Value jsonCppFromNlohmann(const json& value)
+    Json::Value json_cpp_from_nlohmann(const json& value)
     {
         Json::CharReaderBuilder reader;
         Json::Value out;
@@ -87,14 +87,14 @@ namespace
         return out;
     }
 
-    json nlohmannFromJsonCpp(const Json::Value& value)
+    json nlohmann_from_json_cpp(const Json::Value& value)
     {
         Json::StreamWriterBuilder builder;
         builder["indentation"] = "";
         return json::parse(Json::writeString(builder, value));
     }
 
-    std::string wireIdForInternalDevice(const db::DbClientPtr& client, int64_t internal_id)
+    std::string wire_id_for_internal_device(const db::DbClientPtr& client, int64_t internal_id)
     {
         if (!client || internal_id <= 0)
             return {};
@@ -104,7 +104,7 @@ namespace
         return dev::wireIdForDbRow(internal_id, rows[0]["name"].as<std::string>());
     }
 
-    Json::Value alarmRowToJson(const db::DbClientPtr& client, const drogon::orm::Row& row)
+    Json::Value alarm_row_to_json(const db::DbClientPtr& client, const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
@@ -118,14 +118,14 @@ namespace
             item["radarDeviceId"] = Json::nullValue;
         else
         {
-            const auto wire = wireIdForInternalDevice(client, row["radar_device_id"].as<int64_t>());
+            const auto wire = wire_id_for_internal_device(client, row["radar_device_id"].as<int64_t>());
             item["radarDeviceId"] = wire.empty() ? Json::nullValue : Json::Value(wire);
         }
         if (row["device_id"].isNull())
             item["deviceId"] = Json::nullValue;
         else
         {
-            const auto wire = wireIdForInternalDevice(client, row["device_id"].as<int64_t>());
+            const auto wire = wire_id_for_internal_device(client, row["device_id"].as<int64_t>());
             item["deviceId"] = wire.empty() ? Json::nullValue : Json::Value(wire);
         }
         item["method"] = parseJsonText(row["method"].as<std::string>(), Json::Value(Json::objectValue));
@@ -136,7 +136,7 @@ namespace
         return item;
     }
 
-    Json::Value scheduleRowToJson(const drogon::orm::Row& row)
+    Json::Value schedule_row_to_json(const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
@@ -145,7 +145,7 @@ namespace
         if (row["created_at"].isNull())
             item["createdAt"] = Json::nullValue;
         else
-            item["createdAt"] = web::v1::ChatStore::toCreatedAtIso(row["created_at"].as<std::string>());
+            item["createdAt"] = web::v1::ChatStore::to_created_at_iso(row["created_at"].as<std::string>());
         item["createdBy"] = row["created_by"].as<std::string>();
         item["category"] = row["category"].as<std::string>();
         item["scheduleKind"] = row["schedule_kind"].as<std::string>();
@@ -161,7 +161,7 @@ namespace
         return item;
     }
 
-    Json::Value ruleRowToJson(const drogon::orm::Row& row)
+    Json::Value rule_row_to_json(const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = row["external_id"].as<std::string>();
@@ -200,23 +200,23 @@ namespace
         return item;
     }
 
-    Json::Value chatRowToJson(const drogon::orm::Row& row)
+    Json::Value chat_row_to_json(const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
         item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
         item["title"] = row["title"].as<std::string>();
         const auto created = row["created_at"].as<std::string>();
-        item["createdAt"] = web::v1::ChatStore::toCreatedAtIso(created);
-        item["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(row["updated_at"].as<std::string>());
-        item["messages"] = web::v1::ChatStore::normalizeMessagesJson(
+        item["createdAt"] = web::v1::ChatStore::to_created_at_iso(created);
+        item["updatedAt"] = web::v1::ChatStore::to_created_at_iso(row["updated_at"].as<std::string>());
+        item["messages"] = web::v1::ChatStore::normalize_messages_json(
             parseJsonText(row["message"].as<std::string>(), Json::Value(Json::arrayValue)),
             created);
         item["sessionScoped"] = true;
         return item;
     }
 
-    Json::Value chatToSummary(const Json::Value& conversation)
+    Json::Value chat_to_summary(const Json::Value& conversation)
     {
         Json::Value summary;
         summary["id"] = conversation["id"];
@@ -242,11 +242,11 @@ namespace
         message["id"] = static_cast<Json::Int64>(message_id);
         message["role"] = "user";
         message["text"] = text;
-        message["createdAt"] = web::v1::ChatStore::toCreatedAtIso(created_at);
+        message["createdAt"] = web::v1::ChatStore::to_created_at_iso(created_at);
         return message;
     }
 
-    Json::Value* findChatConversation(DemoSessionData& session, int64_t user_id, int64_t conversation_id)
+    Json::Value* find_chat_conversation(DemoSessionData& session, int64_t user_id, int64_t conversation_id)
     {
         for (Json::ArrayIndex i = 0; i < session.chat_histories.size(); ++i)
         {
@@ -262,7 +262,7 @@ namespace
         return nullptr;
     }
 
-    Json::Value notificationRowToJson(const drogon::orm::Row& row)
+    Json::Value notification_row_to_json(const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
@@ -279,7 +279,7 @@ namespace
         return item;
     }
 
-    Json::Value notificationPublicView(const Json::Value& item)
+    Json::Value notification_public_view(const Json::Value& item)
     {
         Json::Value view;
         view["id"] = item["id"];
@@ -297,7 +297,7 @@ namespace
             .count();
     }
 
-    std::string voiceLabelForMethod(const Json::Value& method)
+    std::string voice_label_for_method(const Json::Value& method)
     {
         if (method.isMember("voiceLabel") && method["voiceLabel"].isString()
             && !method["voiceLabel"].asString().empty())
@@ -314,7 +314,7 @@ namespace
         return "TTS";
     }
 
-    void invokeDemoDeviceAction(
+    void invoke_demo_device_action(
         const std::string& runtime_id,
         const std::string& device_id,
         const std::string& action_name,
@@ -331,7 +331,7 @@ namespace
         backend.invokeAction(runtime_id, device_id, action_name, body, code);
     }
 
-    void executeAlarmMethod(
+    void execute_alarm_method(
         const std::string& runtime_id,
         const Json::Value& alarm,
         const db::DbClientPtr& client)
@@ -351,10 +351,10 @@ namespace
         if (type == "light_on")
         {
             const int brightness = std::clamp(method.get("brightness", 70).asInt(), 10, 100);
-            invokeDemoDeviceAction(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
+            invoke_demo_device_action(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
             Json::Value params(Json::objectValue);
             params["value"] = brightness;
-            invokeDemoDeviceAction(runtime_id, device_id, "brightness", params, client);
+            invoke_demo_device_action(runtime_id, device_id, "brightness", params, client);
             return;
         }
 
@@ -362,31 +362,31 @@ namespace
         {
             const int brightness = std::clamp(method.get("brightness", 70).asInt(), 10, 100);
             const int interval_sec = std::clamp(method.get("intervalSec", 2).asInt(), 1, 10);
-            invokeDemoDeviceAction(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
+            invoke_demo_device_action(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
             Json::Value params(Json::objectValue);
             params["value"] = brightness;
-            invokeDemoDeviceAction(runtime_id, device_id, "brightness", params, client);
+            invoke_demo_device_action(runtime_id, device_id, "brightness", params, client);
             std::thread([runtime_id, device_id, interval_sec, client]()
             {
                 std::this_thread::sleep_for(std::chrono::seconds(interval_sec));
-                invokeDemoDeviceAction(runtime_id, device_id, "off", Json::Value(Json::objectValue), client);
+                invoke_demo_device_action(runtime_id, device_id, "off", Json::Value(Json::objectValue), client);
             }).detach();
             return;
         }
 
         if (type == "plug_toggle")
         {
-            invokeDemoDeviceAction(runtime_id, device_id, "toggle", Json::Value(Json::objectValue), client);
+            invoke_demo_device_action(runtime_id, device_id, "toggle", Json::Value(Json::objectValue), client);
             return;
         }
         if (type == "plug_on")
         {
-            invokeDemoDeviceAction(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
+            invoke_demo_device_action(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
             return;
         }
         if (type == "plug_off")
         {
-            invokeDemoDeviceAction(runtime_id, device_id, "off", Json::Value(Json::objectValue), client);
+            invoke_demo_device_action(runtime_id, device_id, "off", Json::Value(Json::objectValue), client);
             return;
         }
 
@@ -403,7 +403,7 @@ namespace
             const int64_t now = nowMs();
 
             Json::Value overlay(Json::objectValue);
-            overlay["voiceLabel"] = voiceLabelForMethod(method);
+            overlay["voiceLabel"] = voice_label_for_method(method);
             overlay["text"] = text;
             overlay["expiresAtMs"] = static_cast<Json::Int64>(now + 8000);
             overlay["intervalSec"] = interval_sec;
@@ -428,7 +428,7 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const db::DbClientPt
              "SELECT id, user_id, name, time_minute, days_of_week, smart_wake, radar_device_id,"
              " device_id, method, enabled, created_at, updated_at FROM alarm ORDER BY id"))
     {
-        session.alarms.append(alarmRowToJson(client, row));
+        session.alarms.append(alarm_row_to_json(client, row));
     }
 
     session.schedule_tasks = Json::Value(Json::arrayValue);
@@ -437,7 +437,7 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const db::DbClientPt
              " event_date, start_minute, end_minute, done, source_insight_id"
              " FROM schedule_task ORDER BY id"))
     {
-        session.schedule_tasks.append(scheduleRowToJson(row));
+        session.schedule_tasks.append(schedule_row_to_json(row));
     }
 
     session.rules = Json::Value(Json::arrayValue);
@@ -445,21 +445,21 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const db::DbClientPt
              "SELECT id, user_id, external_id, name, enabled, cooldown_ms, trigger_json, schedule_json, actions_json"
              " FROM automation_rule ORDER BY id"))
     {
-        session.rules.append(ruleRowToJson(row));
+        session.rules.append(rule_row_to_json(row));
     }
 
     session.chat_histories = Json::Value(Json::arrayValue);
     for (const auto& row : client->execSqlSync(
              "SELECT id, user_id, title, created_at, updated_at, message FROM chat_history ORDER BY id"))
     {
-        session.chat_histories.append(chatRowToJson(row));
+        session.chat_histories.append(chat_row_to_json(row));
     }
 
     session.notifications = Json::Value(Json::arrayValue);
     for (const auto& row : client->execSqlSync(
              "SELECT id, user_id, type, message, read, created_at FROM notification ORDER BY id"))
     {
-        session.notifications.append(notificationRowToJson(row));
+        session.notifications.append(notification_row_to_json(row));
     }
 
     if (!session.speech_overlays.isObject())
@@ -530,7 +530,7 @@ Json::Value demoCreateAlarm(
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value alarm;
-    alarm["id"] = static_cast<Json::Int64>(nextNumericId(session.alarms));
+    alarm["id"] = static_cast<Json::Int64>(next_numeric_id(session.alarms));
     alarm["userId"] = body["userId"];
     alarm["name"] = body.get("name", "알람").asString();
     alarm["timeMinute"] = body["timeMinute"].asInt();
@@ -629,7 +629,7 @@ Json::Value demoListNotifications(
             continue;
         if (!item.get("read", false).asBool())
             ++unread;
-        matched.push_back(notificationPublicView(item));
+        matched.push_back(notification_public_view(item));
     }
     std::sort(matched.begin(), matched.end(), [](const Json::Value& a, const Json::Value& b)
     {
@@ -706,7 +706,7 @@ Json::Value demoMarkNotificationRead(
         if (item.get("id", Json::Int64(0)).asInt64() != notification_id)
             continue;
         item["read"] = true;
-        return notificationPublicView(item);
+        return notification_public_view(item);
     }
     return Json::Value();
 }
@@ -723,7 +723,7 @@ Json::Value demoAppendNotification(
         session.notifications = Json::Value(Json::arrayValue);
 
     Json::Value item;
-    item["id"] = static_cast<Json::Int64>(nextNumericId(session.notifications));
+    item["id"] = static_cast<Json::Int64>(next_numeric_id(session.notifications));
     item["userId"] = static_cast<Json::Int64>(user_id);
     item["type"] = type;
     item["message"] = message;
@@ -735,7 +735,7 @@ Json::Value demoAppendNotification(
         item["createdAt"] = stamp;
     item["sessionScoped"] = true;
     session.notifications.append(item);
-    return notificationPublicView(item);
+    return notification_public_view(item);
 }
 
 Json::Value demoListSpeechOverlays(const std::string& runtime_id)
@@ -853,7 +853,7 @@ void demoFireAlarm(
         user_id,
         "alarm",
         "\"" + name + "\" 알람이 울렸습니다.");
-    executeAlarmMethod(runtime_id, alarm, client);
+    execute_alarm_method(runtime_id, alarm, client);
 }
 
 Json::Value demoListScheduleTasks(
@@ -900,7 +900,7 @@ Json::Value demoCreateScheduleTask(
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value task;
-    task["id"] = static_cast<Json::Int64>(nextNumericId(session.schedule_tasks));
+    task["id"] = static_cast<Json::Int64>(next_numeric_id(session.schedule_tasks));
     task["userId"] = body["userId"];
     task["title"] = body["title"].asString();
     task["category"] = body.get("category", "general").asString();
@@ -913,7 +913,7 @@ Json::Value demoCreateScheduleTask(
     task["createdBy"] = body.get("createdBy", "user").asString();
     task["sourceInsightId"] = body.isMember("sourceInsightId") ? body["sourceInsightId"] : Json::Value();
     task["sessionScoped"] = true;
-    task["createdAt"] = web::v1::ChatStore::toCreatedAtIso(nowStamp());
+    task["createdAt"] = web::v1::ChatStore::to_created_at_iso(nowStamp());
     session.schedule_tasks.append(task);
     return task;
 }
@@ -974,7 +974,7 @@ Json::Value demoCreateRule(const std::string& runtime_id, const Json::Value& bod
     auto& session = *locked_session;
     Json::Value rule = body;
     if (!rule.isMember("id") || !rule["id"].isString() || rule["id"].asString().empty())
-        rule["id"] = std::string("demo_rule_") + std::to_string(nextNumericId(session.rules));
+        rule["id"] = std::string("demo_rule_") + std::to_string(next_numeric_id(session.rules));
     rule["enabled"] = body.get("enabled", true);
     rule["sessionScoped"] = true;
     session.rules.append(rule);
@@ -1011,7 +1011,7 @@ Json::Value demoNormalizeRuleSchedule(const Json::Value& schedule)
 
     service::RuleSchedule parsed;
     std::string error;
-    if (!service::parseRuleScheduleFromJson(nlohmannFromJsonCpp(schedule), parsed, error))
+    if (!service::parseRuleScheduleFromJson(nlohmann_from_json_cpp(schedule), parsed, error))
         return Json::nullValue;
 
     // wave-home-agent RuleSchedule 과 맞춤: once 는 delayMinutes, daily/weekly 는 time 필수.
@@ -1022,7 +1022,7 @@ Json::Value demoNormalizeRuleSchedule(const Json::Value& schedule)
     if (parsed.repeat == "weekly" && parsed.daysOfWeek.empty())
         return Json::nullValue;
 
-    return jsonCppFromNlohmann(service::ruleScheduleToJson(parsed));
+    return json_cpp_from_nlohmann(service::ruleScheduleToJson(parsed));
 }
 
 Json::Value demoUpdateRule(
@@ -1087,7 +1087,7 @@ Json::Value demoListChatSummaries(
             continue;
         if (item.get("userId", Json::Int64(0)).asInt64() != user_id)
             continue;
-        matched.push_back(chatToSummary(item));
+        matched.push_back(chat_to_summary(item));
     }
     std::sort(matched.begin(), matched.end(), [](const Json::Value& a, const Json::Value& b) {
         return a.get("updatedAt", "").asString() > b.get("updatedAt", "").asString();
@@ -1106,7 +1106,7 @@ std::optional<Json::Value> demoGetChatConversation(
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
     auto& session = *locked_session;
-    if (const auto* found = findChatConversation(session, user_id, conversation_id))
+    if (const auto* found = find_chat_conversation(session, user_id, conversation_id))
     {
         Json::Value out = *found;
         out.removeMember("userId");
@@ -1127,11 +1127,11 @@ std::optional<Json::Value> demoCreateChatConversation(
     auto& session = *locked_session;
     const auto stamp = nowStamp();
     Json::Value conversation;
-    conversation["id"] = static_cast<Json::Int64>(nextNumericId(session.chat_histories));
+    conversation["id"] = static_cast<Json::Int64>(next_numeric_id(session.chat_histories));
     conversation["userId"] = static_cast<Json::Int64>(user_id);
     conversation["title"] = title;
-    conversation["createdAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
-    conversation["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
+    conversation["createdAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
+    conversation["updatedAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
     conversation["messages"] = Json::Value(Json::arrayValue);
     conversation["sessionScoped"] = true;
     session.chat_histories.append(conversation);
@@ -1153,15 +1153,15 @@ std::optional<Json::Value> demoRenameChatConversation(
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
     auto& session = *locked_session;
-    auto* found = findChatConversation(session, user_id, conversation_id);
+    auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
     {
         error = "대화를 찾을 수 없습니다.";
         return std::nullopt;
     }
     (*found)["title"] = title;
-    (*found)["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(nowStamp());
-    return chatToSummary(*found);
+    (*found)["updatedAt"] = web::v1::ChatStore::to_created_at_iso(nowStamp());
+    return chat_to_summary(*found);
 }
 
 bool demoDeleteChatConversation(
@@ -1201,7 +1201,7 @@ std::optional<Json::Value> demoAppendChatUserMessage(
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
     auto& session = *locked_session;
-    auto* found = findChatConversation(session, user_id, conversation_id);
+    auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
     {
         error = "대화를 찾을 수 없습니다.";
@@ -1215,7 +1215,7 @@ std::optional<Json::Value> demoAppendChatUserMessage(
     const auto message_id = demoNextChatMessageId(messages);
     const auto user_message = makeUserMessage(message_id, text, stamp);
     messages.append(user_message);
-    (*found)["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
+    (*found)["updatedAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
 
     Json::Value out = *found;
     out.removeMember("userId");
@@ -1236,7 +1236,7 @@ std::optional<Json::Value> demoCreateChatWithUserMessage(
         error = "메시지를 입력해주세요.";
         return std::nullopt;
     }
-    const auto title = web::v1::ChatStore::titleFromText(text);
+    const auto title = web::v1::ChatStore::title_from_text(text);
     auto created = demoCreateChatConversation(runtime_id, user_id, title, client);
     if (!created)
         return std::nullopt;
@@ -1254,7 +1254,7 @@ bool demoAppendChatAssistantMessage(
 {
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
     auto& session = *locked_session;
-    auto* found = findChatConversation(session, user_id, conversation_id);
+    auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
         return false;
 
@@ -1270,9 +1270,9 @@ bool demoAppendChatAssistantMessage(
     message["status"] = "done";
     message["reasoning"] = reasoning.empty() ? Json::Value() : Json::Value(reasoning);
     message["toolEvents"] = tool_events.isArray() ? tool_events : Json::Value(Json::arrayValue);
-    message["createdAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
+    message["createdAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
     messages.append(message);
-    (*found)["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
+    (*found)["updatedAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
     return true;
 }
 
@@ -1292,7 +1292,7 @@ int64_t demoNextChatMessageId(const Json::Value& messages)
 
 namespace
 {
-    Json::Value defaultAiAgentSettings()
+    Json::Value default_ai_agent_settings()
     {
         Json::Value value(Json::objectValue);
         value["personalPrompt"] = "";
@@ -1302,7 +1302,7 @@ namespace
         return value;
     }
 
-    std::string trimCopy(std::string value)
+    std::string trim_copy(std::string value)
     {
         const auto start = value.find_first_not_of(" \t\r\n");
         if (start == std::string::npos)
@@ -1311,7 +1311,7 @@ namespace
         return value.substr(start, end - start + 1);
     }
 
-    size_t utf8SequenceLength(unsigned char lead)
+    size_t utf8_sequence_length(unsigned char lead)
     {
         if (lead < 0x80)
             return 1;
@@ -1324,12 +1324,12 @@ namespace
         return 0;
     }
 
-    size_t utf8CodePointCount(const std::string& text)
+    size_t utf8_code_point_count(const std::string& text)
     {
         size_t count = 0;
         for (size_t i = 0; i < text.size();)
         {
-            const auto len = utf8SequenceLength(static_cast<unsigned char>(text[i]));
+            const auto len = utf8_sequence_length(static_cast<unsigned char>(text[i]));
             if (len == 0 || i + len > text.size())
                 break;
             i += len;
@@ -1346,7 +1346,7 @@ Json::Value demoGetAiAgentSettings(
 {
     ensureDemoSessionSeeded(runtime_id, client);
     const auto session = DemoSessionRegistry::instance().get(runtime_id);
-    Json::Value value = defaultAiAgentSettings();
+    Json::Value value = default_ai_agent_settings();
     if (!session || !session->ai_agent_settings.isObject())
         return value;
 
@@ -1392,14 +1392,14 @@ Json::Value demoPutAiAgentSettings(
         }
         // Always replace from the request body (never concatenate with the previous value).
         const auto prompt = body["personalPrompt"].asString();
-        if (utf8CodePointCount(prompt) > web::v1::kPersonalPromptMaxChars)
+        if (utf8_code_point_count(prompt) > web::v1::kPersonalPromptMaxChars)
         {
             error = "개인 프롬프트는 " + std::to_string(web::v1::kPersonalPromptMaxChars)
                 + "자 이하여야 합니다.";
             field = "personalPrompt";
             return Json::Value();
         }
-        out["personalPrompt"] = trimCopy(prompt);
+        out["personalPrompt"] = trim_copy(prompt);
     }
 
     session.ai_agent_settings[std::to_string(user_id)] = out;
@@ -1414,7 +1414,7 @@ std::string demoResolvePersonalPrompt(
     const auto settings = demoGetAiAgentSettings(runtime_id, user_id, client);
     if (!settings.isMember("personalPrompt") || !settings["personalPrompt"].isString())
         return {};
-    return trimCopy(settings["personalPrompt"].asString());
+    return trim_copy(settings["personalPrompt"].asString());
 }
 
 WAVE_NAMESPACE_END

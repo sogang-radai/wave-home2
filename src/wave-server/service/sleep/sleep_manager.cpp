@@ -24,7 +24,7 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    dev::Device* findDeviceByExternalId(const std::string& external_id)
+    dev::Device* find_device_by_external_id(const std::string& external_id)
     {
         const auto id = dev::parseDeviceID(external_id);
         if (id == 0)
@@ -32,7 +32,7 @@ namespace
         return AppState::get().deviceManager.findDevice(id);
     }
 
-    json rowToCamelStat(
+    json row_to_camel_stat(
         const drogon::orm::Result& rows,
         size_t index)
     {
@@ -69,7 +69,7 @@ namespace
         return out;
     }
 
-    json rowToCamelSession(const drogon::orm::Result& rows, size_t index)
+    json row_to_camel_session(const drogon::orm::Result& rows, size_t index)
     {
         const auto& row = rows[index];
         json out;
@@ -95,7 +95,7 @@ namespace
         return out;
     }
 
-    bool isSleepRadarManifestEntry(const dev::DeviceManifestEntry& entry)
+    bool is_sleep_radar_manifest_entry(const dev::DeviceManifestEntry& entry)
     {
         if (entry.config.value("class", "") != "srs_r4sn")
             return false;
@@ -232,13 +232,13 @@ void SleepManager::reconcile()
     }
 }
 
-bool SleepManager::isSleepEnabledRadar(const std::string& external_id)
+bool SleepManager::is_sleep_enabled_radar(const std::string& external_id)
 {
     for (const auto& entry : AppState::get().deviceManager.manifestEntries())
     {
         if (entry.config.value("id", "") != external_id)
             continue;
-        return isSleepRadarManifestEntry(entry);
+        return is_sleep_radar_manifest_entry(entry);
     }
     return false;
 }
@@ -248,7 +248,7 @@ void SleepManager::tickVitals(SleepRuntime& runtime)
     if (runtime.sessionFsm.phase() != SessionPhase::Sleeping)
         return;
 
-    auto* device = findDeviceByExternalId(runtime.config.radarExternalId);
+    auto* device = find_device_by_external_id(runtime.config.radarExternalId);
     auto* pc_provider = dynamic_cast<dev::IRadarPointCloudProvider*>(device);
     if (pc_provider && device && device->getState() == dev::DeviceState::Running)
     {
@@ -333,7 +333,7 @@ ORDER BY r.id, ru.user_id, d.id
 
             if (device_class == "srs_r4sn")
             {
-                if (!isSleepEnabledRadar(wire_id))
+                if (!is_sleep_enabled_radar(wire_id))
                     continue;
                 config.radarDbId = device_id;
                 config.radarExternalId = wire_id;
@@ -388,7 +388,7 @@ bool SleepManager::initPipeline(SleepRuntime& runtime, std::string& out_error)
     if (!runtime.pipeline->init(app.config_dir.string(), config_json, out_error))
         return false;
 
-    auto* device = findDeviceByExternalId(runtime.config.radarExternalId);
+    auto* device = find_device_by_external_id(runtime.config.radarExternalId);
     if (auto* provider = dynamic_cast<dev::IRadarPointCloudProvider*>(device))
     {
         const uint32_t seq = std::max(runtime.pipeline->getBedWindow(), runtime.pipeline->getTossWindow());
@@ -423,7 +423,7 @@ void SleepManager::consumePointCloud(SleepRuntime& runtime)
     if (!runtime.pipeline)
         return;
 
-    auto* device = findDeviceByExternalId(runtime.config.radarExternalId);
+    auto* device = find_device_by_external_id(runtime.config.radarExternalId);
     auto* provider = dynamic_cast<dev::IRadarPointCloudProvider*>(device);
     if (!provider || !device || device->getState() != dev::DeviceState::Running)
         return;
@@ -852,7 +852,7 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
 
 std::optional<double> SleepManager::queryStationEnv(const std::string& external_id, const char* field)
 {
-    auto* device = findDeviceByExternalId(external_id);
+    auto* device = find_device_by_external_id(external_id);
     auto* station = dynamic_cast<dev::RadaiWs*>(device);
     if (!station || device->getState() != dev::DeviceState::Running)
         return std::nullopt;
@@ -1127,10 +1127,10 @@ void SleepManager::processJob(const SleepJob& job)
         body["period"] = "daily";
         body["periodStart"] = job.periodStart;
         body["metrics"] = metrics;
-        body["sessions"] = json::array({rowToCamelSession(session_rows, 0)});
+        body["sessions"] = json::array({row_to_camel_session(session_rows, 0)});
         json stats30m = json::array();
         for (size_t i = 0; i < stats_rows.size(); ++i)
-            stats30m.push_back(rowToCamelStat(stats_rows, i));
+            stats30m.push_back(row_to_camel_stat(stats_rows, i));
         body["stats30m"] = stats30m;
         body["embed"] = true;
 
@@ -1248,11 +1248,11 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         body["metrics"] = metrics;
         json sessions = json::array();
         for (size_t i = 0; i < session_rows.size(); ++i)
-            sessions.push_back(rowToCamelSession(session_rows, i));
+            sessions.push_back(row_to_camel_session(session_rows, i));
         body["sessions"] = sessions;
         json stats30m = json::array();
         for (size_t i = 0; i < stats_rows.size(); ++i)
-            stats30m.push_back(rowToCamelStat(stats_rows, i));
+            stats30m.push_back(row_to_camel_stat(stats_rows, i));
         body["stats30m"] = stats30m;
         body["embed"] = true;
 

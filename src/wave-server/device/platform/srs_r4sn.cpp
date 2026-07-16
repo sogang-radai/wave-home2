@@ -88,7 +88,7 @@ namespace
         float maxZ;
     };
 
-    uint64_t steadyUs()
+    uint64_t steady_us()
     {
         const auto now = std::chrono::steady_clock::now();
         return std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
@@ -145,7 +145,7 @@ namespace
         size_t m_offset;
     };
 
-    bool findPacketMagic(const std::vector<uint8_t>& buffer, size_t& outOffset)
+    bool find_packet_magic(const std::vector<uint8_t>& buffer, size_t& outOffset)
     {
         if (buffer.size() < 4)
             return false;
@@ -164,10 +164,10 @@ namespace
         return false;
     }
 
-    bool tryExtractPacket(std::vector<uint8_t>& streamBuf, std::vector<uint8_t>& outPacketBuf)
+    bool try_extract_packet(std::vector<uint8_t>& streamBuf, std::vector<uint8_t>& outPacketBuf)
     {
         size_t packetMagicOffset = 0;
-        if (!findPacketMagic(streamBuf, packetMagicOffset))
+        if (!find_packet_magic(streamBuf, packetMagicOffset))
         {
             if (streamBuf.size() > 7)
                 streamBuf.erase(streamBuf.begin(), streamBuf.end() - 7);
@@ -197,9 +197,9 @@ namespace
         return true;
     }
 
-    bool parsePacket(const std::vector<uint8_t>& packetBuf, RadarPointCloud& outFrame, uint64_t& lastTimestampUs)
+    bool parse_packet(const std::vector<uint8_t>& packetBuf, RadarPointCloud& outFrame, uint64_t& lastTimestampUs)
     {
-        const uint64_t now = steadyUs();
+        const uint64_t now = steady_us();
         if (lastTimestampUs == 0)
             outFrame.timestamp = now;
         else
@@ -311,7 +311,7 @@ namespace
         return true;
     }
 
-    SRSR4SN::Config parseConfig(const json& config)
+    SRSR4SN::Config parse_config(const json& config)
     {
         const auto& iface = config.at("interface");
 
@@ -343,7 +343,7 @@ namespace
         return out;
     }
 
-    SRSR4SN::Settings parseSettings(const json& config)
+    SRSR4SN::Settings parse_settings(const json& config)
     {
         SRSR4SN::Settings settings;
         if (!config.contains("settings"))
@@ -372,7 +372,7 @@ namespace
 
     // Verifies the host still maps to the MAC pinned in the config. Returns -7
     // on mismatch, 0 when it matches or when no MAC is pinned / not resolvable.
-    int verifyMac(const json& config, const std::string& host)
+    int verify_mac(const json& config, const std::string& host)
     {
         const std::string expected = config.at("interface").value("mac", "");
         if (expected.empty())
@@ -393,7 +393,7 @@ namespace
         return 0;
     }
 
-    void validateSrsR4snConfig(const json& config)
+    void validate_srs_r4sn_config(const json& config)
     {
         if (config.at("class").get<std::string>() != "srs_r4sn")
             throw std::invalid_argument("srs_r4sn config field 'class' must be 'srs_r4sn'");
@@ -740,11 +740,11 @@ private:
                 while (true)
                 {
                     std::vector<uint8_t> packetBuf;
-                    if (!tryExtractPacket(m_streamBuf, packetBuf))
+                    if (!try_extract_packet(m_streamBuf, packetBuf))
                         break;
 
                     RadarPointCloud frame;
-                    if (parsePacket(packetBuf, frame, m_lastFrameTimestampUs))
+                    if (parse_packet(packetBuf, frame, m_lastFrameTimestampUs))
                     {
                         std::lock_guard<std::mutex> lock(m_mutex);
                         if (m_frames.size() >= m_queueSize)
@@ -1016,10 +1016,10 @@ const SRSR4SN::Settings& SRSR4SN::getSettings() const
 
 int SRSR4SN::init(const json& config)
 {
-    validateSrsR4snConfig(config);
+    validate_srs_r4sn_config(config);
     loadBaseConfig(config);
-    m_config = parseConfig(config);
-    m_settings = parseSettings(config);
+    m_config = parse_config(config);
+    m_settings = parse_settings(config);
 
     if (!isEnabled())
         return -2;
@@ -1043,7 +1043,7 @@ int SRSR4SN::init(const json& config)
             m_pointCloudQueueSize);
         m_impl->start();
 
-        const int macRc = verifyMac(config, m_config.host);
+        const int macRc = verify_mac(config, m_config.host);
         if (macRc != 0)
         {
             m_impl->stop();

@@ -43,7 +43,7 @@ DemoPowerMeter& DemoPowerMeter::instance()
     return meter;
 }
 
-double DemoPowerMeter::ratedPowerForDevice(const std::string& device_id)
+double DemoPowerMeter::rated_power_for_device(const std::string& device_id)
 {
     // Demo plug baselines (wire id). Keep in sync with UI expectations for
     // power page + query_device(power); session state should not freeze an old value.
@@ -60,14 +60,14 @@ double DemoPowerMeter::ratedPowerForDevice(const std::string& device_id)
     return 0.0;
 }
 
-int64_t DemoPowerMeter::nowMs()
+int64_t DemoPowerMeter::now_ms()
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch())
         .count();
 }
 
-double DemoPowerMeter::jitterFactor()
+double DemoPowerMeter::jitter_factor()
 {
     static thread_local std::mt19937 rng{std::random_device{}()};
     std::uniform_real_distribution<double> dist(-0.045, 0.045);
@@ -99,7 +99,7 @@ DemoPowerReading DemoPowerMeter::refreshLocked(
     const double voltage_v,
     const bool force)
 {
-    const int64_t now = nowMs();
+    const int64_t now = now_ms();
     const double prev_rated = slot.reading.rated_w;
     slot.reading.switch_on = switch_on;
     slot.reading.rated_w = rated_w;
@@ -123,7 +123,7 @@ DemoPowerReading DemoPowerMeter::refreshLocked(
 
     if (due)
     {
-        const double factor = jitterFactor();
+        const double factor = jitter_factor();
         const double voltage = slot.reading.voltage_v * (1.0 + (factor - 1.0) * 0.15);
         const double power = std::max(0.0, rated_w * factor);
         slot.reading.voltage_v = std::round(voltage * 10.0) / 10.0;
@@ -220,7 +220,7 @@ ORDER BY d.id
     for (const auto& row : rows)
     {
         const auto wire_id = dev::wireIdForDbRow(row["id"].as<int64_t>(), row["name"].as<std::string>());
-        const double rated = ratedPowerForDevice(wire_id);
+        const double rated = rated_power_for_device(wire_id);
         const bool default_on =
             wire_id != "0000000000000009" && wire_id != "000000000000000e";
 
@@ -275,7 +275,7 @@ Json::Value DemoPowerMeter::comboTrend(
 {
     const int step_seconds = stepSecondsForRange(range);
     constexpr int points = 60;
-    const int64_t now = nowMs();
+    const int64_t now = now_ms();
 
     std::lock_guard lock(m_mutex);
     auto session_it = m_sessions.find(runtime_id);

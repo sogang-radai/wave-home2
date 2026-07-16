@@ -29,7 +29,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    std::optional<int64_t> parseConversationId(const std::string& raw)
+    std::optional<int64_t> parse_conversation_id(const std::string& raw)
     {
         try
         {
@@ -41,7 +41,7 @@ namespace
         }
     }
 
-    std::optional<int64_t> resolveUserId(
+    std::optional<int64_t> resolve_user_id(
         const drogon::HttpRequestPtr& req,
         const std::function<void(const drogon::HttpResponsePtr&)>& callback)
     {
@@ -63,7 +63,7 @@ namespace
         return user_id;
     }
 
-    std::string extractText(const std::shared_ptr<const Json::Value>& json, std::string& error, std::string& field)
+    std::string extract_text(const std::shared_ptr<const Json::Value>& json, std::string& error, std::string& field)
     {
         if (!json || !json->isMember("text") || !(*json)["text"].isString())
         {
@@ -92,7 +92,7 @@ namespace
         return text;
     }
 
-    bool sendSseEvent(const std::shared_ptr<drogon::ResponseStream>& stream, const Json::Value& event)
+    bool send_sse_event(const std::shared_ptr<drogon::ResponseStream>& stream, const Json::Value& event)
     {
         if (!stream)
             return false;
@@ -103,7 +103,7 @@ namespace
         return stream->send("data: " + payload + "\n\n");
     }
 
-    std::string toolLabel(const std::string& name, bool running, bool failed = false)
+    std::string tool_label(const std::string& name, bool running, bool failed = false)
     {
         static const std::unordered_map<std::string, std::string> labels = {
             {"query_db", "DB 조회"},
@@ -126,7 +126,7 @@ namespace
         return base + " 완료";
     }
 
-    std::string summarizeToolResult(const json& result)
+    std::string summarize_tool_result(const json& result)
     {
         if (result.is_null())
             return {};
@@ -153,7 +153,7 @@ namespace
         return {};
     }
 
-    Json::Value nlohmannToJsonCpp(const json& value)
+    Json::Value nlohmann_to_json_cpp(const json& value)
     {
         if (value.is_null())
             return Json::nullValue;
@@ -167,7 +167,7 @@ namespace
         return Json::nullValue;
     }
 
-    Json::Value makeToolEvent(
+    Json::Value make_tool_event(
         const std::string& name,
         bool running,
         const std::string& result_summary = {},
@@ -181,7 +181,7 @@ namespace
             event["id"] = id;
         event["name"] = name;
         event["status"] = running ? "running" : (failed ? "failed" : "done");
-        event["label"] = toolLabel(name, running, failed);
+        event["label"] = tool_label(name, running, failed);
         if (!result_summary.empty())
             event["resultSummary"] = result_summary;
         if (!args.isNull())
@@ -193,7 +193,7 @@ namespace
 
     // Prefer agent run id; fall back to first running row with the same name
     // so parallel same-name tools (e.g. many query_device) do not overwrite.
-    std::optional<Json::ArrayIndex> findToolEventIndex(
+    std::optional<Json::ArrayIndex> find_tool_event_index(
         const Json::Value& tool_events,
         const std::unordered_map<std::string, Json::ArrayIndex>& tool_index,
         const std::string& id,
@@ -219,7 +219,7 @@ namespace
         return std::nullopt;
     }
 
-    std::string buildAgentNow()
+    std::string build_agent_now()
     {
         const auto& state = AppState::get();
         if (state.demo_mode && !state.anchor_date.empty())
@@ -245,12 +245,12 @@ namespace
         return formatTimestamp();
     }
 
-    void setAgentTurnNow(service::AgentChatTurnRequest& request)
+    void set_agent_turn_now(service::AgentChatTurnRequest& request)
     {
-        request.now = buildAgentNow();
+        request.now = build_agent_now();
     }
 
-    service::AgentClientResult callAgentSync(
+    service::AgentClientResult call_agent_sync(
         int64_t chat_history_id,
         int64_t user_id,
         const std::vector<service::AgentChatMessage>& messages,
@@ -263,7 +263,7 @@ namespace
         request.chat_history_id = chat_history_id;
         request.user_id = user_id;
         request.messages = messages;
-        setAgentTurnNow(request);
+        set_agent_turn_now(request);
         request.demo_runtime_id = demo_runtime_id;
         request.stream = false;
 
@@ -275,7 +275,7 @@ namespace
             out_error);
     }
 
-    std::vector<service::AgentChatMessage> buildAgentMessagesFromJson(const Json::Value& messages)
+    std::vector<service::AgentChatMessage> build_agent_messages_from_json(const Json::Value& messages)
     {
         std::vector<service::AgentChatMessage> out;
         if (!messages.isArray())
@@ -301,7 +301,7 @@ namespace
         return out;
     }
 
-    std::string trimPersonalPrompt(const std::string& value)
+    std::string trim_personal_prompt(const std::string& value)
     {
         const auto start = value.find_first_not_of(" \t\r\n");
         if (start == std::string::npos)
@@ -310,7 +310,7 @@ namespace
         return value.substr(start, end - start + 1);
     }
 
-    std::string resolvePersonalPrompt(int64_t user_id, const std::string& demo_runtime_id)
+    std::string resolve_personal_prompt(int64_t user_id, const std::string& demo_runtime_id)
     {
         if (!demo_runtime_id.empty())
             return demoResolvePersonalPrompt(demo_runtime_id, user_id, AppState::get().db());
@@ -319,10 +319,10 @@ namespace
         const auto agent = settings.getAiAgentSettings(user_id);
         if (!agent.isMember("personalPrompt") || !agent["personalPrompt"].isString())
             return {};
-        return trimPersonalPrompt(agent["personalPrompt"].asString());
+        return trim_personal_prompt(agent["personalPrompt"].asString());
     }
 
-    void prependPersonalPrompt(
+    void prepend_personal_prompt(
         std::vector<service::AgentChatMessage>& messages,
         int64_t user_id,
         const std::string& demo_runtime_id)
@@ -336,13 +336,13 @@ namespace
                 [](const service::AgentChatMessage& message) { return message.role == "system"; }),
             messages.end());
 
-        const auto prompt = resolvePersonalPrompt(user_id, demo_runtime_id);
+        const auto prompt = resolve_personal_prompt(user_id, demo_runtime_id);
         if (prompt.empty())
             return;
         messages.insert(messages.begin(), {"system", prompt});
     }
 
-    std::optional<int64_t> parseRequiredInt64(
+    std::optional<int64_t> parse_required_int64(
         const Json::Value& json,
         const char* field,
         std::string& error)
@@ -355,7 +355,7 @@ namespace
         return json[field].asInt64();
     }
 
-    bool runAgentStreamCore(
+    bool run_agent_stream_core(
         const std::shared_ptr<drogon::ResponseStream>& stream,
         int64_t user_id,
         int64_t conversation_id,
@@ -370,7 +370,7 @@ namespace
         agent_request.chat_history_id = conversation_id;
         agent_request.user_id = user_id;
         agent_request.messages = agent_messages;
-        setAgentTurnNow(agent_request);
+        set_agent_turn_now(agent_request);
         agent_request.demo_runtime_id = demo_runtime_id;
         agent_request.stream = true;
 
@@ -391,15 +391,15 @@ namespace
                     const std::string name = event.value("name", "");
                     const std::string id = event.value("id", "");
                     const Json::Value args = event.contains("args")
-                        ? nlohmannToJsonCpp(event["args"])
+                        ? nlohmann_to_json_cpp(event["args"])
                         : Json::Value(Json::nullValue);
-                    Json::Value stored = makeToolEvent(name, true, {}, false, args, Json::nullValue, id);
+                    Json::Value stored = make_tool_event(name, true, {}, false, args, Json::nullValue, id);
                     Json::Value payload;
                     payload["type"] = "tool_start";
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
                     payload["toolEvent"] = stored;
-                    if (!sendSseEvent(stream, payload))
+                    if (!send_sse_event(stream, payload))
                         return false;
 
                     // Never overwrite a completed same-name tool — that caused UI flicker
@@ -428,12 +428,12 @@ namespace
                     const std::string id = event.value("id", "");
                     const bool failed = event.contains("ok") && event["ok"].is_boolean() && !event["ok"].get<bool>();
                     const json& raw_result = event.contains("result") ? event["result"] : json();
-                    const std::string result_summary = summarizeToolResult(raw_result);
+                    const std::string result_summary = summarize_tool_result(raw_result);
                     const Json::Value result = raw_result.is_object() || raw_result.is_array()
-                        ? nlohmannToJsonCpp(raw_result)
+                        ? nlohmann_to_json_cpp(raw_result)
                         : Json::Value(Json::nullValue);
                     Json::Value prior_args = Json::nullValue;
-                    const auto existing = findToolEventIndex(tool_events, tool_index, id, name, true);
+                    const auto existing = find_tool_event_index(tool_events, tool_index, id, name, true);
                     if (existing && tool_events[*existing].isMember("args"))
                         prior_args = tool_events[*existing]["args"];
                     const std::string stored_id = !id.empty()
@@ -441,14 +441,14 @@ namespace
                         : (existing && tool_events[*existing].isMember("id")
                             ? tool_events[*existing]["id"].asString()
                             : std::string{});
-                    Json::Value stored = makeToolEvent(
+                    Json::Value stored = make_tool_event(
                         name, false, result_summary, failed, prior_args, result, stored_id);
                     Json::Value payload;
                     payload["type"] = "tool_end";
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
                     payload["toolEvent"] = stored;
-                    if (!sendSseEvent(stream, payload))
+                    if (!send_sse_event(stream, payload))
                         return false;
 
                     if (existing)
@@ -474,7 +474,7 @@ namespace
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
                     payload["phase"] = event["phase"].get<std::string>();
-                    if (!sendSseEvent(stream, payload))
+                    if (!send_sse_event(stream, payload))
                         return false;
                     return true;
                 }
@@ -492,7 +492,7 @@ namespace
                             payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                             payload["messageId"] = static_cast<Json::Int64>(assistant_id);
                             payload["reasoning"] = accumulated_reasoning;
-                            if (!sendSseEvent(stream, payload))
+                            if (!send_sse_event(stream, payload))
                                 return false;
                         }
                     }
@@ -508,7 +508,7 @@ namespace
                             payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                             payload["messageId"] = static_cast<Json::Int64>(assistant_id);
                             payload["text"] = accumulated_text;
-                            if (!sendSseEvent(stream, payload))
+                            if (!send_sse_event(stream, payload))
                                 return false;
                         }
                     }
@@ -554,7 +554,7 @@ namespace
         return true;
     }
 
-    void runStreamingTurn(
+    void run_streaming_turn(
         std::shared_ptr<drogon::ResponseStream> stream,
         int64_t user_id,
         int64_t conversation_id,
@@ -577,14 +577,14 @@ namespace
         user_added["message"] = user_message;
         if (is_new_conversation)
             user_added["conversation"] = conversation_for_event;
-        if (!sendSseEvent(stream, user_added))
+        if (!send_sse_event(stream, user_added))
             return;
 
         Json::Value assistant_start;
         assistant_start["type"] = "assistant_start";
         assistant_start["conversationId"] = static_cast<Json::Int64>(conversation_id);
         assistant_start["message"] = assistant_shell;
-        if (!sendSseEvent(stream, assistant_start))
+        if (!send_sse_event(stream, assistant_start))
             return;
 
         std::string accumulated_text;
@@ -592,9 +592,9 @@ namespace
         Json::Value tool_events(Json::arrayValue);
 
         auto agent_messages = store.buildAgentMessages(messages);
-        prependPersonalPrompt(agent_messages, user_id, demo_runtime_id);
+        prepend_personal_prompt(agent_messages, user_id, demo_runtime_id);
 
-        runAgentStreamCore(
+        run_agent_stream_core(
             stream,
             user_id,
             conversation_id,
@@ -632,13 +632,13 @@ namespace
         message_done["conversationId"] = static_cast<Json::Int64>(conversation_id);
         message_done["messageId"] = static_cast<Json::Int64>(assistant_id);
         message_done["text"] = accumulated_text;
-        sendSseEvent(stream, message_done);
+        send_sse_event(stream, message_done);
 
         if (stream)
             stream->close();
     }
 
-    void startStreamResponse(
+    void start_stream_response(
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         const drogon::HttpRequestPtr& req,
         int64_t user_id,
@@ -683,7 +683,7 @@ namespace
                             return;
                         }
 
-                        runStreamingTurn(
+                        run_streaming_turn(
                             response,
                             user_id,
                             *conversation_id,
@@ -704,7 +704,7 @@ namespace
                         return;
                     }
 
-                    runStreamingTurn(
+                    run_streaming_turn(
                         response,
                         user_id,
                         (*created)["id"].asInt64(),
@@ -724,7 +724,7 @@ namespace
         callback(resp);
     }
 
-    void startEphemeralStreamResponse(
+    void start_ephemeral_stream_response(
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         const drogon::HttpRequestPtr& req,
         int64_t user_id,
@@ -732,7 +732,7 @@ namespace
         int64_t assistant_message_id,
         const Json::Value& messages_json)
     {
-        auto agent_messages = buildAgentMessagesFromJson(messages_json);
+        auto agent_messages = build_agent_messages_from_json(messages_json);
         if (agent_messages.empty())
         {
             respondError(callback, 400, "INVALID_MESSAGE", "메시지 기록이 비어 있습니다.", "messages");
@@ -742,7 +742,7 @@ namespace
         const auto demo_runtime_id = demoVirtualDevicesEnabled()
             ? resolveDemoRuntimeId(req, nullptr)
             : std::string{};
-        prependPersonalPrompt(agent_messages, user_id, demo_runtime_id);
+        prepend_personal_prompt(agent_messages, user_id, demo_runtime_id);
 
         auto resp = drogon::HttpResponse::newAsyncStreamResponse(
             [user_id, conversation_id, assistant_message_id, agent_messages, demo_runtime_id](
@@ -755,7 +755,7 @@ namespace
                     std::string accumulated_reasoning;
                     Json::Value tool_events(Json::arrayValue);
 
-                    runAgentStreamCore(
+                    run_agent_stream_core(
                         response,
                         user_id,
                         conversation_id,
@@ -771,7 +771,7 @@ namespace
                     message_done["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     message_done["messageId"] = static_cast<Json::Int64>(assistant_message_id);
                     message_done["text"] = accumulated_text;
-                    sendSseEvent(response, message_done);
+                    send_sse_event(response, message_done);
 
                     if (response)
                         response->close();
@@ -787,11 +787,11 @@ namespace
         callback(resp);
     }
 
-    void handleStreamEphemeral(
+    void handle_stream_ephemeral(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback)
     {
-        const auto user_id = resolveUserId(req, callback);
+        const auto user_id = resolve_user_id(req, callback);
         if (!user_id)
             return;
 
@@ -803,14 +803,14 @@ namespace
         }
 
         std::string error;
-        const auto conversation_id = parseRequiredInt64(*json, "conversationId", error);
+        const auto conversation_id = parse_required_int64(*json, "conversationId", error);
         if (!conversation_id)
         {
             respondError(callback, 400, "INVALID_REQUEST", error);
             return;
         }
 
-        const auto assistant_message_id = parseRequiredInt64(*json, "assistantMessageId", error);
+        const auto assistant_message_id = parse_required_int64(*json, "assistantMessageId", error);
         if (!assistant_message_id)
         {
             respondError(callback, 400, "INVALID_REQUEST", error);
@@ -823,7 +823,7 @@ namespace
             return;
         }
 
-        startEphemeralStreamResponse(
+        start_ephemeral_stream_response(
             std::move(callback),
             req,
             *user_id,
@@ -837,7 +837,7 @@ void ChatController::listConversations(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
@@ -859,7 +859,7 @@ void ChatController::createConversation(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
@@ -873,7 +873,7 @@ void ChatController::createConversation(
     {
         std::string error;
         std::string field;
-        const auto text = extractText(json, error, field);
+        const auto text = extract_text(json, error, field);
         if (text.empty())
         {
             respondError(callback, 400, "INVALID_MESSAGE", error, field);
@@ -894,8 +894,8 @@ void ChatController::createConversation(
         std::string model;
         std::string agent_error;
         auto agent_messages = store.buildAgentMessages((*created)["messages"]);
-        prependPersonalPrompt(agent_messages, *user_id, runtime_id);
-        const auto agent_result = callAgentSync(
+        prepend_personal_prompt(agent_messages, *user_id, runtime_id);
+        const auto agent_result = call_agent_sync(
             conversation_id, *user_id, agent_messages, assistant_text, model, agent_error, runtime_id);
         if (agent_result != service::AgentClientResult::success)
         {
@@ -963,11 +963,11 @@ void ChatController::getConversation(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
@@ -1006,11 +1006,11 @@ void ChatController::renameConversation(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
@@ -1062,11 +1062,11 @@ void ChatController::deleteConversation(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
@@ -1105,11 +1105,11 @@ void ChatController::appendMessage(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
@@ -1119,7 +1119,7 @@ void ChatController::appendMessage(
     const auto json = req->getJsonObject();
     std::string error;
     std::string field;
-    const auto text = extractText(json, error, field);
+    const auto text = extract_text(json, error, field);
     if (text.empty())
     {
         respondError(callback, 400, "INVALID_MESSAGE", error, field);
@@ -1146,8 +1146,8 @@ void ChatController::appendMessage(
     std::string model;
     std::string agent_error;
     auto agent_messages = store.buildAgentMessages((*appended)["messages"]);
-    prependPersonalPrompt(agent_messages, *user_id, runtime_id);
-    const auto agent_result = callAgentSync(
+    prepend_personal_prompt(agent_messages, *user_id, runtime_id);
+    const auto agent_result = call_agent_sync(
         *id, *user_id, agent_messages, assistant_text, model, agent_error, runtime_id);
     if (agent_result != service::AgentClientResult::success)
     {
@@ -1173,7 +1173,7 @@ void ChatController::appendMessage(
     assistant_message["id"] = static_cast<Json::Int64>(assistant_id);
     assistant_message["role"] = "assistant";
     assistant_message["text"] = assistant_text;
-    assistant_message["createdAt"] = ChatStore::toCreatedAtIso(formatTimestamp());
+    assistant_message["createdAt"] = ChatStore::to_created_at_iso(formatTimestamp());
 
     Json::Value body;
     body["conversationId"] = static_cast<Json::Int64>(*id);
@@ -1202,11 +1202,11 @@ void ChatController::streamMessage(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
@@ -1216,7 +1216,7 @@ void ChatController::streamMessage(
     const auto json = req->getJsonObject();
     std::string error;
     std::string field;
-    const auto text = extractText(json, error, field);
+    const auto text = extract_text(json, error, field);
     if (text.empty())
     {
         respondError(callback, 400, "INVALID_MESSAGE", error, field);
@@ -1231,7 +1231,7 @@ void ChatController::streamMessage(
             respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
             return;
         }
-        startStreamResponse(std::move(callback), req, *user_id, id, text);
+        start_stream_response(std::move(callback), req, *user_id, id, text);
         return;
     }
 
@@ -1242,42 +1242,42 @@ void ChatController::streamMessage(
         return;
     }
 
-    startStreamResponse(std::move(callback), req, *user_id, id, text);
+    start_stream_response(std::move(callback), req, *user_id, id, text);
 }
 
 void ChatController::streamNewConversation(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
     const auto json = req->getJsonObject();
     std::string error;
     std::string field;
-    const auto text = extractText(json, error, field);
+    const auto text = extract_text(json, error, field);
     if (text.empty())
     {
         respondError(callback, 400, "INVALID_MESSAGE", error, field);
         return;
     }
 
-    startStreamResponse(std::move(callback), req, *user_id, std::nullopt, text);
+    start_stream_response(std::move(callback), req, *user_id, std::nullopt, text);
 }
 
 void ChatController::streamEphemeral(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    handleStreamEphemeral(req, std::move(callback));
+    handle_stream_ephemeral(req, std::move(callback));
 }
 
 void ChatController::getSuggestions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
@@ -1289,14 +1289,14 @@ void ChatController::askInsight(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
     const auto json = req->getJsonObject();
     std::string error;
     std::string field;
-    const auto text = extractText(json, error, field);
+    const auto text = extract_text(json, error, field);
     if (text.empty())
     {
         respondError(callback, 400, "INVALID_MESSAGE", error, field);
@@ -1309,12 +1309,12 @@ void ChatController::askInsight(
 
     std::vector<service::AgentChatMessage> messages;
     messages.push_back({"user", text});
-    prependPersonalPrompt(messages, *user_id, demo_runtime_id);
+    prepend_personal_prompt(messages, *user_id, demo_runtime_id);
 
     std::string reply;
     std::string model;
     std::string agent_error;
-    const auto agent_result = callAgentSync(
+    const auto agent_result = call_agent_sync(
         0, *user_id, messages, reply, model, agent_error, demo_runtime_id);
     if (agent_result != service::AgentClientResult::success)
     {

@@ -19,7 +19,7 @@ WAVE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::string weekdayToken(int wday)
+    std::string weekday_token(int wday)
     {
         switch (wday)
         {
@@ -56,7 +56,7 @@ namespace
         return buffer;
     }
 
-    int localNowMinute()
+    int local_now_minute()
     {
         const std::time_t now_t = std::time(nullptr);
         std::tm local_tm {};
@@ -68,7 +68,7 @@ namespace
         return local_tm.tm_hour * 60 + local_tm.tm_min;
     }
 
-    int localWeekday()
+    int local_weekday()
     {
         const std::time_t now_t = std::time(nullptr);
         std::tm local_tm {};
@@ -80,7 +80,7 @@ namespace
         return local_tm.tm_wday;
     }
 
-    bool parseClock(const std::string& hhmm, int& out_hour, int& out_minute)
+    bool parse_clock(const std::string& hhmm, int& out_hour, int& out_minute)
     {
         const auto colon = hhmm.find(':');
         if (colon == std::string::npos)
@@ -97,11 +97,11 @@ namespace
         return true;
     }
 
-    bool localClockMatches(const std::string& hhmm)
+    bool local_clock_matches(const std::string& hhmm)
     {
         int hour = 0;
         int minute = 0;
-        if (!parseClock(hhmm, hour, minute))
+        if (!parse_clock(hhmm, hour, minute))
             return false;
 
         const std::time_t now_t = std::time(nullptr);
@@ -121,11 +121,11 @@ namespace
             .count();
     }
 
-    bool daysContainToday(const Json::Value& days, bool empty_means_all)
+    bool days_contain_today(const Json::Value& days, bool empty_means_all)
     {
         if (!days.isArray() || days.empty())
             return empty_means_all;
-        const std::string token = weekdayToken(localWeekday());
+        const std::string token = weekday_token(local_weekday());
         for (const auto& day : days)
         {
             if (day.isString() && day.asString() == token)
@@ -134,16 +134,16 @@ namespace
         return false;
     }
 
-    bool alarmIsDue(const Json::Value& alarm)
+    bool alarm_is_due(const Json::Value& alarm)
     {
         if (!alarm.get("enabled", true).asBool())
             return false;
-        if (localNowMinute() != alarm.get("timeMinute", -1).asInt())
+        if (local_now_minute() != alarm.get("timeMinute", -1).asInt())
             return false;
-        return daysContainToday(alarm.get("daysOfWeek", Json::Value(Json::arrayValue)), true);
+        return days_contain_today(alarm.get("daysOfWeek", Json::Value(Json::arrayValue)), true);
     }
 
-    bool alarmIsOnce(const Json::Value& alarm)
+    bool alarm_is_once(const Json::Value& alarm)
     {
         if (alarm.isMember("repeatWeekly") && !alarm["repeatWeekly"].isNull())
             return !alarm["repeatWeekly"].asBool();
@@ -151,7 +151,7 @@ namespace
         return !days.isArray() || days.empty();
     }
 
-    void fireScheduleRule(
+    void fire_schedule_rule(
         const std::string& runtime_id,
         const Json::Value& rule,
         const db::DbClientPtr& client)
@@ -198,7 +198,7 @@ namespace
         }
     }
 
-    void tickAlarms(const std::string& runtime_id, const db::DbClientPtr& client)
+    void tick_alarms(const std::string& runtime_id, const db::DbClientPtr& client)
     {
         const auto session_copy = DemoSessionRegistry::instance().get(runtime_id);
         if (!session_copy)
@@ -212,11 +212,11 @@ namespace
             auto& session = *locked_session;
             for (const auto& alarm : session.alarms)
             {
-                if (!alarm.isObject() || !alarmIsDue(alarm))
+                if (!alarm.isObject() || !alarm_is_due(alarm))
                     continue;
 
                 const int64_t alarm_id = alarm.get("id", Json::Int64(0)).asInt64();
-                const bool once = alarmIsOnce(alarm);
+                const bool once = alarm_is_once(alarm);
 
                 if (once)
                 {
@@ -239,12 +239,12 @@ namespace
         for (const auto& alarm : due)
         {
             demoFireAlarm(runtime_id, alarm, client);
-            if (alarmIsOnce(alarm))
+            if (alarm_is_once(alarm))
                 demoDisableAlarm(runtime_id, alarm.get("id", Json::Int64(0)).asInt64());
         }
     }
 
-    void tickSchedules(const std::string& runtime_id, const db::DbClientPtr& client)
+    void tick_schedules(const std::string& runtime_id, const db::DbClientPtr& client)
     {
         const int64_t now = nowMs();
         std::vector<Json::Value> due;
@@ -297,7 +297,7 @@ namespace
                     if (time.empty())
                         continue;
 
-                    const bool matches = localClockMatches(time);
+                    const bool matches = local_clock_matches(time);
                     if (!matches)
                     {
                         session.schedule_slot_fired[rule_id] = false;
@@ -317,8 +317,8 @@ namespace
                     if (time.empty())
                         continue;
 
-                    const bool matches = localClockMatches(time)
-                        && daysContainToday(schedule.get("daysOfWeek", Json::Value(Json::arrayValue)), false);
+                    const bool matches = local_clock_matches(time)
+                        && days_contain_today(schedule.get("daysOfWeek", Json::Value(Json::arrayValue)), false);
                     if (!matches)
                     {
                         session.schedule_slot_fired[rule_id] = false;
@@ -334,7 +334,7 @@ namespace
         }
 
         for (const auto& rule : due)
-            fireScheduleRule(runtime_id, rule, client);
+            fire_schedule_rule(runtime_id, rule, client);
 
         for (const auto& rule_id : once_to_disable)
         {
@@ -383,8 +383,8 @@ void DemoAutomationRuntime::tickSession(const std::string& runtime_id)
     if (!client)
         return;
 
-    tickAlarms(runtime_id, client);
-    tickSchedules(runtime_id, client);
+    tick_alarms(runtime_id, client);
+    tick_schedules(runtime_id, client);
     demoRefreshSpeechOverlays(runtime_id, nowMs());
 }
 

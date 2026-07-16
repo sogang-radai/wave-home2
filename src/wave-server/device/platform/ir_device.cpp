@@ -9,7 +9,7 @@ DEVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    json makeQueryError(int code, std::string_view message = {})
+    json make_query_error(int code, std::string_view message = {})
     {
         json out = json::object();
         out["code"] = code;
@@ -18,7 +18,7 @@ namespace
         return out;
     }
 
-    std::string readOptionalString(const json& object, std::string_view key)
+    std::string read_optional_string(const json& object, std::string_view key)
     {
         if (!object.contains(key) || !object[key].is_string())
             return {};
@@ -26,20 +26,20 @@ namespace
         return object[key].get<std::string>();
     }
 
-    bool isSupportedIrClass(std::string_view className)
+    bool is_supported_ir_class(std::string_view className)
     {
         return className == "ir_reciever" ||
             className == "ir_remote" ||
             className == "ir_device";
     }
 
-    void validateIrDeviceConfig(const json& config)
+    void validate_ir_device_config(const json& config)
     {
         if (!config.contains("class") || !config["class"].is_string())
             throw std::invalid_argument("ir device config requires string field 'class'");
 
         const auto className = config["class"].get<std::string>();
-        if (!isSupportedIrClass(className))
+        if (!is_supported_ir_class(className))
             throw std::invalid_argument("unsupported ir device class: " + className);
 
         if (!config.contains("interface") || !config["interface"].is_object())
@@ -75,21 +75,21 @@ namespace
         }
     }
 
-    void applyIrDevicePaths(const json& iface, IRDevice::Config& out)
+    void apply_ir_device_paths(const json& iface, IRDevice::Config& out)
     {
-        out.inputDevice = readOptionalString(iface, "input_device");
+        out.inputDevice = read_optional_string(iface, "input_device");
         if (out.inputDevice.empty())
-            out.inputDevice = readOptionalString(iface, "receive_device");
+            out.inputDevice = read_optional_string(iface, "receive_device");
 
-        out.outputDevice = readOptionalString(iface, "output_device");
+        out.outputDevice = read_optional_string(iface, "output_device");
         if (out.outputDevice.empty())
-            out.outputDevice = readOptionalString(iface, "transmit_device");
+            out.outputDevice = read_optional_string(iface, "transmit_device");
 
         if (out.inputDevice.empty() && out.outputDevice.empty())
-            out.inputDevice = readOptionalString(iface, "device");
+            out.inputDevice = read_optional_string(iface, "device");
     }
 
-    IRDevice::Config parseConfig(const json& config)
+    IRDevice::Config parse_config(const json& config)
     {
         const auto& iface = config.at("interface");
         const std::string className = config.at("class").get<std::string>();
@@ -108,18 +108,18 @@ namespace
         }
         else
         {
-            applyIrDevicePaths(iface, out);
-            out.commandListPath = readOptionalString(iface, "command_list");
+            apply_ir_device_paths(iface, out);
+            out.commandListPath = read_optional_string(iface, "command_list");
         }
 
         return out;
     }
 
-    json payloadToJson(const ir::Payload& payload)
+    json payload_to_json(const ir::Payload& payload)
     {
         json out = json::object();
-        out["kind"] = ir::Payload::kindToString(payload.kind());
-        out["protocol"] = ir::Payload::protocolToString(payload.protocol());
+        out["kind"] = ir::Payload::kind_to_string(payload.kind());
+        out["protocol"] = ir::Payload::protocol_to_string(payload.protocol());
 
         switch (payload.kind())
         {
@@ -136,7 +136,7 @@ namespace
         case ir::Payload::Kind::Repeat:
             break;
         default:
-            if (ir::Payload::isRawKind(payload.kind()))
+            if (ir::Payload::is_raw_kind(payload.kind()))
             {
                 out["bit_count"] = payload.bitCount();
                 out["raw_bits"] = payload.rawBits();
@@ -173,9 +173,9 @@ const IRDevice::Config& IRDevice::getConfig() const
 
 int IRDevice::init(const json& config)
 {
-    validateIrDeviceConfig(config);
+    validate_ir_device_config(config);
     loadBaseConfig(config);
-    m_config = parseConfig(config);
+    m_config = parse_config(config);
     m_className = config.at("class").get<std::string>();
 
     if (!isEnabled())
@@ -265,12 +265,12 @@ json IRDevice::query(std::string_view name, const json& params)
     (void)params;
 
     if (m_state != DeviceState::Running)
-        return makeQueryError(-4);
+        return make_query_error(-4);
 
     if (name == "has_data")
     {
         if (!m_receiver)
-            return makeQueryError(-8, "receiver not available");
+            return make_query_error(-8, "receiver not available");
 
         return json{{"available", m_receiver->hasData()}};
     }
@@ -278,7 +278,7 @@ json IRDevice::query(std::string_view name, const json& params)
     if (name == "recv")
     {
         if (!m_receiver)
-            return makeQueryError(-8, "receiver not available");
+            return make_query_error(-8, "receiver not available");
 
         if (!m_receiver->hasData())
             return json{{"available", false}};
@@ -291,7 +291,7 @@ json IRDevice::query(std::string_view name, const json& params)
             return json{
                 {"available", true},
                 {"command", cmdName.empty() ? json() : json(cmdName)},
-                {"payload", payloadToJson(payload)},
+                {"payload", payload_to_json(payload)},
             };
         }
 
@@ -300,14 +300,14 @@ json IRDevice::query(std::string_view name, const json& params)
             return json{
                 {"available", true},
                 {"command", json()},
-                {"payload", payloadToJson(payload)},
+                {"payload", payload_to_json(payload)},
             };
         }
 
-        return makeQueryError(irResultToCode(res), ir::to_string(res));
+        return make_query_error(irResultToCode(res), ir::to_string(res));
     }
 
-    return makeQueryError(-8);
+    return make_query_error(-8);
 }
 
 std::future<json> IRDevice::queryAsync(std::string_view name, const json& params, uint32_t timeout_ms)

@@ -44,7 +44,7 @@ namespace
             std::filesystem::current_path() / resolved);
     }
 
-    bool ensureDir(const std::filesystem::path& dir_path)
+    bool ensure_dir(const std::filesystem::path& dir_path)
     {
         if (dir_path.empty())
             return true;
@@ -60,7 +60,7 @@ namespace
         return true;
     }
 
-    bool ensureParentDir(const std::filesystem::path& file_path)
+    bool ensure_parent_dir(const std::filesystem::path& file_path)
     {
         const auto parent = file_path.parent_path();
         if (parent.empty())
@@ -77,7 +77,7 @@ namespace
         return true;
     }
 
-    void configureStaticFileTypes(drogon::HttpAppFramework& app)
+    void configure_static_file_types(drogon::HttpAppFramework& app)
     {
         // Drogon defaults omit .json; CRA ships manifest.json and asset-manifest.json.
         // Landing WaveCanvas also needs .mp4 (public/water-crossfade.mp4).
@@ -217,13 +217,13 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
                 return false;
             }
         }
-        else if (!ensureParentDir(resolved_database_path))
+        else if (!ensure_parent_dir(resolved_database_path))
         {
             return false;
         }
     }
 
-    if (!ensureDir(resolved_upload_path))
+    if (!ensure_dir(resolved_upload_path))
         return false;
 
     auto& app = drogon::app();
@@ -235,7 +235,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     app.setImplicitPageEnable(true);
     app.setImplicitPage(home_page);
     app.setUploadPath(resolved_upload_path.string());
-    configureStaticFileTypes(app);
+    configure_static_file_types(app);
 
     if (!std::filesystem::exists(resolved_gestures_root))
     {

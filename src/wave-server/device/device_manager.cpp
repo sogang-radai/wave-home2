@@ -38,17 +38,17 @@ namespace
         return nullptr;
     }
 
-    std::string manifestDeviceId(const DeviceManifestEntry& entry)
+    std::string manifest_device_id(const DeviceManifestEntry& entry)
     {
         return entry.config.value("id", "");
     }
 
-    std::string manifestDeviceName(const DeviceManifestEntry& entry)
+    std::string manifest_device_name(const DeviceManifestEntry& entry)
     {
         return entry.config.value("name", entry.config.value("class", "device"));
     }
 
-    void logConnectionEvent(
+    void log_connection_event(
         const std::string& device_id,
         const std::string& device_name,
         bool success,
@@ -131,7 +131,7 @@ bool DeviceManager::entryNeedsRetry(const DeviceManifestEntry& entry) const
     if (entry.state == DeviceEntryState::Failed || entry.state == DeviceEntryState::Pending)
         return true;
 
-    const auto id = parseDeviceID(manifestDeviceId(entry));
+    const auto id = parseDeviceID(manifest_device_id(entry));
     if (id == 0)
         return false;
 
@@ -155,8 +155,8 @@ bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
         return false;
 
     const std::string className = entry.config.value("class", "");
-    const std::string deviceName = manifestDeviceName(entry);
-    const std::string external_id = manifestDeviceId(entry);
+    const std::string deviceName = manifest_device_name(entry);
+    const std::string external_id = manifest_device_id(entry);
     const DeviceID device_id = parseDeviceID(external_id);
 
     entry.state = DeviceEntryState::Initializing;
@@ -202,7 +202,7 @@ bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
             deviceName,
             rc,
             entry.initError);
-        logConnectionEvent(external_id, deviceName, false, rc, entry.initError, manual_retry);
+        log_connection_event(external_id, deviceName, false, rc, entry.initError, manual_retry);
         return false;
     }
 
@@ -217,14 +217,14 @@ bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
     const bool online = handle && handle->isEnabled() && handle->getState() == DeviceState::Running;
     if (online)
     {
-        logConnectionEvent(external_id, deviceName, true, 0, {}, manual_retry);
+        log_connection_event(external_id, deviceName, true, 0, {}, manual_retry);
         return true;
     }
 
     entry.state = DeviceEntryState::Failed;
     entry.initResult = -4;
     entry.initError = "device initialized but not running";
-    logConnectionEvent(external_id, deviceName, false, entry.initResult, entry.initError, manual_retry);
+    log_connection_event(external_id, deviceName, false, entry.initResult, entry.initError, manual_retry);
     return false;
 }
 
@@ -239,7 +239,7 @@ void DeviceManager::retryFailedDevices(bool manual)
             continue;
         if (tryInitEntry(entry, manual))
         {
-            const auto* handle = findDevice(parseDeviceID(manifestDeviceId(entry)));
+            const auto* handle = findDevice(parseDeviceID(manifest_device_id(entry)));
             if (handle && handle->getState() == DeviceState::Running)
                 any_recovered = true;
         }
@@ -296,7 +296,7 @@ bool DeviceManager::retryDevice(const std::string& external_id, std::string& err
 {
     for (auto& entry : m_manifest)
     {
-        if (manifestDeviceId(entry) != external_id)
+        if (manifest_device_id(entry) != external_id)
             continue;
 
         if (entry.state == DeviceEntryState::Unsupported)
@@ -415,7 +415,7 @@ void DeviceManager::startDevicesAsync()
 
             if (tryInitEntry(entry, false))
             {
-                const auto* handle = findDevice(parseDeviceID(manifestDeviceId(entry)));
+                const auto* handle = findDevice(parseDeviceID(manifest_device_id(entry)));
                 if (handle && handle->getState() == DeviceState::Running)
                     ++online;
             }

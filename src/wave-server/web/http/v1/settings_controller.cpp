@@ -12,7 +12,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    void requireDbAndActiveUser(
+    void require_db_and_active_user(
         const drogon::HttpRequestPtr& req,
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
         const std::function<void(int64_t user_id)>& on_ready)
@@ -36,7 +36,7 @@ namespace
         on_ready(*user_id);
     }
 
-    drogon::HttpResponsePtr demoJsonResponse(
+    drogon::HttpResponsePtr demo_json_response(
         const drogon::HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id)
@@ -51,7 +51,7 @@ void SettingsController::getGeneral(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    requireDbAndActiveUser(req, callback, [&](int64_t user_id)
+    require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
         SettingsStore store(AppState::get().db());
         callback(drogon::HttpResponse::newHttpJsonResponse(store.getGeneralSettings(user_id)));
@@ -69,7 +69,7 @@ void SettingsController::putGeneral(
         return;
     }
 
-    requireDbAndActiveUser(req, callback, [&](int64_t user_id)
+    require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
         SettingsStore store(AppState::get().db());
         Json::Value saved;
@@ -88,7 +88,7 @@ void SettingsController::getSleep(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    requireDbAndActiveUser(req, callback, [&](int64_t user_id)
+    require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
         SettingsStore store(AppState::get().db());
         callback(drogon::HttpResponse::newHttpJsonResponse(store.getSleepConfig(user_id)));
@@ -106,7 +106,7 @@ void SettingsController::putSleep(
         return;
     }
 
-    requireDbAndActiveUser(req, callback, [&](int64_t user_id)
+    require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
         SettingsStore store(AppState::get().db());
         Json::Value saved;
@@ -171,12 +171,12 @@ void SettingsController::getAiAgent(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    requireDbAndActiveUser(req, callback, [&](int64_t user_id)
+    require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
         if (demoVirtualDevicesEnabled())
         {
             const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-            callback(demoJsonResponse(
+            callback(demo_json_response(
                 req,
                 demoGetAiAgentSettings(runtime_id, user_id, AppState::get().db()),
                 runtime_id));
@@ -199,7 +199,7 @@ void SettingsController::putAiAgent(
         return;
     }
 
-    requireDbAndActiveUser(req, callback, [&](int64_t user_id)
+    require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
         if (demoVirtualDevicesEnabled())
         {
@@ -218,7 +218,7 @@ void SettingsController::putAiAgent(
                     field);
                 return;
             }
-            callback(demoJsonResponse(req, saved, runtime_id));
+            callback(demo_json_response(req, saved, runtime_id));
             return;
         }
 

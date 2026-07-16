@@ -10,7 +10,7 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::string packEmbeddingBlob(const std::vector<float>& values)
+    std::string pack_embedding_blob(const std::vector<float>& values)
     {
         std::string blob;
         blob.resize(values.size() * sizeof(float));
@@ -52,7 +52,7 @@ void SleepVecStore::storeSleepStatEmbedding(int64_t stat_id, const std::vector<f
     {
         if (tableExists("vec_sleep_stat"))
         {
-            const std::string blob = packEmbeddingBlob(embedding);
+            const std::string blob = pack_embedding_blob(embedding);
             m_client->execSqlSync("DELETE FROM vec_sleep_stat WHERE stat_id = ?", stat_id);
             m_client->execSqlSync(
                 "INSERT INTO vec_sleep_stat (stat_id, embedding) VALUES (?, ?)",
@@ -63,7 +63,7 @@ void SleepVecStore::storeSleepStatEmbedding(int64_t stat_id, const std::vector<f
 
         if (tableExists("sleep_stat_embedding"))
         {
-            const std::string blob = packEmbeddingBlob(embedding);
+            const std::string blob = pack_embedding_blob(embedding);
             m_client->execSqlSync(
                 R"SQL(
 INSERT INTO sleep_stat_embedding (stat_id, dim, embedding_blob, updated_at)
@@ -93,7 +93,7 @@ void SleepVecStore::storeSleepReportEmbedding(int64_t report_id, const std::vect
     {
         if (tableExists("vec_sleep_report"))
         {
-            const std::string blob = packEmbeddingBlob(embedding);
+            const std::string blob = pack_embedding_blob(embedding);
             m_client->execSqlSync("DELETE FROM vec_sleep_report WHERE report_id = ?", report_id);
             m_client->execSqlSync(
                 "INSERT INTO vec_sleep_report (report_id, embedding) VALUES (?, ?)",
@@ -104,7 +104,7 @@ void SleepVecStore::storeSleepReportEmbedding(int64_t report_id, const std::vect
 
         if (tableExists("sleep_report_embedding"))
         {
-            const std::string blob = packEmbeddingBlob(embedding);
+            const std::string blob = pack_embedding_blob(embedding);
             m_client->execSqlSync(
                 R"SQL(
 INSERT INTO sleep_report_embedding (report_id, dim, embedding_blob, updated_at)

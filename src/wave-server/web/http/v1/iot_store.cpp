@@ -49,7 +49,7 @@ namespace
         return sherpa_onnx::cxx::WriteWave(path, wave);
     }
 
-    std::vector<int16_t> floatSamplesToPcm16(const std::vector<float>& samples)
+    std::vector<int16_t> float_samples_to_pcm16(const std::vector<float>& samples)
     {
         std::vector<int16_t> pcm;
         pcm.reserve(samples.size());
@@ -61,7 +61,7 @@ namespace
         return pcm;
     }
 
-    std::vector<int16_t> resampleLinearPcm16(
+    std::vector<int16_t> resample_linear_pcm16(
         const std::vector<int16_t>& input,
         int32_t input_rate,
         int32_t output_rate)
@@ -84,16 +84,16 @@ namespace
         return output;
     }
 
-    bool playTtsOnRadaiWs(dev::RadaiWs& wave_station, const std::vector<float>& audio, int32_t sample_rate)
+    bool play_tts_on_radai_ws(dev::RadaiWs& wave_station, const std::vector<float>& audio, int32_t sample_rate)
     {
         if (audio.empty() || sample_rate <= 0)
             return false;
 
-        auto pcm = floatSamplesToPcm16(audio);
+        auto pcm = float_samples_to_pcm16(audio);
         const auto& audio_cfg = wave_station.getAudioConfig();
         const auto sink_rate = static_cast<int32_t>(audio_cfg.sampleRate);
         if (sink_rate > 0 && sink_rate != sample_rate)
-            pcm = resampleLinearPcm16(pcm, sample_rate, sink_rate);
+            pcm = resample_linear_pcm16(pcm, sample_rate, sink_rate);
 
         const int32_t play_rate = sink_rate > 0 ? sink_rate : sample_rate;
         const size_t channels = std::max<uint8_t>(1, audio_cfg.channels);
@@ -141,7 +141,7 @@ namespace
         return now;
     }
 
-    dev::Queryable* asQueryable(dev::Device* device)
+    dev::Queryable* as_queryable(dev::Device* device)
     {
         return dynamic_cast<dev::Queryable*>(device);
     }
@@ -151,7 +151,7 @@ namespace
         return dynamic_cast<dev::Actionable*>(device);
     }
 
-    bool isManifestInitializing(const dev::DeviceManager& devices, const std::string& external_id)
+    bool is_manifest_initializing(const dev::DeviceManager& devices, const std::string& external_id)
     {
         for (const auto& entry : devices.manifestEntries())
         {
@@ -163,13 +163,13 @@ namespace
         return false;
     }
 
-    dev::Device* lookupCameraDevice(
+    dev::Device* lookup_camera_device(
         const dev::DeviceManager& devices,
         const std::string& external_id,
         std::string& code,
         bool (*is_supported)(const dev::Device*))
     {
-        if (isManifestInitializing(devices, external_id))
+        if (is_manifest_initializing(devices, external_id))
         {
             code = "DEVICE_INITIALIZING";
             return nullptr;
@@ -206,27 +206,27 @@ namespace
         return device;
     }
 
-    bool isReolinkCamera(const dev::Device* device)
+    bool is_reolink_camera(const dev::Device* device)
     {
         return dynamic_cast<const dev::ReolinkE1Pro*>(device) != nullptr;
     }
 
-    bool isRadaiWs(const dev::Device* device)
+    bool is_radai_ws(const dev::Device* device)
     {
         return dynamic_cast<const dev::RadaiWs*>(device) != nullptr;
     }
 
-    bool isGo2RtcCamera(const dev::Device* device)
+    bool is_go2_rtc_camera(const dev::Device* device)
     {
-        return isReolinkCamera(device) || dynamic_cast<const dev::DroidCam*>(device) != nullptr;
+        return is_reolink_camera(device) || dynamic_cast<const dev::DroidCam*>(device) != nullptr;
     }
 
-    bool cameraReleaseStreamOnViewerDrop(const dev::Device* device)
+    bool camera_release_stream_on_viewer_drop(const dev::Device* device)
     {
         return dynamic_cast<const dev::ReolinkE1Pro*>(device) != nullptr;
     }
 
-    bool cameraEnsureGo2rtcStream(dev::Device* device)
+    bool camera_ensure_go2rtc_stream(dev::Device* device)
     {
         if (dynamic_cast<dev::DroidCam*>(device))
             return false;
@@ -235,7 +235,7 @@ namespace
         return false;
     }
 
-    void cameraReleaseGo2rtcStream(dev::Device* device)
+    void camera_release_go2rtc_stream(dev::Device* device)
     {
         if (dynamic_cast<dev::DroidCam*>(device))
             return;
@@ -243,7 +243,7 @@ namespace
             reolink->releaseGo2rtcStream();
     }
 
-    bool cameraIsGo2rtcStreamActive(const dev::Device* device)
+    bool camera_is_go2rtc_stream_active(const dev::Device* device)
     {
         if (dynamic_cast<const dev::DroidCam*>(device))
             return false;
@@ -252,7 +252,7 @@ namespace
         return false;
     }
 
-    void syncDroidStreamViewers(dev::Device* device, const std::string& external_id)
+    void sync_droid_stream_viewers(dev::Device* device, const std::string& external_id)
     {
         auto* droid = dynamic_cast<dev::DroidCam*>(device);
         if (!droid)
@@ -262,7 +262,7 @@ namespace
         droid->setStreamViewerCount(viewers);
     }
 
-    std::string_view cameraGo2rtcStreamName(const dev::Device* device)
+    std::string_view camera_go2rtc_stream_name(const dev::Device* device)
     {
         if (auto* reolink = dynamic_cast<const dev::ReolinkE1Pro*>(device))
             return reolink->getGo2rtcStreamName();
@@ -270,7 +270,7 @@ namespace
     }
 }
 
-Json::Value IotStore::toJsonValue(const nlohmann::json& value)
+Json::Value IotStore::to_json_value(const nlohmann::json& value)
 {
     Json::CharReaderBuilder builder;
     std::string errors;
@@ -281,7 +281,7 @@ Json::Value IotStore::toJsonValue(const nlohmann::json& value)
     return out;
 }
 
-bool IotStore::isQueryError(const nlohmann::json& value)
+bool IotStore::is_query_error(const nlohmann::json& value)
 {
     return value.is_object() && value.contains("code") && value["code"].is_number_integer()
         && value["code"].get<int>() < 0;
@@ -324,7 +324,7 @@ bool IotStore::isConnected(const dev::Device* device) const
             const auto* droid = dynamic_cast<const dev::DroidCam*>(device);
             return droid && droid->isAppAlive();
         }
-        return isGo2RtcCamera(device);
+        return is_go2_rtc_camera(device);
     }
 
     if (class_name == "samsung_g7" || class_name == "tizen_tv")
@@ -428,7 +428,7 @@ std::string IotStore::classLabel(const std::string& class_name) const
 Json::Value IotStore::normalizeState(const dev::Device* device, const nlohmann::json& raw) const
 {
     const auto class_name = std::string(device->getClass());
-    Json::Value state = toJsonValue(raw);
+    Json::Value state = to_json_value(raw);
 
     if (class_name == "tuya_ep2h")
     {
@@ -729,7 +729,7 @@ Json::Value IotStore::listDevices() const
 
 Json::Value IotStore::queryDevice(const std::string& external_id, const std::string& query_name, std::string& code) const
 {
-    if (isManifestInitializing(m_devices, external_id))
+    if (is_manifest_initializing(m_devices, external_id))
     {
         code = "DEVICE_INITIALIZING";
         return Json::Value();
@@ -752,7 +752,7 @@ Json::Value IotStore::queryDevice(const std::string& external_id, const std::str
         return Json::Value();
     }
 
-    auto* queryable = asQueryable(device);
+    auto* queryable = as_queryable(device);
     if (!queryable)
     {
         code = "QUERY_UNAVAILABLE";
@@ -765,7 +765,7 @@ Json::Value IotStore::queryDevice(const std::string& external_id, const std::str
             return *plug;
 
         const auto raw = queryable->query("status", {});
-        if (!isQueryError(raw))
+        if (!is_query_error(raw))
             return normalizeState(device, raw);
 
         code = "QUERY_FAILED";
@@ -804,13 +804,13 @@ Json::Value IotStore::queryDevice(const std::string& external_id, const std::str
     }
 
     const auto raw = queryable->query(query_name, {});
-    if (isQueryError(raw) && (query_name == "status" || query_name == "state"))
+    if (is_query_error(raw) && (query_name == "status" || query_name == "state"))
     {
         const auto fallback = queryable->query(query_name == "status" ? "state" : "status", {});
-        if (!isQueryError(fallback))
+        if (!is_query_error(fallback))
             return normalizeState(device, fallback);
     }
-    if (isQueryError(raw))
+    if (is_query_error(raw))
     {
         code = "QUERY_FAILED";
         return Json::Value();
@@ -819,7 +819,7 @@ Json::Value IotStore::queryDevice(const std::string& external_id, const std::str
     if (query_name == "status" || query_name == "state")
         return normalizeState(device, raw);
 
-    return toJsonValue(raw);
+    return to_json_value(raw);
 }
 
 Json::Value IotStore::invokeDevice(
@@ -828,7 +828,7 @@ Json::Value IotStore::invokeDevice(
     const Json::Value& params,
     std::string& code)
 {
-    if (isManifestInitializing(m_devices, external_id))
+    if (is_manifest_initializing(m_devices, external_id))
     {
         code = "DEVICE_INITIALIZING";
         return Json::Value();
@@ -987,7 +987,7 @@ std::vector<std::string> IotStore::listPlugIds() const
 
 dev::ReolinkE1Pro* IotStore::requireReolinkCamera(const std::string& external_id, std::string& code)
 {
-    auto* device = lookupCameraDevice(m_devices, external_id, code, isReolinkCamera);
+    auto* device = lookup_camera_device(m_devices, external_id, code, is_reolink_camera);
     if (!device)
         return nullptr;
     if (!isConnected(device))
@@ -1005,7 +1005,7 @@ const dev::ReolinkE1Pro* IotStore::requireReolinkCamera(const std::string& exter
 
 dev::Device* IotStore::requireGo2RtcCamera(const std::string& external_id, std::string& code)
 {
-    auto* device = lookupCameraDevice(m_devices, external_id, code, isGo2RtcCamera);
+    auto* device = lookup_camera_device(m_devices, external_id, code, is_go2_rtc_camera);
     if (!device)
         return nullptr;
     if (!isConnected(device))
@@ -1023,7 +1023,7 @@ const dev::Device* IotStore::requireGo2RtcCamera(const std::string& external_id,
 
 dev::DroidCam* IotStore::requireDroidCam(const std::string& external_id, std::string& code)
 {
-    auto* device = lookupCameraDevice(m_devices, external_id, code, isGo2RtcCamera);
+    auto* device = lookup_camera_device(m_devices, external_id, code, is_go2_rtc_camera);
     if (!device)
         return nullptr;
 
@@ -1048,7 +1048,7 @@ const dev::DroidCam* IotStore::requireDroidCam(const std::string& external_id, s
 
 dev::RadaiWs* IotStore::requireRadaiWs(const std::string& external_id, std::string& code)
 {
-    if (isManifestInitializing(m_devices, external_id))
+    if (is_manifest_initializing(m_devices, external_id))
     {
         code = "DEVICE_INITIALIZING";
         return nullptr;
@@ -1077,7 +1077,7 @@ dev::RadaiWs* IotStore::requireRadaiWs(const std::string& external_id, std::stri
         code = "DEVICE_OFFLINE";
         return nullptr;
     }
-    if (!isRadaiWs(device))
+    if (!is_radai_ws(device))
     {
         code = "UNSUPPORTED_DEVICE";
         return nullptr;
@@ -1142,7 +1142,7 @@ Json::Value IotStore::snapshotWaveStationTelemetry(const std::string& external_i
     else if (auto* queryable = dynamic_cast<dev::Queryable*>(wave_station))
     {
         const auto status = queryable->query("status", json::object());
-        if (!isQueryError(status) && status.contains("mic_level"))
+        if (!is_query_error(status) && status.contains("mic_level"))
             body["micLevel"] = status["mic_level"].get<double>();
         else
             body["micLevel"] = Json::nullValue;
@@ -1155,7 +1155,7 @@ Json::Value IotStore::snapshotWaveStationTelemetry(const std::string& external_i
     if (auto* queryable = dynamic_cast<dev::Queryable*>(wave_station))
     {
         const auto env = queryable->query("env", json::object());
-        if (!isQueryError(env) && !env.empty())
+        if (!is_query_error(env) && !env.empty())
         {
             Json::Value env_json;
             if (env.contains("lux"))
@@ -1208,7 +1208,7 @@ Json::Value IotStore::getCameraStream(const std::string& external_id, std::strin
     const int viewers = AppState::get().iot.streamViewers(external_id);
 
     const bool streaming = viewers > 0
-        && (is_droid ? droid->isAppAlive() : cameraIsGo2rtcStreamActive(camera));
+        && (is_droid ? droid->isAppAlive() : camera_is_go2rtc_stream_active(camera));
     Json::Value body;
     body["status"] = streaming ? "streaming" : "idle";
     body["mode"] = is_droid ? "mjpeg" : "mse";
@@ -1234,18 +1234,18 @@ Json::Value IotStore::setCameraStream(const std::string& external_id, bool strea
     if (!iot.changeStreamViewers(
         external_id,
         streaming,
-        [&]() { return droid ? droid->isAppAlive() : cameraEnsureGo2rtcStream(camera); },
+        [&]() { return droid ? droid->isAppAlive() : camera_ensure_go2rtc_stream(camera); },
         [&]()
         {
-            if (cameraReleaseStreamOnViewerDrop(camera))
-                cameraReleaseGo2rtcStream(camera);
+            if (camera_release_stream_on_viewer_drop(camera))
+                camera_release_go2rtc_stream(camera);
         }))
     {
         code = droid && !droid->isAppAlive() ? "DEVICE_OFFLINE" : "STREAM_UNAVAILABLE";
         return Json::Value();
     }
 
-    syncDroidStreamViewers(camera, external_id);
+    sync_droid_stream_viewers(camera, external_id);
 
     if (!streaming && droid)
         iot.stopDroidMjpegProxy(external_id);
@@ -1270,13 +1270,13 @@ bool IotStore::exchangeCameraWebRtc(
         return false;
     }
 
-    if (!cameraIsGo2rtcStreamActive(camera) && !cameraEnsureGo2rtcStream(camera))
+    if (!camera_is_go2rtc_stream_active(camera) && !camera_ensure_go2rtc_stream(camera))
     {
         code = "STREAM_UNAVAILABLE";
         return false;
     }
 
-    const std::string stream_name(cameraGo2rtcStreamName(camera));
+    const std::string stream_name(camera_go2rtc_stream_name(camera));
     if (!service::Go2RtcService::get().exchangeWebRtc(stream_name, offer_sdp, answer_sdp))
     {
         code = "STREAM_UNAVAILABLE";
@@ -1435,7 +1435,7 @@ bool IotStore::sendDeviceTts(
     auto* wave_station = requireRadaiWs(external_id, code);
     if (wave_station)
     {
-        if (!playTtsOnRadaiWs(*wave_station, audio, sample_rate))
+        if (!play_tts_on_radai_ws(*wave_station, audio, sample_rate))
         {
             code = "TTS_PLAYBACK_FAILED";
             return false;
@@ -1487,7 +1487,7 @@ bool IotStore::sendDeviceTts(
 
     const auto cleanup_delay = std::chrono::milliseconds(
         static_cast<int64_t>(audio.size()) * 1000 / sample_rate + 3000);
-    (void)TaskQueue::enqueueAsync([wav_path, cleanup_delay]()
+    (void)TaskQueue::enqueue_async([wav_path, cleanup_delay]()
     {
         std::this_thread::sleep_for(cleanup_delay);
         std::error_code ec;
@@ -1523,7 +1523,7 @@ void queueDeviceTts(
     float speed)
 {
 #ifdef WAVE_BUILD_TTS
-    (void)TaskQueue::enqueueAsync([external_id, text, speaker_id, speed]()
+    (void)TaskQueue::enqueue_async([external_id, text, speaker_id, speed]()
     {
         auto& app = AppState::get();
         IotStore worker(app.deviceManager);
@@ -1551,13 +1551,13 @@ bool IotStore::openCameraMp4Stream(const std::string& external_id, std::string& 
         return false;
     }
 
-    if (!cameraIsGo2rtcStreamActive(camera) && !cameraEnsureGo2rtcStream(camera))
+    if (!camera_is_go2rtc_stream_active(camera) && !camera_ensure_go2rtc_stream(camera))
     {
         code = "STREAM_UNAVAILABLE";
         return false;
     }
 
-    stream_name = std::string(cameraGo2rtcStreamName(camera));
+    stream_name = std::string(camera_go2rtc_stream_name(camera));
     code.clear();
     return true;
 }

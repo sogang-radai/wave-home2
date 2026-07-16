@@ -28,7 +28,7 @@ Json::Value WeeklyPlanStore::weeklyReport(int64_t user_id, const std::string& pe
     if (!tableExists(m_client, "weekly_plan_report"))
         return Json::nullValue;
 
-    const auto ref_date = period_start.empty() ? InsightsStore::referenceDate(m_client) : period_start;
+    const auto ref_date = period_start.empty() ? InsightsStore::reference_date(m_client) : period_start;
     const auto rows = m_client->execSqlSync(
         "SELECT headline, report_text FROM weekly_plan_report"
         " WHERE user_id = ? AND period_start <= ?"

@@ -78,7 +78,7 @@ namespace
         size_t chunk = 0;
     };
 
-    std::string localeToLang(std::string_view locale)
+    std::string locale_to_lang(std::string_view locale)
     {
         const size_t dash = locale.find('-');
         const std::string_view lang_part =
@@ -91,7 +91,7 @@ namespace
         return lang;
     }
 
-    bool localeEquals(std::string_view lhs, std::string_view rhs)
+    bool locale_equals(std::string_view lhs, std::string_view rhs)
     {
         if (lhs.size() != rhs.size())
             return false;
@@ -107,17 +107,17 @@ namespace
         return true;
     }
 
-    std::string joinPath(const std::filesystem::path& base, std::string_view relative)
+    std::string join_path(const std::filesystem::path& base, std::string_view relative)
     {
         return (base / std::filesystem::path(relative)).string();
     }
 
-    bool fileExists(const std::filesystem::path& path)
+    bool file_exists(const std::filesystem::path& path)
     {
         return std::filesystem::is_regular_file(path);
     }
 
-    bool parseSpeakers(const json& speakers_json, std::vector<StoredSpeaker>& out_speakers)
+    bool parse_speakers(const json& speakers_json, std::vector<StoredSpeaker>& out_speakers)
     {
         if (!speakers_json.is_array())
             return false;
@@ -140,13 +140,13 @@ namespace
         return true;
     }
 
-    bool buildSupertonicConfig(
+    bool build_supertonic_config(
         const std::filesystem::path& model_dir,
         int32_t num_threads,
         SherpaOfflineTtsConfig& out_config)
     {
         const auto model_path = [&model_dir](const char* filename) {
-            return joinPath(model_dir, filename);
+            return join_path(model_dir, filename);
         };
 
         const std::array<const char*, 7> required_files = {
@@ -161,7 +161,7 @@ namespace
 
         for (const char* filename : required_files)
         {
-            if (!fileExists(model_dir / filename))
+            if (!file_exists(model_dir / filename))
                 return false;
         }
 
@@ -180,7 +180,7 @@ namespace
         return true;
     }
 
-    SherpaGenerationConfig makeGenerationConfig(
+    SherpaGenerationConfig make_generation_config(
         const LanguageRuntime& runtime,
         const Input& input)
     {
@@ -192,7 +192,7 @@ namespace
         return gen_config;
     }
 
-    int32_t streamProgressCallback(
+    int32_t stream_progress_callback(
         const float* samples,
         int32_t num_samples,
         float /*progress*/,
@@ -205,7 +205,7 @@ namespace
         return 1;
     }
 
-    Result validateInput(const LanguageRuntime* runtime, const Input& input)
+    Result validate_input(const LanguageRuntime* runtime, const Input& input)
     {
         if (input.text.empty())
             return ERROR_INVALID_INPUT;
@@ -261,11 +261,11 @@ struct Service::Impl
             base_dir / "models" / "tts" / model_subdir;
 
         std::vector<StoredSpeaker> speakers;
-        if (!parseSpeakers(language_json["speakers"], speakers) || speakers.empty())
+        if (!parse_speakers(language_json["speakers"], speakers) || speakers.empty())
             return ERROR_INVALID_CONFIG;
 
         SherpaOfflineTtsConfig tts_config;
-        if (!buildSupertonicConfig(model_dir, num_threads, tts_config))
+        if (!build_supertonic_config(model_dir, num_threads, tts_config))
             return ERROR_MODEL_LOAD;
 
         auto tts = SherpaOfflineTts::Create(tts_config);
@@ -281,7 +281,7 @@ struct Service::Impl
 
         LanguageRuntime runtime;
         runtime.locale = locale;
-        runtime.lang = localeToLang(locale);
+        runtime.lang = locale_to_lang(locale);
         runtime.tts = std::move(tts);
         runtime.sampleRate = runtime.tts->SampleRate();
         runtime.speakers = std::move(speakers);
@@ -299,7 +299,7 @@ struct Service::Impl
     {
         for (const auto& engine : engines)
         {
-            if (localeEquals(engine.locale, locale))
+            if (locale_equals(engine.locale, locale))
                 return &engine;
         }
         return nullptr;
@@ -382,11 +382,11 @@ Result Service::generate(const Input& input, std::vector<float>& out_audio)
         return ERROR_NOT_INITIALIZED;
 
     const LanguageRuntime* runtime = m_impl->findEngine(input.locale);
-    const Result validation = validateInput(runtime, input);
+    const Result validation = validate_input(runtime, input);
     if (validation != SUCCESS)
         return validation;
 
-    const SherpaGenerationConfig gen_config = makeGenerationConfig(*runtime, input);
+    const SherpaGenerationConfig gen_config = make_generation_config(*runtime, input);
 
     try
     {
@@ -405,7 +405,7 @@ Result Service::generate(const Input& input, std::vector<float>& out_audio)
 
 std::future<Result> Service::generateAsync(const Input& input, std::vector<float>& out_audio)
 {
-    return TaskQueue::enqueueAsync([this, input, &out_audio]() {
+    return TaskQueue::enqueue_async([this, input, &out_audio]() {
         return generate(input, out_audio);
     });
 }
@@ -416,11 +416,11 @@ Result Service::generateStream(const Input& input, GenerateStreamCallback&& call
         return ERROR_NOT_INITIALIZED;
 
     const LanguageRuntime* runtime = m_impl->findEngine(input.locale);
-    const Result validation = validateInput(runtime, input);
+    const Result validation = validate_input(runtime, input);
     if (validation != SUCCESS)
         return validation;
 
-    const SherpaGenerationConfig gen_config = makeGenerationConfig(*runtime, input);
+    const SherpaGenerationConfig gen_config = make_generation_config(*runtime, input);
     StreamContext context;
     context.callback = &callback;
 
@@ -429,7 +429,7 @@ Result Service::generateStream(const Input& input, GenerateStreamCallback&& call
         const auto audio = runtime->tts->Generate(
             std::string(input.text),
             gen_config,
-            streamProgressCallback,
+            stream_progress_callback,
             &context);
         if (audio.samples.empty())
             return ERROR_GENERATION;
@@ -444,7 +444,7 @@ Result Service::generateStream(const Input& input, GenerateStreamCallback&& call
 
 std::future<Result> Service::generateStreamAsync(const Input& input, GenerateStreamCallback&& callback)
 {
-    return TaskQueue::enqueueAsync([this, input, callback = std::move(callback)]() mutable {
+    return TaskQueue::enqueue_async([this, input, callback = std::move(callback)]() mutable {
         return generateStream(input, std::move(callback));
     });
 }

@@ -317,7 +317,7 @@ namespace
         return code;
     }
 
-    ReolinkE1Pro::Config parseConfig(const json& config)
+    ReolinkE1Pro::Config parse_config(const json& config)
     {
         const auto& iface = config.at("interface");
 
@@ -333,7 +333,7 @@ namespace
         return out;
     }
 
-    void validateConfig(const json& config)
+    void validate_config(const json& config)
     {
         if (config.at("class").get<std::string>() != kClass)
             throw std::invalid_argument("reolink_e1_pro config field 'class' must be 'reolink_e1_pro'");
@@ -348,7 +348,7 @@ namespace
 
     // Verifies the host still maps to the MAC pinned in the config. Returns -7
     // on mismatch, 0 when it matches or when no MAC is pinned / not resolvable.
-    int verifyMac(const json& config, const std::string& host)
+    int verify_mac(const json& config, const std::string& host)
     {
         const std::string expected = config.at("interface").value("mac", "");
         if (expected.empty())
@@ -564,9 +564,9 @@ std::string ReolinkE1Pro::encryptSecret(std::string_view plain)
 
 int ReolinkE1Pro::init(const json& config)
 {
-    validateConfig(config);
+    validate_config(config);
     loadBaseConfig(config);
-    m_config = parseConfig(config);
+    m_config = parse_config(config);
 
     if (!isEnabled())
         return -2;
@@ -597,7 +597,7 @@ int ReolinkE1Pro::init(const json& config)
         }
     }
 
-    const int macRc = verifyMac(config, m_config.host);
+    const int macRc = verify_mac(config, m_config.host);
     if (macRc != 0)
     {
         m_state = DeviceState::Stopped;

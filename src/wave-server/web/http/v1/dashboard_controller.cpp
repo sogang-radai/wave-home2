@@ -16,14 +16,14 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
         return settings.resolveActiveUserId(sessions, req);
     }
 
-    bool requireDb(
+    bool require_db(
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
         db::DbClientPtr& client_out)
     {
@@ -36,12 +36,12 @@ namespace
         return true;
     }
 
-    std::optional<int64_t> requireActiveUser(
+    std::optional<int64_t> require_active_user(
         const drogon::HttpRequestPtr& req,
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
         db::DbClientPtr client)
     {
-        const auto user_id = resolveUserId(req, client);
+        const auto user_id = resolve_user_id(req, client);
         if (!user_id)
         {
             respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -56,10 +56,10 @@ void DashboardController::dailyMessage(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
     db::DbClientPtr client;
-    if (!requireDb(callback, client))
+    if (!require_db(callback, client))
         return;
 
-    const auto user_id = requireActiveUser(req, callback, client);
+    const auto user_id = require_active_user(req, callback, client);
     if (!user_id)
         return;
 
@@ -79,10 +79,10 @@ void DashboardController::currentState(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
     db::DbClientPtr client;
-    if (!requireDb(callback, client))
+    if (!require_db(callback, client))
         return;
 
-    if (!requireActiveUser(req, callback, client))
+    if (!require_active_user(req, callback, client))
         return;
 
     DashboardStore store(client);
@@ -94,10 +94,10 @@ void DashboardController::upcomingAlarms(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
     db::DbClientPtr client;
-    if (!requireDb(callback, client))
+    if (!require_db(callback, client))
         return;
 
-    const auto user_id = requireActiveUser(req, callback, client);
+    const auto user_id = require_active_user(req, callback, client);
     if (!user_id)
         return;
 
@@ -122,10 +122,10 @@ void DashboardController::activeGestureRules(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
     db::DbClientPtr client;
-    if (!requireDb(callback, client))
+    if (!require_db(callback, client))
         return;
 
-    const auto user_id = requireActiveUser(req, callback, client);
+    const auto user_id = require_active_user(req, callback, client);
     if (!user_id)
         return;
 

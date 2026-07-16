@@ -33,7 +33,7 @@ public:
 
     // Shared demo plug rated-watt table (wire id). Device backend + power API
     // both use this so values cannot drift across the two paths.
-    static double ratedPowerForDevice(const std::string& device_id);
+    static double rated_power_for_device(const std::string& device_id);
 
     void syncPlug(
         const std::string& runtime_id,
@@ -78,8 +78,8 @@ private:
         std::unordered_map<std::string, PlugSlot> plugs;
     };
 
-    static int64_t nowMs();
-    static double jitterFactor();
+    static int64_t now_ms();
+    static double jitter_factor();
     void pushHistory(PlugSlot& slot, const DemoPowerReading& reading);
     DemoPowerReading refreshLocked(PlugSlot& slot, bool switch_on, double rated_w, double voltage_v, bool force);
 

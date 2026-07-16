@@ -43,7 +43,7 @@ namespace
     constexpr const char* kClass = "samsung_g7";
     constexpr const char* kWsPath = "/api/v2/channels/samsung.remote.control";
 
-    json makeQueryError(int code, std::string_view message = {})
+    json make_query_error(int code, std::string_view message = {})
     {
         json out = json::object();
         out["code"] = code;
@@ -52,7 +52,7 @@ namespace
         return out;
     }
 
-    std::string base64Encode(std::string_view input)
+    std::string base64_encode(std::string_view input)
     {
         BIO* b64 = BIO_new(BIO_f_base64());
         BIO* bmem = BIO_new(BIO_s_mem());
@@ -67,7 +67,7 @@ namespace
         return out;
     }
 
-    std::string sessionStateName(SamsungTizen::SessionState state)
+    std::string session_state_name(SamsungTizen::SessionState state)
     {
         switch (state)
         {
@@ -80,7 +80,7 @@ namespace
         return "unknown";
     }
 
-    int keyPressCount(const json& params)
+    int key_press_count(const json& params)
     {
         if (!params.is_object() || !params.contains("count"))
             return 1;
@@ -92,7 +92,7 @@ namespace
         return 1;
     }
 
-    const char* inputToRemoteKey(std::string_view source)
+    const char* input_to_remote_key(std::string_view source)
     {
         if (source == "hdmi1") return "KEY_HDMI1";
         if (source == "hdmi2") return "KEY_HDMI2";
@@ -110,7 +110,7 @@ namespace
         std::string action_type;
     };
 
-    const AppLaunchTarget* resolveAppLaunch(std::string_view app)
+    const AppLaunchTarget* resolve_app_launch(std::string_view app)
     {
         static const std::unordered_map<std::string, AppLaunchTarget> k_known_apps = {
             {"netflix", {"3201907018807", "DEEP_LINK"}},
@@ -133,18 +133,18 @@ namespace
         return nullptr;
     }
 
-    bool isIpv4Literal(const std::string& host)
+    bool is_ipv4_literal(const std::string& host)
     {
         in_addr addr {};
         return ::inet_pton(AF_INET, host.c_str(), &addr) == 1;
     }
 
-    int tcpConnect(const std::string& host, uint16_t port, uint32_t timeoutMs)
+    int tcp_connect(const std::string& host, uint16_t port, uint32_t timeoutMs)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
         int fd = -1;
 
-        if (isIpv4Literal(host))
+        if (is_ipv4_literal(host))
         {
             fd = ::socket(AF_INET, SOCK_STREAM, 0);
             if (fd < 0)
@@ -204,7 +204,7 @@ namespace
     }
 
 #ifdef __APPLE__
-    OSStatus secureTransportRead(SSLConnectionRef connection, void* data, size_t* dataLength)
+    OSStatus secure_transport_read(SSLConnectionRef connection, void* data, size_t* dataLength)
     {
         const int fd = static_cast<int>(reinterpret_cast<intptr_t>(connection));
         const ssize_t n = ::read(fd, data, *dataLength);
@@ -222,7 +222,7 @@ namespace
         return errSSLClosedAbort;
     }
 
-    OSStatus secureTransportWrite(SSLConnectionRef connection, const void* data, size_t* dataLength)
+    OSStatus secure_transport_write(SSLConnectionRef connection, const void* data, size_t* dataLength)
     {
         const int fd = static_cast<int>(reinterpret_cast<intptr_t>(connection));
         const ssize_t n = ::write(fd, data, *dataLength);
@@ -233,7 +233,7 @@ namespace
     }
 #endif
 
-    int headerContentLength(std::string_view headers)
+    int header_content_length(std::string_view headers)
     {
         std::string lower(headers);
         std::transform(lower.begin(), lower.end(), lower.begin(),
@@ -267,7 +267,7 @@ namespace
         bool connect(const std::string& host, uint16_t port, uint32_t timeoutMs)
         {
             close();
-            m_fd = tcpConnect(host, port, timeoutMs);
+            m_fd = tcp_connect(host, port, timeoutMs);
             if (m_fd < 0)
             {
                 LOG_ERROR("samsung_g7: TCP connect failed for {}:{} (errno={})", host, port, errno);
@@ -285,7 +285,7 @@ namespace
                 return false;
             }
 
-            SSLSetIOFuncs(m_sslContext, secureTransportRead, secureTransportWrite);
+            SSLSetIOFuncs(m_sslContext, secure_transport_read, secure_transport_write);
             SSLSetConnection(m_sslContext, reinterpret_cast<SSLConnectionRef>(static_cast<intptr_t>(m_fd)));
             SSLSetPeerDomainName(m_sslContext, host.c_str(), host.size());
             SSLSetAllowsAnyRoot(m_sslContext, true);
@@ -340,7 +340,7 @@ namespace
             return true;
         }
 
-        bool writeAll(const void* data, size_t len)
+        bool write_all(const void* data, size_t len)
         {
             const auto* p = static_cast<const uint8_t*>(data);
             size_t sent = 0;
@@ -362,7 +362,7 @@ namespace
             return true;
         }
 
-        bool readSome(std::string& buffer, uint32_t timeoutMs)
+        bool read_some(std::string& buffer, uint32_t timeoutMs)
         {
             if (m_fd < 0)
                 return false;
@@ -414,14 +414,14 @@ namespace
             return false;
         }
 
-        bool readHttpResponse(std::string& body, uint32_t timeoutMs)
+        bool read_http_response(std::string& body, uint32_t timeoutMs)
         {
             std::string raw;
             bool headersDone = false;
 
             for (int attempt = 0; attempt < 128; ++attempt)
             {
-                if (!readSome(raw, timeoutMs))
+                if (!read_some(raw, timeoutMs))
                 {
                     if (headersDone)
                         return true;
@@ -438,12 +438,12 @@ namespace
                     body = raw.substr(sep + 4);
                     headersDone = true;
 
-                    const int contentLen = headerContentLength(headers);
+                    const int contentLen = header_content_length(headers);
                     if (contentLen >= 0)
                     {
                         while (static_cast<int>(body.size()) < contentLen)
                         {
-                            if (!readSome(body, timeoutMs))
+                            if (!read_some(body, timeoutMs))
                                 break;
                         }
                         return static_cast<int>(body.size()) >= contentLen;
@@ -455,12 +455,12 @@ namespace
             return headersDone;
         }
 
-        bool readHttpUpgrade(std::string& headersOut, std::string& pendingOut, uint32_t timeoutMs)
+        bool read_http_upgrade(std::string& headersOut, std::string& pendingOut, uint32_t timeoutMs)
         {
             std::string raw;
             for (int attempt = 0; attempt < 128; ++attempt)
             {
-                if (!readSome(raw, timeoutMs))
+                if (!read_some(raw, timeoutMs))
                     return false;
 
                 const size_t sep = raw.find("\r\n\r\n");
@@ -516,7 +516,7 @@ namespace
         int m_fd = -1;
     };
 
-    std::vector<uint8_t> buildMaskedFrame(uint8_t opcode, std::string_view payload)
+    std::vector<uint8_t> build_masked_frame(uint8_t opcode, std::string_view payload)
     {
         std::vector<uint8_t> frame;
         frame.push_back(static_cast<uint8_t>(0x80 | opcode));
@@ -550,12 +550,12 @@ namespace
         return frame;
     }
 
-    std::vector<uint8_t> buildMaskedTextFrame(const std::string& text)
+    std::vector<uint8_t> build_masked_text_frame(const std::string& text)
     {
-        return buildMaskedFrame(0x01, text);
+        return build_masked_frame(0x01, text);
     }
 
-    std::string tokenFromJsonValue(const json& token)
+    std::string token_from_json_value(const json& token)
     {
         if (token.is_string())
             return token.get<std::string>();
@@ -566,7 +566,7 @@ namespace
         return {};
     }
 
-    std::string extractWsToken(const json& msg)
+    std::string extract_ws_token(const json& msg)
     {
         if (!msg.contains("data") || !msg["data"].is_object())
             return {};
@@ -574,7 +574,7 @@ namespace
         const auto& data = msg["data"];
         if (data.contains("token"))
         {
-            const std::string token = tokenFromJsonValue(data["token"]);
+            const std::string token = token_from_json_value(data["token"]);
             if (!token.empty())
                 return token;
         }
@@ -588,7 +588,7 @@ namespace
                 const auto& attrs = client["attributes"];
                 if (!attrs.contains("token"))
                     continue;
-                const std::string token = tokenFromJsonValue(attrs["token"]);
+                const std::string token = token_from_json_value(attrs["token"]);
                 if (!token.empty())
                     return token;
             }
@@ -611,7 +611,7 @@ namespace
         std::string payload;
     };
 
-    bool parseWsFrame(std::string& buffer, WsFrame& out)
+    bool parse_ws_frame(std::string& buffer, WsFrame& out)
     {
         out = {};
         if (buffer.size() < 2)
@@ -677,7 +677,7 @@ namespace
         return true;
     }
 
-    bool handleWsChannelEvent(std::string_view event)
+    bool handle_ws_channel_event(std::string_view event)
     {
         if (event == "ms.channel.timeOut")
         {
@@ -692,16 +692,16 @@ namespace
         return true;
     }
 
-    bool dispatchWsFrame(TlsConnection& tls, std::mutex& ioMutex, WsFrame& frame)
+    bool dispatch_ws_frame(TlsConnection& tls, std::mutex& ioMutex, WsFrame& frame)
     {
         if (frame.kind == WsFrameKind::Closed)
             return false;
 
         if (frame.kind == WsFrameKind::Ping)
         {
-            const auto pong = buildMaskedFrame(0x0a, frame.payload);
+            const auto pong = build_masked_frame(0x0a, frame.payload);
             std::lock_guard<std::mutex> lock(ioMutex);
-            if (!tls.writeAll(pong.data(), pong.size()))
+            if (!tls.write_all(pong.data(), pong.size()))
                 return false;
             return true;
         }
@@ -718,18 +718,18 @@ namespace
             return true;
 
         LOG_DEBUG("samsung_g7: websocket event: {}", event);
-        return handleWsChannelEvent(event);
+        return handle_ws_channel_event(event);
     }
 
-    bool drainWsFrames(TlsConnection& tls, std::mutex& ioMutex, std::string& pending, bool& connected)
+    bool drain_ws_frames(TlsConnection& tls, std::mutex& ioMutex, std::string& pending, bool& connected)
     {
         while (connected)
         {
             WsFrame frame;
-            if (!parseWsFrame(pending, frame))
+            if (!parse_ws_frame(pending, frame))
                 break;
 
-            if (!dispatchWsFrame(tls, ioMutex, frame))
+            if (!dispatch_ws_frame(tls, ioMutex, frame))
             {
                 connected = false;
                 return false;
@@ -738,20 +738,20 @@ namespace
         return connected;
     }
 
-    bool pollWsText(TlsConnection& tls, std::string& buffer, std::string& outText, uint32_t timeoutMs)
+    bool poll_ws_text(TlsConnection& tls, std::string& buffer, std::string& outText, uint32_t timeoutMs)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
         while (std::chrono::steady_clock::now() < deadline)
         {
             WsFrame frame;
-            if (parseWsFrame(buffer, frame))
+            if (parse_ws_frame(buffer, frame))
             {
                 if (frame.kind == WsFrameKind::Closed)
                     return false;
                 if (frame.kind == WsFrameKind::Ping)
                 {
-                    const auto pong = buildMaskedFrame(0x0a, frame.payload);
-                    if (!tls.writeAll(pong.data(), pong.size()))
+                    const auto pong = build_masked_frame(0x0a, frame.payload);
+                    if (!tls.write_all(pong.data(), pong.size()))
                         return false;
                     continue;
                 }
@@ -767,15 +767,15 @@ namespace
                 deadline - std::chrono::steady_clock::now()).count());
             if (remaining == 0)
                 break;
-            if (!tls.readSome(buffer, remaining))
+            if (!tls.read_some(buffer, remaining))
                 continue;
         }
         return false;
     }
 
-    std::string buildWsUrl(const SamsungTizen::InterfaceConfig& cfg, bool includeToken)
+    std::string build_ws_url(const SamsungTizen::InterfaceConfig& cfg, bool includeToken)
     {
-        std::string url = "GET " + std::string(kWsPath) + "?name=" + base64Encode(cfg.clientName);
+        std::string url = "GET " + std::string(kWsPath) + "?name=" + base64_encode(cfg.clientName);
         if (includeToken && !cfg.token.empty())
             url += "&token=" + cfg.token;
         url += " HTTP/1.1\r\n";
@@ -788,12 +788,12 @@ namespace
         std::random_device rd;
         for (int i = 0; i < 16; ++i)
             keyRaw[i] = static_cast<uint8_t>(rd() & 0xff);
-        const std::string wsKey = base64Encode(std::string(reinterpret_cast<char*>(keyRaw), 16));
+        const std::string wsKey = base64_encode(std::string(reinterpret_cast<char*>(keyRaw), 16));
         url += "Sec-WebSocket-Key: " + wsKey + "\r\n\r\n";
         return url;
     }
 
-    bool httpsGetJson(const std::string& host, uint16_t port, const std::string& path,
+    bool https_get_json(const std::string& host, uint16_t port, const std::string& path,
         json& out, uint32_t timeoutMs)
     {
         TlsConnection tls;
@@ -806,14 +806,14 @@ namespace
             "Accept: application/json\r\n"
             "Connection: close\r\n\r\n";
 
-        if (!tls.writeAll(req.data(), req.size()))
+        if (!tls.write_all(req.data(), req.size()))
         {
             LOG_ERROR("samsung_g7: REST request write failed for {}", host);
             return false;
         }
 
         std::string body;
-        if (!tls.readHttpResponse(body, timeoutMs))
+        if (!tls.read_http_response(body, timeoutMs))
         {
             LOG_ERROR("samsung_g7: REST response read failed for {}", host);
             return false;
@@ -828,7 +828,7 @@ namespace
         return true;
     }
 
-    SamsungTizen::InterfaceConfig parseInterface(const json& config)
+    SamsungTizen::InterfaceConfig parse_interface(const json& config)
     {
         const auto& iface = config.at("interface");
         SamsungTizen::InterfaceConfig out;
@@ -840,7 +840,7 @@ namespace
         return out;
     }
 
-    void validateSamsungConfig(const json& config)
+    void validate_samsung_config(const json& config)
     {
         if (config.at("class").get<std::string>() != kClass)
             throw std::invalid_argument("samsung_g7 config field 'class' must be 'samsung_g7'");
@@ -853,7 +853,7 @@ namespace
             throw std::invalid_argument("samsung_g7 interface requires non-empty string 'host'");
     }
 
-    SamsungTizen::Capabilities defaultCapabilities()
+    SamsungTizen::Capabilities default_capabilities()
     {
         SamsungTizen::Capabilities caps;
         caps.power = true;
@@ -867,7 +867,7 @@ namespace
         return caps;
     }
 
-    void applyRestInfo(SamsungTizen::Capabilities& caps, const json& info)
+    void apply_rest_info(SamsungTizen::Capabilities& caps, const json& info)
     {
         if (!info.contains("device") || !info["device"].is_object())
             return;
@@ -890,7 +890,7 @@ namespace
         }
     }
 
-    int verifyMac(const json& config, const json& restInfo)
+    int verify_mac(const json& config, const json& restInfo)
     {
         const std::string expected = config.at("interface").value("mac", "");
         if (expected.empty() || !restInfo.contains("device"))
@@ -935,13 +935,13 @@ namespace
             if (!m_tls.connect(cfg.host, cfg.port, timeoutMs))
                 return fail("TCP connection failed");
 
-            const std::string handshake = buildWsUrl(cfg, includeToken);
-            if (!m_tls.writeAll(handshake.data(), handshake.size()))
+            const std::string handshake = build_ws_url(cfg, includeToken);
+            if (!m_tls.write_all(handshake.data(), handshake.size()))
                 return fail("WebSocket handshake write failed");
 
             std::string headers;
             std::string pending;
-            if (!m_tls.readHttpUpgrade(headers, pending, timeoutMs))
+            if (!m_tls.read_http_upgrade(headers, pending, timeoutMs))
                 return fail("WebSocket upgrade read failed");
             if (headers.find("101") == std::string::npos)
                 return fail("WebSocket upgrade rejected (expected HTTP 101)");
@@ -968,7 +968,7 @@ namespace
                 }
 
                 std::string frame;
-                if (!pollWsText(m_tls, m_pending, frame, remaining))
+                if (!poll_ws_text(m_tls, m_pending, frame, remaining))
                     continue;
 
                 json msg = json::parse(frame, nullptr, false);
@@ -983,9 +983,9 @@ namespace
                 if (event == "ms.channel.connect")
                 {
                     m_connected = true;
-                    m_token = extractWsToken(msg);
+                    m_token = extract_ws_token(msg);
                     if (startKeepAlive)
-                        startReader();
+                        start_reader();
                     return true;
                 }
                 if (event == "ms.channel.unauthorized")
@@ -1000,25 +1000,25 @@ namespace
             {
                 m_connected = true;
                 if (startKeepAlive)
-                    startReader();
+                    start_reader();
                 return true;
             }
 
             return fail("Timed out waiting for ms.channel.connect (approve on the display)");
         }
 
-        bool sendJson(const json& payload, uint32_t timeoutMs)
+        bool send_json(const json& payload, uint32_t timeoutMs)
         {
             (void)timeoutMs;
             if (!m_connected.load())
                 return false;
 
             const std::string text = payload.dump();
-            const auto frame = buildMaskedTextFrame(text);
+            const auto frame = build_masked_text_frame(text);
             std::lock_guard<std::mutex> lock(m_ioMutex);
             if (!m_connected.load())
                 return false;
-            if (!m_tls.writeAll(frame.data(), frame.size()))
+            if (!m_tls.write_all(frame.data(), frame.size()))
             {
                 m_connected = false;
                 return false;
@@ -1027,11 +1027,11 @@ namespace
         }
 
         bool isConnected() const { return m_connected.load(); }
-        const std::string& issuedToken() const { return m_token; }
+        const std::string& issued_token() const { return m_token; }
 
         void close()
         {
-            stopReader();
+            stop_reader();
             m_connected = false;
             m_token.clear();
             m_pending.clear();
@@ -1039,32 +1039,32 @@ namespace
         }
 
     private:
-        void startReader()
+        void start_reader()
         {
-            stopReader();
+            stop_reader();
             m_readerRunning = true;
-            m_reader = std::thread([this]() { readerLoop(); });
+            m_reader = std::thread([this]() { reader_loop(); });
         }
 
-        void stopReader()
+        void stop_reader()
         {
             m_readerRunning = false;
             if (m_reader.joinable())
                 m_reader.join();
         }
 
-        void readerLoop()
+        void reader_loop()
         {
             while (m_readerRunning.load())
             {
                 if (!m_connected.load())
                     break;
 
-                if (!m_tls.readSome(m_pending, 1000))
+                if (!m_tls.read_some(m_pending, 1000))
                     continue;
 
                 bool connected = m_connected.load();
-                if (!drainWsFrames(m_tls, m_ioMutex, m_pending, connected))
+                if (!drain_ws_frames(m_tls, m_ioMutex, m_pending, connected))
                     m_connected = false;
             }
         }
@@ -1078,7 +1078,7 @@ namespace
         std::string m_token;
     };
 
-    void sendWakeOnLan(const std::string& mac)
+    void send_wake_on_lan(const std::string& mac)
     {
         uint8_t addr[6];
         if (!net::parseMac(mac, addr))
@@ -1127,7 +1127,7 @@ int SamsungTizenTokenClient::configure(const json& config)
     try
     {
         if (config.contains("interface"))
-            m_impl->iface = parseInterface(config);
+            m_impl->iface = parse_interface(config);
         else
         {
             m_impl->iface.host = config.at("host").get<std::string>();
@@ -1161,7 +1161,7 @@ SamsungTizenTokenClient::Result SamsungTizenTokenClient::requestToken()
     try
     {
         json info;
-        if (!httpsGetJson(m_impl->iface.host, m_impl->iface.port, "/api/v2/", info, m_impl->timeoutMs))
+        if (!https_get_json(m_impl->iface.host, m_impl->iface.port, "/api/v2/", info, m_impl->timeoutMs))
         {
             result.errorCode = -5;
             result.message = "REST probe failed";
@@ -1188,7 +1188,7 @@ SamsungTizenTokenClient::Result SamsungTizenTokenClient::requestToken()
             return result;
         }
 
-        result.token = ws.issuedToken();
+        result.token = ws.issued_token();
         if (result.token.empty())
         {
             result.errorCode = -5;
@@ -1231,7 +1231,7 @@ SamsungTizen::SamsungTizen() :
     Device(),
     m_impl(std::make_unique<Impl>())
 {
-    m_capabilities = defaultCapabilities();
+    m_capabilities = default_capabilities();
     registerActionsAndQueries();
 }
 
@@ -1282,7 +1282,7 @@ bool SamsungTizen::isApiReachable() const
         }
     }
 
-    const int fd = tcpConnect(m_interface.host, m_interface.port, 2000);
+    const int fd = tcp_connect(m_interface.host, m_interface.port, 2000);
     const bool reachable = fd >= 0;
     if (fd >= 0)
         ::close(fd);
@@ -1297,12 +1297,12 @@ bool SamsungTizen::isApiReachable() const
 
 int SamsungTizen::init(const json& config)
 {
-    validateSamsungConfig(config);
+    validate_samsung_config(config);
     loadBaseConfig(config);
 
-    m_interface = parseInterface(config);
+    m_interface = parse_interface(config);
     m_impl->iface = m_interface;
-    m_capabilities = defaultCapabilities();
+    m_capabilities = default_capabilities();
 
     if (!isEnabled())
         return -2;
@@ -1318,19 +1318,19 @@ int SamsungTizen::init(const json& config)
     try
     {
         json info;
-        if (!httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs))
+        if (!https_get_json(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs))
         {
             LOG_ERROR("samsung_g7: REST probe failed for {}", m_interface.host);
             m_state = DeviceState::Stopped;
             return -5;
         }
 
-        applyRestInfo(m_capabilities, info);
+        apply_rest_info(m_capabilities, info);
         if (info.contains("device"))
             m_cachedPowerState = info["device"].value("PowerState", "");
         m_restCacheTime = std::chrono::steady_clock::now();
 
-        const int macRc = verifyMac(config, info);
+        const int macRc = verify_mac(config, info);
         if (macRc != 0)
         {
             m_state = DeviceState::Stopped;
@@ -1406,7 +1406,7 @@ int SamsungTizen::sendRemoteKey(const std::string& key)
         }},
     };
 
-    if (!m_impl->ws.sendJson(payload, m_session.commandTimeoutMs))
+    if (!m_impl->ws.send_json(payload, m_session.commandTimeoutMs))
     {
         disconnectSession(true);
         return -5;
@@ -1430,7 +1430,7 @@ int SamsungTizen::sendRemoteKeyRepeated(const std::string& key, int count)
 
 int SamsungTizen::setInput(std::string_view source)
 {
-    const char* key = inputToRemoteKey(source);
+    const char* key = input_to_remote_key(source);
     if (!key)
         return -9;
 
@@ -1443,7 +1443,7 @@ int SamsungTizen::setInput(std::string_view source)
 int SamsungTizen::wakeDisplay()
 {
     if (!m_interface.mac.empty())
-        sendWakeOnLan(m_interface.mac);
+        send_wake_on_lan(m_interface.mac);
     return 0;
 }
 
@@ -1454,7 +1454,7 @@ int SamsungTizen::powerOn()
     {
         std::string power = m_cachedPowerState;
         json info;
-        if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
+        if (https_get_json(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
             && info.contains("device"))
         {
             power = info["device"].value("PowerState", "");
@@ -1480,7 +1480,7 @@ int SamsungTizen::powerOn()
     for (uint32_t i = 0; i < m_session.restPollAttempts; ++i)
     {
         json info;
-        if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.restPollIntervalMs))
+        if (https_get_json(m_interface.host, m_interface.port, "/api/v2/", info, m_session.restPollIntervalMs))
         {
             if (connectSession() == 0)
             {
@@ -1508,7 +1508,7 @@ int SamsungTizen::powerOff()
     // Keep the remote session open across soft-off; only a full power cut drops it.
     std::string power = m_cachedPowerState;
     json info;
-    if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
+    if (https_get_json(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
         && info.contains("device"))
     {
         power = info["device"].value("PowerState", "");
@@ -1535,7 +1535,7 @@ int SamsungTizen::powerToggle()
 {
     std::string power = m_cachedPowerState;
     json info;
-    if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
+    if (https_get_json(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
         && info.contains("device"))
     {
         power = info["device"].value("PowerState", "");
@@ -1577,7 +1577,7 @@ json SamsungTizen::query(std::string_view name, const json& params)
     if (name == "session")
     {
         return {
-            {"state", sessionStateName(m_sessionState)},
+            {"state", session_state_name(m_sessionState)},
             {"connected", m_sessionState == SessionState::Connected},
         };
     }
@@ -1596,7 +1596,7 @@ json SamsungTizen::query(std::string_view name, const json& params)
     }
 
     if (m_state != DeviceState::Running)
-        return makeQueryError(-4);
+        return make_query_error(-4);
 
     if (name == "state")
     {
@@ -1608,7 +1608,7 @@ json SamsungTizen::query(std::string_view name, const json& params)
         if (!cacheFresh)
         {
             json info;
-            if (httpsGetJson(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
+            if (https_get_json(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs)
                 && info.contains("device"))
             {
                 powerState = info["device"].value("PowerState", "unknown");
@@ -1625,7 +1625,7 @@ json SamsungTizen::query(std::string_view name, const json& params)
         };
     }
 
-    return makeQueryError(-8);
+    return make_query_error(-8);
 }
 
 std::future<json> SamsungTizen::queryAsync(std::string_view name, const json& params, uint32_t timeout_ms)
@@ -1652,13 +1652,13 @@ int SamsungTizen::invoke(std::string_view name, const json& params)
     if (name == "mute")
         return sendRemoteKey("KEY_MUTE");
     if (name == "volume_up")
-        return sendRemoteKeyRepeated("KEY_VOLUP", keyPressCount(params));
+        return sendRemoteKeyRepeated("KEY_VOLUP", key_press_count(params));
     if (name == "volume_down")
-        return sendRemoteKeyRepeated("KEY_VOLDOWN", keyPressCount(params));
+        return sendRemoteKeyRepeated("KEY_VOLDOWN", key_press_count(params));
     if (name == "channel_up")
-        return sendRemoteKeyRepeated("KEY_CHUP", keyPressCount(params));
+        return sendRemoteKeyRepeated("KEY_CHUP", key_press_count(params));
     if (name == "channel_down")
-        return sendRemoteKeyRepeated("KEY_CHDOWN", keyPressCount(params));
+        return sendRemoteKeyRepeated("KEY_CHDOWN", key_press_count(params));
 
     if (name == "input")
     {
@@ -1679,7 +1679,7 @@ int SamsungTizen::invoke(std::string_view name, const json& params)
         if (!params.contains("app") || !params["app"].is_string())
             return -9;
 
-        const auto* launch = resolveAppLaunch(params["app"].get<std::string>());
+        const auto* launch = resolve_app_launch(params["app"].get<std::string>());
         if (!launch)
             return -9;
 
@@ -1697,7 +1697,7 @@ int SamsungTizen::invoke(std::string_view name, const json& params)
 
         if (m_sessionState != SessionState::Connected && connectSession() != 0)
             return -5;
-        if (!m_impl->ws.sendJson(payload, m_session.commandTimeoutMs))
+        if (!m_impl->ws.send_json(payload, m_session.commandTimeoutMs))
         {
             disconnectSession(true);
             return -5;
@@ -1705,16 +1705,16 @@ int SamsungTizen::invoke(std::string_view name, const json& params)
         return 0;
     }
     if (name == "input_source")
-        return sendRemoteKeyRepeated("KEY_SOURCE", keyPressCount(params));
+        return sendRemoteKeyRepeated("KEY_SOURCE", key_press_count(params));
     if (name == "play_pause")
-        return sendRemoteKeyRepeated("KEY_PLAY", keyPressCount(params));
-    if (name == "nav_up") return sendRemoteKeyRepeated("KEY_UP", keyPressCount(params));
-    if (name == "nav_down") return sendRemoteKeyRepeated("KEY_DOWN", keyPressCount(params));
-    if (name == "nav_left") return sendRemoteKeyRepeated("KEY_LEFT", keyPressCount(params));
-    if (name == "nav_right") return sendRemoteKeyRepeated("KEY_RIGHT", keyPressCount(params));
-    if (name == "select") return sendRemoteKeyRepeated("KEY_ENTER", keyPressCount(params));
-    if (name == "home") return sendRemoteKeyRepeated("KEY_HOME", keyPressCount(params));
-    if (name == "back") return sendRemoteKeyRepeated("KEY_RETURN", keyPressCount(params));
+        return sendRemoteKeyRepeated("KEY_PLAY", key_press_count(params));
+    if (name == "nav_up") return sendRemoteKeyRepeated("KEY_UP", key_press_count(params));
+    if (name == "nav_down") return sendRemoteKeyRepeated("KEY_DOWN", key_press_count(params));
+    if (name == "nav_left") return sendRemoteKeyRepeated("KEY_LEFT", key_press_count(params));
+    if (name == "nav_right") return sendRemoteKeyRepeated("KEY_RIGHT", key_press_count(params));
+    if (name == "select") return sendRemoteKeyRepeated("KEY_ENTER", key_press_count(params));
+    if (name == "home") return sendRemoteKeyRepeated("KEY_HOME", key_press_count(params));
+    if (name == "back") return sendRemoteKeyRepeated("KEY_RETURN", key_press_count(params));
 
     return -8;
 }

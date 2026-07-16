@@ -27,7 +27,7 @@ DEVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    json makeQueryError(int code, std::string_view message = {})
+    json make_query_error(int code, std::string_view message = {})
     {
         json out = json::object();
         out["code"] = code;
@@ -36,12 +36,12 @@ namespace
         return out;
     }
 
-    bool isControlType(uint16_t rawType)
+    bool is_control_type(uint16_t rawType)
     {
         return rawType >= 0xF000;
     }
 
-    float computeRmsLevel(const int16_t* samples, size_t count)
+    float compute_rms_level(const int16_t* samples, size_t count)
     {
         if (count == 0)
             return 0.0f;
@@ -56,7 +56,7 @@ namespace
         return static_cast<float>(std::min(1.0, rms * 4.0));
     }
 
-    std::string connectionStateToString(RadaiWs::ConnectionState state)
+    std::string connection_state_to_string(RadaiWs::ConnectionState state)
     {
         switch (state)
         {
@@ -68,7 +68,7 @@ namespace
         }
     }
 
-    bool parseTargetType(std::string_view name, wsp::Type& outType)
+    bool parse_target_type(std::string_view name, wsp::Type& outType)
     {
         if (name == "mic_pcm")
             outType = wsp::Type::MicPCM;
@@ -87,17 +87,17 @@ namespace
         return true;
     }
 
-    bool ioLoopShouldRun(const RadaiWs& owner)
+    bool io_loop_should_run(const RadaiWs& owner)
     {
         return owner.isIoActive();
     }
 
-    void copyIrTimingFrame(const IrTimingFrame& src, IrTimingFrame& dst)
+    void copy_ir_timing_frame(const IrTimingFrame& src, IrTimingFrame& dst)
     {
         dst = src;
     }
 
-    void validateRadaiWsConfig(const json& config)
+    void validate_radai_ws_config(const json& config)
     {
         if (config.at("class").get<std::string>() != RadaiWs::kClass)
             throw std::invalid_argument("wave_station config field 'class' must be 'wave_station'");
@@ -116,7 +116,7 @@ namespace
             throw std::invalid_argument("wave_station interface field 'mac' must be a string");
     }
 
-    RadaiWs::InterfaceConfig parseInterfaceConfig(const json& config)
+    RadaiWs::InterfaceConfig parse_interface_config(const json& config)
     {
         const auto& iface = config.at("interface");
         RadaiWs::InterfaceConfig out;
@@ -126,7 +126,7 @@ namespace
         return out;
     }
 
-    RadaiWs::AudioConfig parseAudioConfig(const json& config)
+    RadaiWs::AudioConfig parse_audio_config(const json& config)
     {
         RadaiWs::AudioConfig out;
         if (!config.contains("settings") || !config["settings"].is_object())
@@ -150,7 +150,7 @@ namespace
         return out;
     }
 
-    RadaiWs::SessionConfig parseSessionConfig(const json& config)
+    RadaiWs::SessionConfig parse_session_config(const json& config)
     {
         RadaiWs::SessionConfig out;
         if (!config.contains("settings") || !config["settings"].is_object())
@@ -170,7 +170,7 @@ namespace
         return out;
     }
 
-    RadaiWs::Capabilities parseCapabilities(const json& config)
+    RadaiWs::Capabilities parse_capabilities(const json& config)
     {
         RadaiWs::Capabilities out;
         if (!config.contains("settings") || !config["settings"].is_object())
@@ -202,7 +202,7 @@ namespace
         return out;
     }
 
-    std::string defaultIrListPath()
+    std::string default_ir_list_path()
     {
 #ifdef WAVE_SOURCE_DIR
         return std::string(WAVE_SOURCE_DIR) + "/bin/device/ir_list.json";
@@ -211,7 +211,7 @@ namespace
 #endif
     }
 
-    double timingDistance(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b)
+    double timing_distance(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b)
     {
         const size_t count = std::min(a.size(), b.size());
         if (count == 0)
@@ -225,7 +225,7 @@ namespace
         return sum / static_cast<double>(count);
     }
 
-    int verifyMac(const std::string& expected, const std::string& host)
+    int verify_mac(const std::string& expected, const std::string& host)
     {
         if (expected.empty())
             return 0;
@@ -340,7 +340,7 @@ namespace
     };
 #endif
 
-    bool tryExtractWspPacket(std::vector<uint8_t>& streamBuf, std::vector<uint8_t>& outPacket)
+    bool try_extract_wsp_packet(std::vector<uint8_t>& streamBuf, std::vector<uint8_t>& outPacket)
     {
         while (streamBuf.size() >= 4)
         {
@@ -777,7 +777,7 @@ struct RadaiWs::Impl
                     known.push_back(value.get<uint16_t>());
             }
 
-            const double distance = timingDistance(timings, known);
+            const double distance = timing_distance(timings, known);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
@@ -853,7 +853,7 @@ struct RadaiWs::Impl
         const uint32_t payloadSize = *reinterpret_cast<const uint32_t*>(packet.data() + 8);
         const uint8_t* payload = packet.data() + wsp::kHeaderSize;
 
-        if (isControlType(rawType))
+        if (is_control_type(rawType))
             handleControl(rawType, payload, payloadSize);
         else
             handleData(rawType, packet[5], payload, payloadSize);
@@ -1050,7 +1050,7 @@ struct RadaiWs::Impl
 
     void openConnection()
     {
-        if (!m_work || !ioLoopShouldRun(m_owner))
+        if (!m_work || !io_loop_should_run(m_owner))
             return;
 
         m_connecting.store(true);
@@ -1150,7 +1150,7 @@ struct RadaiWs::Impl
 
     void scheduleReconnect(const char* reason)
     {
-        if (!m_work || !ioLoopShouldRun(m_owner))
+        if (!m_work || !io_loop_should_run(m_owner))
             return;
 
         m_connected.store(false);
@@ -1172,7 +1172,7 @@ struct RadaiWs::Impl
         m_reconnectTimer.expires_after(std::chrono::milliseconds(delay));
         m_reconnectTimer.async_wait([this, delay](const std::error_code& timerEc)
         {
-            if (timerEc || !m_work || !ioLoopShouldRun(m_owner))
+            if (timerEc || !m_work || !io_loop_should_run(m_owner))
                 return;
 
             LOG_INFO("RadaiWs reconnecting (delay was {} ms)", delay);
@@ -1204,7 +1204,7 @@ struct RadaiWs::Impl
                 while (true)
                 {
                     std::vector<uint8_t> packet;
-                    if (!tryExtractWspPacket(m_streamBuf, packet))
+                    if (!try_extract_wsp_packet(m_streamBuf, packet))
                         break;
                     handlePacket(packet);
                 }
@@ -1284,13 +1284,13 @@ bool RadaiWs::isIoActive() const
 
 int RadaiWs::init(const json& config)
 {
-    validateRadaiWsConfig(config);
+    validate_radai_ws_config(config);
     loadBaseConfig(config);
 
-    m_interface = parseInterfaceConfig(config);
-    m_audio = parseAudioConfig(config);
-    m_session = parseSessionConfig(config);
-    m_capabilities = parseCapabilities(config);
+    m_interface = parse_interface_config(config);
+    m_audio = parse_audio_config(config);
+    m_session = parse_session_config(config);
+    m_capabilities = parse_capabilities(config);
 
     if (!isEnabled())
         return -2;
@@ -1303,7 +1303,7 @@ int RadaiWs::init(const json& config)
 
     m_state = DeviceState::Initializing;
 
-    const int macRc = verifyMac(m_interface.mac, m_interface.host);
+    const int macRc = verify_mac(m_interface.mac, m_interface.host);
     if (macRc != 0)
     {
         m_state = DeviceState::Stopped;
@@ -1315,7 +1315,7 @@ int RadaiWs::init(const json& config)
     if (!m_errorJson.contains("-7"))
         m_errorJson["-7"] = "MAC mismatch";
 
-    std::string irListPath = defaultIrListPath();
+    std::string irListPath = default_ir_list_path();
     if (config.contains("settings") && config["settings"].is_object())
         irListPath = config["settings"].value("ir_list_path", irListPath);
 
@@ -1379,7 +1379,7 @@ json RadaiWs::query(std::string_view name, const json& params)
             {"host", m_interface.host},
             {"port", m_interface.port},
             {"connected", m_impl->isConnected()},
-            {"state", connectionStateToString(m_connectionState)},
+            {"state", connection_state_to_string(m_connectionState)},
             {"sample_rate", m_audio.sampleRate},
             {"channels", m_audio.channels},
             {"frame_duration_ms", m_audio.frameDurationMs},
@@ -1397,7 +1397,7 @@ json RadaiWs::query(std::string_view name, const json& params)
 
         return json{
             {"connected", m_impl->isConnected()},
-            {"state", connectionStateToString(m_connectionState)},
+            {"state", connection_state_to_string(m_connectionState)},
             {"mic_queue", m_impl->getMicFrameCount()},
             {"mic_level", m_micLevel},
             {"subscriptions", {
@@ -1443,7 +1443,7 @@ json RadaiWs::query(std::string_view name, const json& params)
         return out;
     }
 
-    return makeQueryError(-1, "unknown query");
+    return make_query_error(-1, "unknown query");
 }
 
 std::future<json> RadaiWs::queryAsync(std::string_view name, const json& params, uint32_t timeout_ms)
@@ -1477,7 +1477,7 @@ int RadaiWs::invoke(std::string_view name, const json& params)
             return -1;
 
         wsp::Type targetType {};
-        if (!parseTargetType(params["target"].get<std::string>(), targetType))
+        if (!parse_target_type(params["target"].get<std::string>(), targetType))
             return -1;
 
         const bool isSensor =
@@ -1503,7 +1503,7 @@ int RadaiWs::invoke(std::string_view name, const json& params)
             return -1;
 
         wsp::Type targetType {};
-        if (!parseTargetType(params["target"].get<std::string>(), targetType))
+        if (!parse_target_type(params["target"].get<std::string>(), targetType))
             return -1;
 
         return unsubscribe(targetType);
@@ -1698,7 +1698,7 @@ bool RadaiWs::getLatestIr(IrTimingFrame& outFrame)
     if (!m_lastIr.valid)
         return false;
 
-    copyIrTimingFrame(m_lastIr, outFrame);
+    copy_ir_timing_frame(m_lastIr, outFrame);
     return true;
 }
 
@@ -1720,7 +1720,7 @@ bool RadaiWs::waitForIr(IrTimingFrame& outFrame, uint32_t timeoutMs)
             std::lock_guard<std::mutex> lock(m_mutex);
             if (m_lastIr.valid && m_irGeneration != generationBefore)
             {
-                copyIrTimingFrame(m_lastIr, outFrame);
+                copy_ir_timing_frame(m_lastIr, outFrame);
                 return true;
             }
         }
@@ -1915,7 +1915,7 @@ void RadaiWs::onMicPcm(const wsp::AudioPCMBody& body, const uint8_t* pcmData, ui
     frame.samples.resize(sampleCount);
     std::memcpy(frame.samples.data(), pcmData, pcmBytes);
 
-    updateMicLevel(computeRmsLevel(frame.samples.data(), sampleCount));
+    updateMicLevel(compute_rms_level(frame.samples.data(), sampleCount));
     enqueueMicFrame(std::move(frame));
 }
 
@@ -1933,7 +1933,7 @@ void RadaiWs::onMicComp(
     AudioFrame frame;
     frame.timestamp = timestampUs;
     frame.samples = std::move(pcm);
-    updateMicLevel(computeRmsLevel(frame.samples.data(), frame.samples.size()));
+    updateMicLevel(compute_rms_level(frame.samples.data(), frame.samples.size()));
     enqueueMicFrame(std::move(frame));
 #else
     (void)body;

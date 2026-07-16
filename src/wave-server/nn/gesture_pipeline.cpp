@@ -28,7 +28,7 @@ namespace
                 .count());
     }
 
-    SchmittTriggerConfig parseTriggerConfig(const json& value)
+    SchmittTriggerConfig parse_trigger_config(const json& value)
     {
         SchmittTriggerConfig cfg;
         if (!value.is_object())
@@ -42,7 +42,7 @@ namespace
         return cfg;
     }
 
-    ControlSignalType parseSignalType(const json& value)
+    ControlSignalType parse_signal_type(const json& value)
     {
         if (!value.is_string())
             return ControlSignalType::Single;
@@ -136,8 +136,8 @@ bool GesturePipeline::init(std::string_view base_dir, const json& set_config, st
             GestureClassConfig cls;
             cls.classId = item.value("class_id", -1);
             cls.name = item.value("name", std::string());
-            cls.trigger = parseTriggerConfig(item.value("trigger", json::object()));
-            cls.signalType = parseSignalType(item.value("signal_type", json()));
+            cls.trigger = parse_trigger_config(item.value("trigger", json::object()));
+            cls.signalType = parse_signal_type(item.value("signal_type", json()));
             cls.repeatIntervalMs = item.value("repeat_interval_ms", 0u);
             if (item.contains("action"))
                 cls.action = item["action"];

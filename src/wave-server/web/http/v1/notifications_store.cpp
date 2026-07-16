@@ -12,7 +12,7 @@ NotificationsStore::NotificationsStore(db::DbClientPtr client) :
 {
 }
 
-std::string NotificationsStore::toCreatedAtIso(const std::string& db_time)
+std::string NotificationsStore::to_created_at_iso(const std::string& db_time)
 {
     if (db_time.size() >= 19)
         return db_time.substr(0, 10) + "T" + db_time.substr(11, 8) + "+09:00";
@@ -52,7 +52,7 @@ ORDER BY created_at DESC, id DESC
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
         item["type"] = row["type"].as<std::string>();
         item["message"] = row["message"].as<std::string>();
-        item["createdAt"] = toCreatedAtIso(row["created_at"].as<std::string>());
+        item["createdAt"] = to_created_at_iso(row["created_at"].as<std::string>());
         item["read"] = row["read"].as<int>() != 0;
         matched.push_back(item);
     }
@@ -113,7 +113,7 @@ WHERE user_id = ? AND id = ?
     item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
     item["type"] = row["type"].as<std::string>();
     item["message"] = row["message"].as<std::string>();
-    item["createdAt"] = toCreatedAtIso(row["created_at"].as<std::string>());
+    item["createdAt"] = to_created_at_iso(row["created_at"].as<std::string>());
     item["read"] = row["read"].as<int>() != 0;
     return item;
 }

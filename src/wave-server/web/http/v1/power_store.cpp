@@ -32,7 +32,7 @@ namespace
             .count();
     }
 
-    const dev::DeviceManifestEntry* findManifestEntry(
+    const dev::DeviceManifestEntry* find_manifest_entry(
         const dev::DeviceManager& devices,
         const std::string& external_id)
     {
@@ -44,7 +44,7 @@ namespace
         return nullptr;
     }
 
-    std::string roomNameForEntry(const dev::DeviceManifestEntry& entry, const dev::DeviceManager& devices)
+    std::string room_name_for_entry(const dev::DeviceManifestEntry& entry, const dev::DeviceManager& devices)
     {
         const auto room_id_text = entry.config.value("room_id", "");
         if (room_id_text.empty())
@@ -62,7 +62,7 @@ PowerStore::PowerStore(IotStore& iot) :
 {
 }
 
-int PowerStore::stepSecondsForRange(const std::string& range)
+int PowerStore::step_seconds_for_range(const std::string& range)
 {
     if (range == "min10")
         return 10;
@@ -73,13 +73,13 @@ int PowerStore::stepSecondsForRange(const std::string& range)
     return 1;
 }
 
-int PowerStore::pointCountForRange(const std::string& range)
+int PowerStore::point_count_for_range(const std::string& range)
 {
     (void)range;
     return 60;
 }
 
-std::string PowerStore::formatAgoLabel(int seconds_ago)
+std::string PowerStore::format_ago_label(int seconds_ago)
 {
     if (seconds_ago <= 0)
         return "지금";
@@ -119,14 +119,14 @@ Json::Value PowerStore::listPlugs()
 
     for (const auto& plug_id : m_iot.listPlugIds())
     {
-        const auto* entry = findManifestEntry(devices, plug_id);
+        const auto* entry = find_manifest_entry(devices, plug_id);
         const auto reading = power.getReading(plug_id);
 
         std::string room_name = "미지정";
         std::string name = entry ? entry->config.value("name", plug_id) : plug_id;
         std::string summary = entry ? entry->config.value("description", "") : "";
         if (entry)
-            room_name = roomNameForEntry(*entry, devices);
+            room_name = room_name_for_entry(*entry, devices);
 
         std::string connection_status = "offline";
         if (entry)
@@ -191,8 +191,8 @@ Json::Value PowerStore::comboTrend(const std::string& device_id, const std::stri
     (void)metric;
     auto& power = ws::service::PowerManager::get();
 
-    const int step_seconds = stepSecondsForRange(range);
-    const int points = pointCountForRange(range);
+    const int step_seconds = step_seconds_for_range(range);
+    const int points = point_count_for_range(range);
     const int64_t now = nowMs();
 
     const auto history = device_id == "all" ? power.getMergedHistory() : power.getHistory(device_id);
@@ -218,7 +218,7 @@ Json::Value PowerStore::comboTrend(const std::string& device_id, const std::stri
             chosen = history.back();
 
         Json::Value point;
-        point["label"] = formatAgoLabel(seconds_ago);
+        point["label"] = format_ago_label(seconds_ago);
         point["value"] = found || !history.empty() ? chosen.w : 0.0;
         point["wh"] = point["value"].asDouble() * (step_seconds / 3600.0);
         point["v"] = found || !history.empty() ? chosen.v : 0.0;
@@ -228,7 +228,7 @@ Json::Value PowerStore::comboTrend(const std::string& device_id, const std::stri
     return series;
 }
 
-Json::Value PowerStore::periodTrend(
+Json::Value PowerStore::period_trend(
     db::DbClientPtr client,
     const std::string& device_external_id,
     const std::string& ui_period,
@@ -242,7 +242,7 @@ Json::Value PowerStore::periodTrend(
         return series;
 
     const std::string ref_date = ref_date_hint.empty()
-        ? InsightsStore::referenceDate(client)
+        ? InsightsStore::reference_date(client)
         : ref_date_hint.substr(0, 10);
 
     std::string device_clause;
@@ -346,7 +346,7 @@ Json::Value PowerStore::periodTrend(
     return series;
 }
 
-void PowerStore::storeReportEmbedding(
+void PowerStore::store_report_embedding(
     const db::DbClientPtr& client,
     int64_t report_id,
     const std::vector<float>& embedding)
@@ -407,7 +407,7 @@ ON CONFLICT(report_id) DO UPDATE SET
     }
 }
 
-std::optional<int64_t> PowerStore::generateReport(
+std::optional<int64_t> PowerStore::generate_report(
     const db::DbClientPtr& client,
     const std::string& period,
     const std::string& period_start,
@@ -527,11 +527,11 @@ ON CONFLICT DO UPDATE SET
         return std::nullopt;
     }
 
-    storeReportEmbedding(client, report_id, agent_result.embedding);
+    store_report_embedding(client, report_id, agent_result.embedding);
     return report_id;
 }
 
-bool PowerStore::ensureDailyReport(const db::DbClientPtr& client, const std::string& date)
+bool PowerStore::ensure_daily_report(const db::DbClientPtr& client, const std::string& date)
 {
     const std::string day_start = date + " 00:00:00";
     const auto day_end_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", date);
@@ -541,7 +541,7 @@ bool PowerStore::ensureDailyReport(const db::DbClientPtr& client, const std::str
         "SELECT id FROM power_report WHERE period = '24h' AND period_start = ? AND device_id IS NULL", day_start);
     const bool already_had_report = !pre_existing.empty();
 
-    const auto report_id = generateReport(client, "24h", day_start, day_start, day_end, 288.0);
+    const auto report_id = generate_report(client, "24h", day_start, day_start, day_end, 288.0);
     if (!report_id)
         return false;
 
@@ -562,15 +562,15 @@ bool PowerStore::ensureDailyReport(const db::DbClientPtr& client, const std::str
     return true;
 }
 
-bool PowerStore::ensureHourlyReport(const db::DbClientPtr& client, const std::string& hour_start)
+bool PowerStore::ensure_hourly_report(const db::DbClientPtr& client, const std::string& hour_start)
 {
     const auto hour_end_rows = client->execSqlSync("SELECT datetime(?, '+1 hour') AS d", hour_start);
     const std::string hour_end = hour_end_rows.empty() ? hour_start : hour_end_rows[0]["d"].as<std::string>();
 
-    return generateReport(client, "1h", hour_start, hour_start, hour_end, 12.0).has_value();
+    return generate_report(client, "1h", hour_start, hour_start, hour_end, 12.0).has_value();
 }
 
-Json::Value PowerStore::queryReport(
+Json::Value PowerStore::query_report(
     db::DbClientPtr client,
     const std::string& device_external_id,
     const std::string& ui_period,
@@ -613,7 +613,7 @@ Json::Value PowerStore::queryReport(
     }
 
     const std::string ref_date = period_start_hint.empty()
-        ? InsightsStore::referenceDate(client)
+        ? InsightsStore::reference_date(client)
         : period_start_hint;
 
     const bool exact_match = !period_start_hint.empty() && (
@@ -632,7 +632,7 @@ Json::Value PowerStore::queryReport(
     {
         const std::string target_date = exact_match ? period_start_hint.substr(0, 10) : ref_date.substr(0, 10);
         if (target_date <= today)
-            ensureDailyReport(client, target_date);
+            ensure_daily_report(client, target_date);
     }
     else if (*api_period == "1h" && !device_db_id)
     {
@@ -649,7 +649,7 @@ Json::Value PowerStore::queryReport(
             target_hour_start = prev_hour.substr(0, 13) + ":00:00";
         }
         if (target_hour_start <= now_full)
-            ensureHourlyReport(client, target_hour_start);
+            ensure_hourly_report(client, target_hour_start);
     }
 
     std::ostringstream sql;

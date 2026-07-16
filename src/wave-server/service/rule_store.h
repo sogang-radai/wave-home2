@@ -46,8 +46,8 @@ public:
 
     TriggerIndexSnapshot snapshot() const;
 
-    static RuleView toView(const Rule& rule, const std::unordered_map<std::string, Trigger>& triggers);
-    static bool validatePayload(const json& payload, std::string& out_error);
+    static RuleView to_view(const Rule& rule, const std::unordered_map<std::string, Trigger>& triggers);
+    static bool validate_payload(const json& payload, std::string& out_error);
 
 private:
     bool insertRuleToDatabase(const Rule& rule, int64_t user_id, std::string& out_error);

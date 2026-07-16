@@ -30,7 +30,7 @@ namespace
     constexpr size_t kSaltLen = 16;
     constexpr size_t kRecordSize = 4096;
 
-    std::string base64UrlEncode(const uint8_t* data, size_t len)
+    std::string base64_url_encode(const uint8_t* data, size_t len)
     {
         static const char kTable[] =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -76,7 +76,7 @@ namespace
         return out;
     }
 
-    std::vector<uint8_t> base64UrlDecode(const std::string& in)
+    std::vector<uint8_t> base64_url_decode(const std::string& in)
     {
         std::string padded = in;
         for (auto& ch : padded)
@@ -102,7 +102,7 @@ namespace
         return out;
     }
 
-    bool hkdfSha256(
+    bool hkdf_sha256(
         const uint8_t* secret,
         size_t secret_len,
         const uint8_t* salt,
@@ -142,7 +142,7 @@ namespace
         return true;
     }
 
-    EVP_PKEY* importPrivateKeyP256(const std::vector<uint8_t>& private_key)
+    EVP_PKEY* import_private_key_p256(const std::vector<uint8_t>& private_key)
     {
         if (private_key.size() != 32)
             return nullptr;
@@ -175,7 +175,7 @@ namespace
         return pkey;
     }
 
-    EVP_PKEY* importPublicKeyP256(const std::vector<uint8_t>& public_key)
+    EVP_PKEY* import_public_key_p256(const std::vector<uint8_t>& public_key)
     {
         if (public_key.size() != 65 || public_key[0] != 0x04)
             return nullptr;
@@ -208,7 +208,7 @@ namespace
         return pkey;
     }
 
-    std::vector<uint8_t> exportUncompressedPublicKey(EVP_PKEY* pkey)
+    std::vector<uint8_t> export_uncompressed_public_key(EVP_PKEY* pkey)
     {
         size_t len = 0;
         if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY, nullptr, 0, &len) <= 0)
@@ -221,7 +221,7 @@ namespace
         return out;
     }
 
-    std::vector<uint8_t> ecdhSecret(EVP_PKEY* local, EVP_PKEY* peer)
+    std::vector<uint8_t> ecdh_secret(EVP_PKEY* local, EVP_PKEY* peer)
     {
         EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(local, nullptr);
         if (!ctx)
@@ -254,7 +254,7 @@ namespace
         return secret;
     }
 
-    std::string jwtEs256(const std::string& signing_input, EVP_PKEY* private_key)
+    std::string jwt_es256(const std::string& signing_input, EVP_PKEY* private_key)
     {
         EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
         if (!md_ctx)
@@ -303,10 +303,10 @@ namespace
         BN_bn2binpad(s, raw.data() + 32, 32);
         ECDSA_SIG_free(sig);
 
-        return base64UrlEncode(raw.data(), raw.size());
+        return base64_url_encode(raw.data(), raw.size());
     }
 
-    std::string extractAudience(const std::string& endpoint)
+    std::string extract_audience(const std::string& endpoint)
     {
         const auto scheme_end = endpoint.find("://");
         if (scheme_end == std::string::npos)
@@ -319,12 +319,12 @@ namespace
         return endpoint.substr(0, path_start);
     }
 
-    std::string buildVapidAuthorization(
+    std::string build_vapid_authorization(
         const std::string& audience,
         const VapidConfig& vapid,
         EVP_PKEY* private_key)
     {
-        const std::string header = base64UrlEncode(
+        const std::string header = base64_url_encode(
             reinterpret_cast<const uint8_t*>(R"({"typ":"JWT","alg":"ES256"})"),
             strlen(R"({"typ":"JWT","alg":"ES256"})"));
 
@@ -333,19 +333,19 @@ namespace
         claims["exp"] = static_cast<Json::Int64>(std::time(nullptr) + 12 * 3600);
         claims["sub"] = vapid.subject;
         const std::string payload_json = Json::writeString(Json::StreamWriterBuilder(), claims);
-        const std::string payload = base64UrlEncode(
+        const std::string payload = base64_url_encode(
             reinterpret_cast<const uint8_t*>(payload_json.data()),
             payload_json.size());
 
         const std::string signing_input = header + "." + payload;
-        const std::string signature = jwtEs256(signing_input, private_key);
+        const std::string signature = jwt_es256(signing_input, private_key);
         if (signature.empty())
             return {};
 
         return "vapid t=" + header + "." + payload + "." + signature + ", k=" + vapid.public_key;
     }
 
-    std::vector<uint8_t> encryptPayload(
+    std::vector<uint8_t> encrypt_payload(
         const std::vector<uint8_t>& plaintext,
         const std::vector<uint8_t>& client_public,
         const std::vector<uint8_t>& auth_secret)
@@ -366,14 +366,14 @@ namespace
         }
         EVP_PKEY_CTX_free(key_ctx);
 
-        EVP_PKEY* client_key = importPublicKeyP256(client_public);
+        EVP_PKEY* client_key = import_public_key_p256(client_public);
         if (!client_key)
         {
             EVP_PKEY_free(local_key);
             return {};
         }
 
-        const auto shared_secret = ecdhSecret(local_key, client_key);
+        const auto shared_secret = ecdh_secret(local_key, client_key);
         EVP_PKEY_free(client_key);
         if (shared_secret.empty())
         {
@@ -381,7 +381,7 @@ namespace
             return {};
         }
 
-        const auto local_public = exportUncompressedPublicKey(local_key);
+        const auto local_public = export_uncompressed_public_key(local_key);
         EVP_PKEY_free(local_key);
         if (local_public.empty())
             return {};
@@ -392,7 +392,7 @@ namespace
         auth_info.append(reinterpret_cast<const char*>(local_public.data()), local_public.size());
 
         std::array<uint8_t, 32> ikm {};
-        if (!hkdfSha256(
+        if (!hkdf_sha256(
                 auth_secret.data(),
                 auth_secret.size(),
                 shared_secret.data(),
@@ -408,11 +408,11 @@ namespace
 
         std::array<uint8_t, kAesKeyLen> content_key {};
         std::array<uint8_t, kNonceLen> nonce {};
-        if (!hkdfSha256(ikm.data(), ikm.size(), salt.data(), salt.size(),
+        if (!hkdf_sha256(ikm.data(), ikm.size(), salt.data(), salt.size(),
                 reinterpret_cast<const uint8_t*>(key_info.data()), key_info.size(),
                 content_key.data(), content_key.size()))
             return {};
-        if (!hkdfSha256(ikm.data(), ikm.size(), salt.data(), salt.size(),
+        if (!hkdf_sha256(ikm.data(), ikm.size(), salt.data(), salt.size(),
                 reinterpret_cast<const uint8_t*>(nonce_info.data()), nonce_info.size(),
                 nonce.data(), nonce.size()))
             return {};
@@ -466,16 +466,16 @@ std::optional<PreparedRequest> prepareRequest(
     if (subscription.endpoint.empty() || vapid.public_key.empty() || vapid.private_key.empty())
         return std::nullopt;
 
-    const auto client_public = base64UrlDecode(subscription.p256dh);
-    const auto auth_secret = base64UrlDecode(subscription.auth);
-    const auto private_key_bytes = base64UrlDecode(vapid.private_key);
+    const auto client_public = base64_url_decode(subscription.p256dh);
+    const auto auth_secret = base64_url_decode(subscription.auth);
+    const auto private_key_bytes = base64_url_decode(vapid.private_key);
     if (client_public.empty() || auth_secret.empty() || private_key_bytes.empty())
     {
         LOG_ERROR("Invalid push subscription or VAPID key encoding");
         return std::nullopt;
     }
 
-    EVP_PKEY* private_key = importPrivateKeyP256(private_key_bytes);
+    EVP_PKEY* private_key = import_private_key_p256(private_key_bytes);
     if (!private_key)
     {
         LOG_ERROR("Failed to import VAPID private key");
@@ -489,7 +489,7 @@ std::optional<PreparedRequest> prepareRequest(
     const std::string payload_json = Json::writeString(Json::StreamWriterBuilder(), payload);
     const std::vector<uint8_t> plaintext(payload_json.begin(), payload_json.end());
 
-    const auto body = encryptPayload(plaintext, client_public, auth_secret);
+    const auto body = encrypt_payload(plaintext, client_public, auth_secret);
     if (body.empty())
     {
         EVP_PKEY_free(private_key);
@@ -497,8 +497,8 @@ std::optional<PreparedRequest> prepareRequest(
         return std::nullopt;
     }
 
-    const std::string audience = extractAudience(subscription.endpoint);
-    const std::string authorization = buildVapidAuthorization(audience, vapid, private_key);
+    const std::string audience = extract_audience(subscription.endpoint);
+    const std::string authorization = build_vapid_authorization(audience, vapid, private_key);
     EVP_PKEY_free(private_key);
     if (authorization.empty())
     {
@@ -509,7 +509,7 @@ std::optional<PreparedRequest> prepareRequest(
     const size_t id_len_offset = kSaltLen + 4;
     const uint8_t id_len = body[id_len_offset];
     const uint8_t* server_public = body.data() + id_len_offset + 1;
-    const std::string dh_header = base64UrlEncode(server_public, id_len);
+    const std::string dh_header = base64_url_encode(server_public, id_len);
 
     PreparedRequest request;
     request.endpoint = subscription.endpoint;

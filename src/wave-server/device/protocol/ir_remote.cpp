@@ -230,15 +230,15 @@ namespace
         switch (protocol) {
         case Payload::Protocol::Nec:
             if (entry.contains("repeat") && entry.at("repeat").get<bool>())
-                return Payload::repeatCode();
+                return Payload::repeat_code();
             if (entry.contains("data"))
                 return Payload(read_json_uint8(entry.at("code")), read_json_uint8(entry.at("data")));
             return Payload(read_json_uint8(entry.at("code")));
         case Payload::Protocol::LgAc:
-            return Payload::fromRaw28(read_json_uint32(entry.at("value")));
+            return Payload::from_raw28(read_json_uint32(entry.at("value")));
         case Payload::Protocol::Raw: {
             const uint8_t bits = read_json_uint8(entry.at("bits"));
-            return Payload::fromRawBits(bits, read_json_uint32(entry.at("value")));
+            return Payload::from_raw_bits(bits, read_json_uint32(entry.at("value")));
         }
         default:
             return {};
@@ -248,7 +248,7 @@ namespace
     ws::json payload_to_json(const Payload& payload)
     {
         ws::json entry = ws::json::object();
-        entry["protocol"] = Payload::protocolToString(payload.protocol());
+        entry["protocol"] = Payload::protocol_to_string(payload.protocol());
 
         switch (payload.kind()) {
         case Payload::Kind::NecCodeOnly:
@@ -265,7 +265,7 @@ namespace
             entry["value"] = payload.raw28();
             break;
         default:
-            if (Payload::isRawKind(payload.kind())) {
+            if (Payload::is_raw_kind(payload.kind())) {
                 entry["bits"] = payload.bitCount();
                 entry["value"] = payload.rawBits();
             }
@@ -308,7 +308,7 @@ const char* to_string(Result result)
     return "UNKNOWN";
 }
 
-uint32_t Payload::maskBits(uint32_t value, uint8_t bitCount)
+uint32_t Payload::mask_bits(uint32_t value, uint8_t bitCount)
 {
     if (bitCount >= 32)
         return value;
@@ -317,7 +317,7 @@ uint32_t Payload::maskBits(uint32_t value, uint8_t bitCount)
     return value & ((1U << bitCount) - 1U);
 }
 
-Payload Payload::repeatCode()
+Payload Payload::repeat_code()
 {
     Payload payload;
     payload.m_kind = Kind::Repeat;
@@ -325,32 +325,32 @@ Payload Payload::repeatCode()
     return payload;
 }
 
-Payload Payload::fromRaw28(uint32_t raw28)
+Payload Payload::from_raw28(uint32_t raw28)
 {
     Payload payload;
     payload.m_kind = Kind::LgAc28;
-    payload.m_value = maskBits(raw28, 28);
+    payload.m_value = mask_bits(raw28, 28);
     return payload;
 }
 
-Payload Payload::fromRawBits(uint8_t bitCount, uint32_t bits)
+Payload Payload::from_raw_bits(uint8_t bitCount, uint32_t bits)
 {
     Payload payload;
     if (bitCount < 1 || bitCount > kMaxRawBits)
         return payload;
 
     payload.m_kind = static_cast<Kind>(bitCount);
-    payload.m_value = maskBits(bits, bitCount);
+    payload.m_value = mask_bits(bits, bitCount);
     return payload;
 }
 
-bool Payload::isRawKind(Kind kind)
+bool Payload::is_raw_kind(Kind kind)
 {
     const uint8_t value = static_cast<uint8_t>(kind);
     return value >= 1 && value <= kMaxRawBits;
 }
 
-const char* Payload::kindToString(Kind kind)
+const char* Payload::kind_to_string(Kind kind)
 {
     switch (kind) {
     case Kind::Empty:
@@ -367,7 +367,7 @@ const char* Payload::kindToString(Kind kind)
         break;
     }
 
-    if (isRawKind(kind)) {
+    if (is_raw_kind(kind)) {
         static thread_local char buffer[8];
         std::snprintf(buffer, sizeof(buffer), "Raw%u", static_cast<uint8_t>(kind));
         return buffer;
@@ -376,7 +376,7 @@ const char* Payload::kindToString(Kind kind)
     return "Unknown";
 }
 
-const char* Payload::protocolToString(Protocol protocol)
+const char* Payload::protocol_to_string(Protocol protocol)
 {
     switch (protocol) {
     case Protocol::None:
@@ -438,7 +438,7 @@ Payload::Protocol Payload::protocol() const
         break;
     }
 
-    if (isRawKind(m_kind))
+    if (is_raw_kind(m_kind))
         return Protocol::Raw;
 
     return Protocol::None;
@@ -461,14 +461,14 @@ uint8_t Payload::data() const
 
 uint32_t Payload::rawBits() const
 {
-    if (isRawKind(m_kind) || m_kind == Kind::LgAc28)
-        return maskBits(m_value, bitCount());
+    if (is_raw_kind(m_kind) || m_kind == Kind::LgAc28)
+        return mask_bits(m_value, bitCount());
     return m_value;
 }
 
 uint32_t Payload::raw28() const
 {
-    return maskBits(m_value, 28);
+    return mask_bits(m_value, 28);
 }
 
 uint32_t Payload::necWire32() const
@@ -493,7 +493,7 @@ bool Payload::isLgAc() const
 
 bool Payload::isRaw() const
 {
-    return isRawKind(m_kind);
+    return is_raw_kind(m_kind);
 }
 
 bool Payload::valid() const
@@ -512,7 +512,7 @@ bool Payload::matches(const Payload& other) const
     if (m_kind == Kind::LgAc28 && other.m_kind == Kind::LgAc28)
         return raw28() == other.raw28();
 
-    if (isRawKind(m_kind) && m_kind == other.m_kind)
+    if (is_raw_kind(m_kind) && m_kind == other.m_kind)
         return rawBits() == other.rawBits();
 
     return *this == other;
@@ -662,7 +662,7 @@ Result Transmitter::send(const Payload& payload) const
     if (!payload.valid() || payload.kind() == Payload::Kind::Empty)
         return Result::ERROR_INVALID_FORMAT;
 
-    if (payload.kind() == Payload::Kind::LgAc28 || Payload::isRawKind(payload.kind())) {
+    if (payload.kind() == Payload::Kind::LgAc28 || Payload::is_raw_kind(payload.kind())) {
         const ProtocolTimings& timings =
             payload.kind() == Payload::Kind::LgAc28 ? kLgAcTimings : kNecTimings;
         const uint8_t bitCount = payload.bitCount();
@@ -919,7 +919,7 @@ bool Receiver::tryParseFrame(Payload& out_payload, size_t& consumed) const
             continue;
         }
 
-        out_payload = Payload::repeatCode();
+        out_payload = Payload::repeat_code();
         if (start + 4 <= m_buffer.size() && in_range(m_buffer[start + 3], kNecTimings.bitMark))
             consumed = start + 4;
         else
@@ -971,12 +971,12 @@ bool Receiver::tryParseFrame(Payload& out_payload, size_t& consumed) const
                 else
                     out_payload = Payload(code, data);
             } else {
-                out_payload = Payload::fromRawBits(32, payloadBits);
+                out_payload = Payload::from_raw_bits(32, payloadBits);
             }
         } else if (bitsParsed == 28) {
-            out_payload = Payload::fromRaw28(payloadBits);
+            out_payload = Payload::from_raw28(payloadBits);
         } else {
-            out_payload = Payload::fromRawBits(static_cast<uint8_t>(bitsParsed), payloadBits);
+            out_payload = Payload::from_raw_bits(static_cast<uint8_t>(bitsParsed), payloadBits);
         }
 
         consumed = idx + 1;

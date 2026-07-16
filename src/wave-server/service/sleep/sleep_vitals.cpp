@@ -10,7 +10,7 @@ namespace
 {
     constexpr float kHumanIdMax = 254.0f;
 
-    float powerWeightedCentroid(
+    float power_weighted_centroid(
         const dev::RadarPointCloud& frame,
         float& out_x,
         float& out_y,
@@ -48,7 +48,7 @@ namespace
         return static_cast<float>(weight_sum);
     }
 
-    VitalTarget xyzToSpherical(float x, float y, float z)
+    VitalTarget xyz_to_spherical(float x, float y, float z)
     {
         VitalTarget target;
         const float range = std::sqrt(x * x + y * y + z * z);
@@ -68,14 +68,14 @@ void VitalTargetPicker::update(const dev::RadarPointCloud& frame)
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
-    const float weight = powerWeightedCentroid(frame, x, y, z);
+    const float weight = power_weighted_centroid(frame, x, y, z);
     if (weight <= 0.0f)
     {
         m_target.valid = false;
         return;
     }
 
-    const VitalTarget measured = xyzToSpherical(x, y, z);
+    const VitalTarget measured = xyz_to_spherical(x, y, z);
     if (!m_target.valid)
     {
         m_target = measured;

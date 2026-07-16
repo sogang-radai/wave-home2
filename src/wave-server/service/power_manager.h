@@ -76,8 +76,8 @@ private:
     void flushBucket(const std::string& bucket_key, EnergyBucket& bucket, std::optional<int64_t> db_device_id);
     void flushDueBuckets(int64_t now_ms);
     std::optional<int64_t> resolveDbDeviceId(const std::string& external_id);
-    static std::string bucketTimeStart(int64_t ts_ms);
-    static void trimHistory(std::deque<PowerSample>& history);
+    static std::string bucket_time_start(int64_t ts_ms);
+    static void trim_history(std::deque<PowerSample>& history);
 
     mutable std::mutex m_mutex;
     std::unordered_map<std::string, PlugReading> m_latest;

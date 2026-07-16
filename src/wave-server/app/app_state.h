@@ -14,7 +14,6 @@
 #include "../device/device_manager.h"
 #include "../web/server.h"
 #include "app_config.h"
-#include "app_setting.h"
 #include "launch_options.h"
 #include "../db/database.h"
 #include "../service/action_queue.h"
@@ -88,7 +87,7 @@ public:
     void shutdown();
 
 private:
-    static std::string isoNowKst();
+    static std::string iso_now_kst();
 
     AppState& m_app;
 
@@ -140,7 +139,6 @@ public:
     bool no_devices = false;
     std::string anchor_date;
     AppConfig config;
-    AppSetting settings;
     std::filesystem::path config_dir;
 
     // Network

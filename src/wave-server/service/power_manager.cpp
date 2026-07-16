@@ -36,7 +36,7 @@ namespace
             && value["code"].get<int>() < 0;
     }
 
-    std::vector<std::string> listPlugExternalIds(const dev::DeviceManager& devices)
+    std::vector<std::string> list_plug_external_ids(const dev::DeviceManager& devices)
     {
         std::vector<std::string> ids;
         for (const auto& entry : devices.manifestEntries())
@@ -119,7 +119,7 @@ void PowerManager::sampleAllPlugs()
     if (!m_running.load(std::memory_order_acquire))
         return;
 
-    const auto plug_ids = listPlugExternalIds(AppState::get().deviceManager);
+    const auto plug_ids = list_plug_external_ids(AppState::get().deviceManager);
     if (plug_ids.empty())
         return;
 
@@ -159,7 +159,7 @@ void PowerManager::maybeGenerateHourlyReport()
     if (previous_hour.empty())
         return; // 서버가 막 떴을 때: 아직 "방금 끝난 시간"이 없다. 다음 시(時) 경계부터 생성.
 
-    web::v1::PowerStore::ensureHourlyReport(client, previous_hour + ":00:00");
+    web::v1::PowerStore::ensure_hourly_report(client, previous_hour + ":00:00");
 }
 
 void PowerManager::samplePlug(const std::string& external_id)
@@ -214,14 +214,14 @@ void PowerManager::storeSample(const std::string& external_id, const PlugReading
         auto& history = m_history[external_id];
         if (history.empty() || history.back().ts_ms != sample.ts_ms)
             history.push_back(sample);
-        trimHistory(history);
+        trim_history(history);
     }
 
     if (reading.connected)
         accumulateEnergy(external_id, reading);
 }
 
-std::string PowerManager::bucketTimeStart(int64_t ts_ms)
+std::string PowerManager::bucket_time_start(int64_t ts_ms)
 {
     const auto tp = std::chrono::system_clock::time_point(std::chrono::milliseconds(ts_ms));
     const auto local = formatTimestamp(tp);
@@ -242,7 +242,7 @@ std::string PowerManager::bucketTimeStart(int64_t ts_ms)
 
 void PowerManager::accumulateEnergy(const std::string& external_id, const PlugReading& reading)
 {
-    const std::string bucket_key = bucketTimeStart(reading.ts_ms);
+    const std::string bucket_key = bucket_time_start(reading.ts_ms);
     std::optional<EnergyBucket> due_bucket;
     std::string due_key;
 
@@ -281,7 +281,7 @@ void PowerManager::accumulateEnergy(const std::string& external_id, const PlugRe
 
 void PowerManager::flushDueBuckets(int64_t now_ms)
 {
-    const std::string current_bucket = bucketTimeStart(now_ms);
+    const std::string current_bucket = bucket_time_start(now_ms);
     std::vector<std::pair<std::string, EnergyBucket>> due;
 
     {
@@ -416,7 +416,7 @@ ON CONFLICT DO UPDATE SET
     }
 }
 
-void PowerManager::trimHistory(std::deque<PowerSample>& history)
+void PowerManager::trim_history(std::deque<PowerSample>& history)
 {
     while (history.size() > 3700)
         history.pop_front();
@@ -467,7 +467,7 @@ std::deque<PowerSample> PowerManager::getMergedHistory() const
     {
         return a.ts_ms < b.ts_ms;
     });
-    trimHistory(merged);
+    trim_history(merged);
     return merged;
 }
 

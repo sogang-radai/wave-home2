@@ -19,14 +19,14 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
         return settings.resolveActiveUserId(sessions, req);
     }
 
-    std::optional<bool> parseOptionalBool(const std::string& value)
+    std::optional<bool> parse_optional_bool(const std::string& value)
     {
         if (value.empty())
             return std::nullopt;
@@ -37,7 +37,7 @@ namespace
         return std::nullopt;
     }
 
-    ws::json jsonFromRequest(const Json::Value& value)
+    ws::json json_from_request(const Json::Value& value)
     {
         Json::StreamWriterBuilder builder;
         builder["indentation"] = "";
@@ -57,7 +57,7 @@ void InsightsController::listInsights(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -67,8 +67,8 @@ void InsightsController::listInsights(
     const auto surface = req->getParameter("surface");
     const auto date = req->getParameter("date");
     const auto kind = req->getParameter("kind");
-    const auto approved = parseOptionalBool(req->getParameter("approved"));
-    const auto actionable = parseOptionalBool(req->getParameter("actionable"));
+    const auto approved = parse_optional_bool(req->getParameter("approved"));
+    const auto actionable = parse_optional_bool(req->getParameter("actionable"));
 
     InsightsStore store(client);
     callback(drogon::HttpResponse::newHttpJsonResponse(store.list(
@@ -92,7 +92,7 @@ void InsightsController::getInsight(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -122,7 +122,7 @@ void InsightsController::applyInsight(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -201,7 +201,7 @@ void InsightsController::applyInsight(
         ws::json payload;
         try
         {
-            payload = jsonFromRequest(rule_json);
+            payload = json_from_request(rule_json);
         }
         catch (...)
         {
@@ -210,7 +210,7 @@ void InsightsController::applyInsight(
         }
 
         std::string validate_error;
-        if (!service::RuleStore::validatePayload(payload, validate_error))
+        if (!service::RuleStore::validate_payload(payload, validate_error))
         {
             respondError(callback, 400, "INVALID_INSIGHT", validate_error);
             return;
@@ -262,7 +262,7 @@ void InsightsController::updateInsight(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -337,7 +337,7 @@ void InsightsController::generateInsights(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");

@@ -20,14 +20,14 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
         return settings.resolveActiveUserId(sessions, req);
     }
 
-    ws::json jsonFromRequest(const Json::Value& value)
+    ws::json json_from_request(const Json::Value& value)
     {
         Json::StreamWriterBuilder builder;
         builder["indentation"] = "";
@@ -47,7 +47,7 @@ void GoalsController::createGoal(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -91,7 +91,7 @@ void GoalsController::listGoals(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -116,7 +116,7 @@ void GoalsController::updateGoal(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -155,7 +155,7 @@ void GoalsController::getCoaching(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -170,7 +170,7 @@ void GoalsController::getCoaching(
         return;
     }
 
-    const auto date = InsightsStore::referenceDate(client);
+    const auto date = InsightsStore::reference_date(client);
 
     if (const auto cached = service::readCachedGoalCoaching(client, goalId, date))
     {
@@ -210,7 +210,7 @@ void GoalsController::applyRecommendation(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -302,7 +302,7 @@ void GoalsController::applyRecommendation(
         ws::json payload;
         try
         {
-            payload = jsonFromRequest(rule_json);
+            payload = json_from_request(rule_json);
         }
         catch (...)
         {
@@ -311,7 +311,7 @@ void GoalsController::applyRecommendation(
         }
 
         std::string validate_error;
-        if (!service::RuleStore::validatePayload(payload, validate_error))
+        if (!service::RuleStore::validate_payload(payload, validate_error))
         {
             respondError(callback, 400, "INVALID_RECOMMENDATION", validate_error);
             return;
@@ -363,7 +363,7 @@ void GoalsController::updateRecommendation(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");

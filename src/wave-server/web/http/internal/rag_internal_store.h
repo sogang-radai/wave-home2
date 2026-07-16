@@ -49,16 +49,13 @@ private:
     Json::Value searchSleepStat(const Json::Value& target, const std::vector<float>* query_embedding) const;
     Json::Value searchSleepReport(const Json::Value& target, const std::vector<float>* query_embedding) const;
     Json::Value searchPowerReport(const Json::Value& target, const std::vector<float>* query_embedding) const;
-    Json::Value searchInsightSurface(
-        const Json::Value& target,
-        const std::string& collection,
-        const std::string& surface) const;
+    Json::Value searchInsightSurface(const Json::Value& target, const std::string& collection, const std::string& surface) const;
     Json::Value searchPostureReport(const Json::Value& target) const;
     Json::Value searchWeeklyPlanReport(const Json::Value& target) const;
 
-    static std::optional<int64_t> targetInt(const Json::Value& target, const char* key);
-    static std::optional<std::string> targetString(const Json::Value& target, const char* key);
-    static int targetTopK(const Json::Value& target);
+    static std::optional<int64_t> target_int(const Json::Value& target, const char* key);
+    static std::optional<std::string> target_string(const Json::Value& target, const char* key);
+    static int target_top_k(const Json::Value& target);
 };
 
 } // namespace internal

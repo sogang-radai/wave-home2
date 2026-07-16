@@ -61,16 +61,16 @@ struct LogItem
 class Logger
 {
 public:
-    static void setQueueSize(size_t size = 1024);
-    static void addItem(const LogItem& item);
+    static void set_queue_size(size_t size = 1024);
+    static void add_item(const LogItem& item);
 
-    static void enumerateItems(std::function<void(const LogItem& item)> callback);
-    static void enumerateItems(
+    static void enumerate_items(std::function<void(const LogItem& item)> callback);
+    static void enumerate_items(
         log_time_t start,
         log_time_t end,
         std::function<void(const LogItem& item)> callback);
 
-    static void setOutputFunction(std::function<void(const LogItem& item)> outputFunction);
+    static void set_output_function(std::function<void(const LogItem& item)> outputFunction);
 
     static void log(
         LogLevel level,

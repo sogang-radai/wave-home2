@@ -39,8 +39,8 @@ private:
     Json::Value rowToJson(const drogon::orm::Row& row) const;
     std::optional<int64_t> resolveInternalDeviceId(const std::string& external_id) const;
     std::string externalDeviceId(int64_t internal_id) const;
-    static std::string nowStamp();
-    static bool validatePayload(const Json::Value& body, bool partial, std::string& error, std::string& field);
+    static std::string now_stamp();
+    static bool validate_payload(const Json::Value& body, bool partial, std::string& error, std::string& field);
 };
 
 } // namespace internal

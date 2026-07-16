@@ -18,7 +18,7 @@ class InsightsStore
 public:
     explicit InsightsStore(db::DbClientPtr client);
 
-    static std::string referenceDate(db::DbClientPtr client);
+    static std::string reference_date(db::DbClientPtr client);
 
     Json::Value list(
         int64_t user_id,
@@ -43,7 +43,7 @@ private:
     db::DbClientPtr m_client;
 
     Json::Value rowToJson(const drogon::orm::Row& row) const;
-    static Json::Value parseJsonColumn(const drogon::orm::Field& field);
+    static Json::Value parse_json_column(const drogon::orm::Field& field);
 };
 
 } // namespace v1

@@ -11,7 +11,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    Json::Value accountJson(const AccountView& account)
+    Json::Value account_json(const AccountView& account)
     {
         Json::Value body;
         body["id"] = static_cast<Json::Int64>(account.id);
@@ -34,7 +34,7 @@ void AccountsController::listAccounts(
     SessionStore store(state.db());
     Json::Value body(Json::arrayValue);
     for (const auto& account : store.listAccounts())
-        body.append(accountJson(account));
+        body.append(account_json(account));
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
@@ -66,7 +66,7 @@ void AccountsController::createAccount(
         return;
     }
 
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(accountJson(*account));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(account_json(*account));
     resp->setStatusCode(drogon::k201Created);
     callback(resp);
 }
@@ -102,7 +102,7 @@ void AccountsController::updateAccount(
         return;
     }
 
-    callback(drogon::HttpResponse::newHttpJsonResponse(accountJson(*account)));
+    callback(drogon::HttpResponse::newHttpJsonResponse(account_json(*account)));
 }
 
 void AccountsController::deleteAccount(

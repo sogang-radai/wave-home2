@@ -55,13 +55,13 @@ public:
         LgAc28 = 36,
     };
 
-    static Payload repeatCode();
-    static Payload fromRaw28(uint32_t raw28);
-    static Payload fromRawBits(uint8_t bitCount, uint32_t bits);
+    static Payload repeat_code();
+    static Payload from_raw28(uint32_t raw28);
+    static Payload from_raw_bits(uint8_t bitCount, uint32_t bits);
 
-    static bool isRawKind(Kind kind);
-    static const char* kindToString(Kind kind);
-    static const char* protocolToString(Protocol protocol);
+    static bool is_raw_kind(Kind kind);
+    static const char* kind_to_string(Kind kind);
+    static const char* protocol_to_string(Protocol protocol);
 
     Payload();
     Payload(uint8_t code);
@@ -90,7 +90,7 @@ public:
     bool operator!=(const Payload& other) const;
 
 private:
-    static uint32_t maskBits(uint32_t value, uint8_t bitCount);
+    static uint32_t mask_bits(uint32_t value, uint8_t bitCount);
 
     Kind m_kind = Kind::Empty;
     uint32_t m_value = 0;

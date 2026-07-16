@@ -13,7 +13,7 @@ namespace web {
 namespace v1 {
 namespace
 {
-    std::string trimCopy(const std::string& value)
+    std::string trim_copy(const std::string& value)
     {
         const auto start = value.find_first_not_of(" \t\n\r");
         if (start == std::string::npos)
@@ -79,7 +79,7 @@ std::optional<RoomView> RoomsStore::createRoom(
     std::string& error,
     std::string& field)
 {
-    const auto room_name = trimCopy(name);
+    const auto room_name = trim_copy(name);
     if (room_name.empty())
     {
         error = "방 이름을 입력해주세요.";
@@ -87,7 +87,7 @@ std::optional<RoomView> RoomsStore::createRoom(
         return std::nullopt;
     }
 
-    const auto desc = trimCopy(description).empty() ? room_name : trimCopy(description);
+    const auto desc = trim_copy(description).empty() ? room_name : trim_copy(description);
     const auto id = nextRoomId();
     try
     {
@@ -134,7 +134,7 @@ std::optional<RoomView> RoomsStore::updateRoom(
             field = "name";
             return std::nullopt;
         }
-        next_name = trimCopy(body["name"].asString());
+        next_name = trim_copy(body["name"].asString());
         if (next_name.empty())
         {
             error = "방 이름을 입력해주세요.";
@@ -147,7 +147,7 @@ std::optional<RoomView> RoomsStore::updateRoom(
         if (!body["description"].isString())
             next_desc = next_name;
         else
-            next_desc = trimCopy(body["description"].asString()).empty() ? next_name : trimCopy(body["description"].asString());
+            next_desc = trim_copy(body["description"].asString()).empty() ? next_name : trim_copy(body["description"].asString());
     }
 
     m_client->execSqlSync(

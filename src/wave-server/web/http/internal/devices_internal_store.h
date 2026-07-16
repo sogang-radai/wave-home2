@@ -81,7 +81,7 @@ public:
         std::string& code,
         const std::optional<std::string>& demo_runtime_id = std::nullopt) const;
 
-    static std::optional<std::string> resolveWireDeviceId(
+    static std::optional<std::string> resolve_wire_device_id(
         const db::DbClientPtr& client,
         const std::string& device_id_param);
 
@@ -94,12 +94,12 @@ private:
         const std::optional<std::string>& demo_runtime_id = std::nullopt) const;
     std::string externalIdFromDb(int64_t device_row_id) const;
     std::optional<int64_t> internalIdFromExternal(const std::string& external_id) const;
-    static bool nameMatches(const std::string& haystack, const std::string& needle);
-    static bool deviceQueryMatches(
+    static bool name_matches(const std::string& haystack, const std::string& needle);
+    static bool device_query_matches(
         const std::string& name,
         const std::string& description,
         const std::string& needle);
-    static std::string makeEventId();
+    static std::string make_event_id();
 };
 
 } // namespace internal

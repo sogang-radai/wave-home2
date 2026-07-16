@@ -23,7 +23,7 @@ namespace
 {
     constexpr double kEmbedTimeoutSeconds = 60.0;
 
-    std::string packEmbedding(const std::vector<float>& values)
+    std::string pack_embedding(const std::vector<float>& values)
     {
         // sqlite-vec MATCH accepts JSON arrays; Drogon binds std::string as
         // TEXT, so a float32 blob would be mis-parsed as JSON.
@@ -39,7 +39,7 @@ namespace
         return stream.str();
     }
 
-    Json::Value makeHit(int64_t ref_id, double score, const std::string& text)
+    Json::Value make_hit(int64_t ref_id, double score, const std::string& text)
     {
         Json::Value hit;
         hit["refId"] = static_cast<Json::Int64>(ref_id);
@@ -48,7 +48,7 @@ namespace
         return hit;
     }
 
-    std::string joinInsightText(const drogon::orm::Row& row)
+    std::string join_insight_text(const drogon::orm::Row& row)
     {
         const std::string title = row["title"].as<std::string>();
         if (row["text"].isNull())
@@ -56,7 +56,7 @@ namespace
         return title + "\n" + row["text"].as<std::string>();
     }
 
-    std::string sqlEscape(std::string_view value)
+    std::string sql_escape(std::string_view value)
     {
         std::string out;
         out.reserve(value.size());
@@ -116,7 +116,7 @@ Json::Value RagInternalStore::search(const Json::Value& request, std::string& er
     for (const auto& target : request["targets"])
     {
         Json::Value resolved = target;
-        if (AppState::get().demo_mode && !targetInt(target, "userId"))
+        if (AppState::get().demo_mode && !target_int(target, "userId"))
         {
             const bool has_device = target.isMember("deviceId") && !target["deviceId"].isNull();
             if (!has_device && target.isMember("collection") && target["collection"].isString())
@@ -252,7 +252,7 @@ bool RagInternalStore::tableExists(const std::string& name) const
     }
 }
 
-std::optional<int64_t> RagInternalStore::targetInt(const Json::Value& target, const char* key)
+std::optional<int64_t> RagInternalStore::target_int(const Json::Value& target, const char* key)
 {
     if (!target.isMember(key))
         return std::nullopt;
@@ -266,14 +266,14 @@ std::optional<int64_t> RagInternalStore::targetInt(const Json::Value& target, co
     return std::nullopt;
 }
 
-std::optional<std::string> RagInternalStore::targetString(const Json::Value& target, const char* key)
+std::optional<std::string> RagInternalStore::target_string(const Json::Value& target, const char* key)
 {
     if (!target.isMember(key) || !target[key].isString())
         return std::nullopt;
     return target[key].asString();
 }
 
-int RagInternalStore::targetTopK(const Json::Value& target)
+int RagInternalStore::target_top_k(const Json::Value& target)
 {
     int top_k = 3;
     if (target.isMember("topK") && target["topK"].isInt())
@@ -295,7 +295,7 @@ Json::Value RagInternalStore::searchVecTable(
 
     try
     {
-        const std::string blob = packEmbedding(query_embedding);
+        const std::string blob = pack_embedding(query_embedding);
         std::ostringstream sql;
         sql << "SELECT " << id_column << ", distance "
             << "FROM " << vec_table << " "
@@ -330,14 +330,14 @@ Json::Value RagInternalStore::searchSleepStat(
     entry["collection"] = "sleep_stat";
     Json::Value hits(Json::arrayValue);
 
-    const auto user_id = targetInt(target, "userId");
+    const auto user_id = target_int(target, "userId");
     if (!user_id)
     {
         entry["hits"] = hits;
         return entry;
     }
 
-    const int top_k = targetTopK(target);
+    const int top_k = target_top_k(target);
 
     if (query_embedding && tableExists("vec_sleep_stat"))
     {
@@ -377,16 +377,16 @@ Json::Value RagInternalStore::searchSleepStat(
     std::ostringstream sql;
     sql << "SELECT id, summary_text FROM sleep_stat WHERE user_id = " << *user_id
         << " AND granularity = '30m' AND summary_text IS NOT NULL AND summary_text != ''";
-    if (const auto from = targetString(target, "from"))
-        sql << " AND time_start >= '" << sqlEscape(*from) << "'";
-    if (const auto to = targetString(target, "to"))
-        sql << " AND time_start < '" << sqlEscape(*to) << "'";
+    if (const auto from = target_string(target, "from"))
+        sql << " AND time_start >= '" << sql_escape(*from) << "'";
+    if (const auto to = target_string(target, "to"))
+        sql << " AND time_start < '" << sql_escape(*to) << "'";
     sql << " ORDER BY time_start DESC LIMIT " << top_k;
 
     try
     {
         for (const auto& row : m_client->execSqlSync(sql.str()))
-            hits.append(makeHit(row["id"].as<int64_t>(), 0.5, row["summary_text"].as<std::string>()));
+            hits.append(make_hit(row["id"].as<int64_t>(), 0.5, row["summary_text"].as<std::string>()));
     }
     catch (const std::exception& e)
     {
@@ -405,14 +405,14 @@ Json::Value RagInternalStore::searchSleepReport(
     entry["collection"] = "sleep_report";
     Json::Value hits(Json::arrayValue);
 
-    const auto user_id = targetInt(target, "userId");
+    const auto user_id = target_int(target, "userId");
     if (!user_id)
     {
         entry["hits"] = hits;
         return entry;
     }
 
-    const int top_k = targetTopK(target);
+    const int top_k = target_top_k(target);
 
     if (query_embedding && tableExists("vec_sleep_report"))
     {
@@ -450,18 +450,18 @@ Json::Value RagInternalStore::searchSleepReport(
     std::ostringstream sql;
     sql << "SELECT id, report_text FROM sleep_report WHERE user_id = " << *user_id
         << " AND report_text IS NOT NULL AND report_text != ''";
-    if (const auto period = targetString(target, "period"))
-        sql << " AND period = '" << sqlEscape(*period) << "'";
-    if (const auto from = targetString(target, "from"))
-        sql << " AND period_start >= '" << sqlEscape(*from) << "'";
-    if (const auto to = targetString(target, "to"))
-        sql << " AND period_start < '" << sqlEscape(*to) << "'";
+    if (const auto period = target_string(target, "period"))
+        sql << " AND period = '" << sql_escape(*period) << "'";
+    if (const auto from = target_string(target, "from"))
+        sql << " AND period_start >= '" << sql_escape(*from) << "'";
+    if (const auto to = target_string(target, "to"))
+        sql << " AND period_start < '" << sql_escape(*to) << "'";
     sql << " ORDER BY period_start DESC LIMIT " << top_k;
 
     try
     {
         for (const auto& row : m_client->execSqlSync(sql.str()))
-            hits.append(makeHit(row["id"].as<int64_t>(), 0.5, row["report_text"].as<std::string>()));
+            hits.append(make_hit(row["id"].as<int64_t>(), 0.5, row["report_text"].as<std::string>()));
     }
     catch (const std::exception& e)
     {
@@ -480,7 +480,7 @@ Json::Value RagInternalStore::searchPowerReport(
     entry["collection"] = "power_report";
     Json::Value hits(Json::arrayValue);
 
-    const int top_k = targetTopK(target);
+    const int top_k = target_top_k(target);
 
     if (query_embedding && tableExists("vec_power_report"))
     {
@@ -520,28 +520,28 @@ Json::Value RagInternalStore::searchPowerReport(
 
     if (target.isMember("deviceId") && !target["deviceId"].isNull())
     {
-        if (const auto device_id = targetInt(target, "deviceId"))
+        if (const auto device_id = target_int(target, "deviceId"))
             sql << " AND device_id = " << *device_id;
         else
             sql << " AND device_id IS NULL";
     }
-    else if (const auto user_id = targetInt(target, "userId"))
+    else if (const auto user_id = target_int(target, "userId"))
     {
         sql << " AND device_id IN (SELECT device_id FROM device_user_map WHERE user_id = " << *user_id << ")";
     }
 
-    if (const auto period = targetString(target, "period"))
-        sql << " AND period = '" << sqlEscape(*period) << "'";
-    if (const auto from = targetString(target, "from"))
-        sql << " AND period_start >= '" << sqlEscape(*from) << "'";
-    if (const auto to = targetString(target, "to"))
-        sql << " AND period_start < '" << sqlEscape(*to) << "'";
+    if (const auto period = target_string(target, "period"))
+        sql << " AND period = '" << sql_escape(*period) << "'";
+    if (const auto from = target_string(target, "from"))
+        sql << " AND period_start >= '" << sql_escape(*from) << "'";
+    if (const auto to = target_string(target, "to"))
+        sql << " AND period_start < '" << sql_escape(*to) << "'";
     sql << " ORDER BY period_start DESC LIMIT " << top_k;
 
     try
     {
         for (const auto& row : m_client->execSqlSync(sql.str()))
-            hits.append(makeHit(row["id"].as<int64_t>(), 0.5, row["report_text"].as<std::string>()));
+            hits.append(make_hit(row["id"].as<int64_t>(), 0.5, row["report_text"].as<std::string>()));
     }
     catch (const std::exception& e)
     {
@@ -561,29 +561,29 @@ Json::Value RagInternalStore::searchInsightSurface(
     entry["collection"] = collection;
     Json::Value hits(Json::arrayValue);
 
-    const auto user_id = targetInt(target, "userId");
+    const auto user_id = target_int(target, "userId");
     if (!user_id || !tableExists("insight"))
     {
         entry["hits"] = hits;
         return entry;
     }
 
-    const int top_k = targetTopK(target);
+    const int top_k = target_top_k(target);
     std::ostringstream sql;
     sql << "SELECT id, title, text FROM insight WHERE user_id = " << *user_id
-        << " AND surface = '" << sqlEscape(surface) << "'";
-    if (const auto date = targetString(target, "date"))
-        sql << " AND date = '" << sqlEscape(*date) << "'";
-    if (const auto from = targetString(target, "from"))
-        sql << " AND date >= '" << sqlEscape(*from) << "'";
-    if (const auto to = targetString(target, "to"))
-        sql << " AND date < '" << sqlEscape(*to) << "'";
+        << " AND surface = '" << sql_escape(surface) << "'";
+    if (const auto date = target_string(target, "date"))
+        sql << " AND date = '" << sql_escape(*date) << "'";
+    if (const auto from = target_string(target, "from"))
+        sql << " AND date >= '" << sql_escape(*from) << "'";
+    if (const auto to = target_string(target, "to"))
+        sql << " AND date < '" << sql_escape(*to) << "'";
     sql << " ORDER BY date DESC, id DESC LIMIT " << top_k;
 
     try
     {
         for (const auto& row : m_client->execSqlSync(sql.str()))
-            hits.append(makeHit(row["id"].as<int64_t>(), 0.5, joinInsightText(row)));
+            hits.append(make_hit(row["id"].as<int64_t>(), 0.5, join_insight_text(row)));
     }
     catch (const std::exception& e)
     {
@@ -600,29 +600,29 @@ Json::Value RagInternalStore::searchPostureReport(const Json::Value& target) con
     entry["collection"] = "posture_report";
     Json::Value hits(Json::arrayValue);
 
-    const auto user_id = targetInt(target, "userId");
+    const auto user_id = target_int(target, "userId");
     if (!user_id || !tableExists("posture_report"))
     {
         entry["hits"] = hits;
         return entry;
     }
 
-    const int top_k = targetTopK(target);
+    const int top_k = target_top_k(target);
     std::ostringstream sql;
     sql << "SELECT id, report_text FROM posture_report WHERE user_id = " << *user_id
         << " AND report_text IS NOT NULL AND report_text != ''";
-    if (const auto period = targetString(target, "period"))
-        sql << " AND period = '" << sqlEscape(*period) << "'";
-    if (const auto from = targetString(target, "from"))
-        sql << " AND period_start >= '" << sqlEscape(*from) << "'";
-    if (const auto to = targetString(target, "to"))
-        sql << " AND period_start < '" << sqlEscape(*to) << "'";
+    if (const auto period = target_string(target, "period"))
+        sql << " AND period = '" << sql_escape(*period) << "'";
+    if (const auto from = target_string(target, "from"))
+        sql << " AND period_start >= '" << sql_escape(*from) << "'";
+    if (const auto to = target_string(target, "to"))
+        sql << " AND period_start < '" << sql_escape(*to) << "'";
     sql << " ORDER BY period_start DESC LIMIT " << top_k;
 
     try
     {
         for (const auto& row : m_client->execSqlSync(sql.str()))
-            hits.append(makeHit(row["id"].as<int64_t>(), 0.5, row["report_text"].as<std::string>()));
+            hits.append(make_hit(row["id"].as<int64_t>(), 0.5, row["report_text"].as<std::string>()));
     }
     catch (const std::exception& e)
     {
@@ -639,27 +639,27 @@ Json::Value RagInternalStore::searchWeeklyPlanReport(const Json::Value& target) 
     entry["collection"] = "weekly_plan_report";
     Json::Value hits(Json::arrayValue);
 
-    const auto user_id = targetInt(target, "userId");
+    const auto user_id = target_int(target, "userId");
     if (!user_id || !tableExists("weekly_plan_report"))
     {
         entry["hits"] = hits;
         return entry;
     }
 
-    const int top_k = targetTopK(target);
+    const int top_k = target_top_k(target);
     std::ostringstream sql;
     sql << "SELECT id, report_text FROM weekly_plan_report WHERE user_id = " << *user_id
         << " AND report_text IS NOT NULL AND report_text != ''";
-    if (const auto from = targetString(target, "from"))
-        sql << " AND period_start >= '" << sqlEscape(*from) << "'";
-    if (const auto to = targetString(target, "to"))
-        sql << " AND period_start < '" << sqlEscape(*to) << "'";
+    if (const auto from = target_string(target, "from"))
+        sql << " AND period_start >= '" << sql_escape(*from) << "'";
+    if (const auto to = target_string(target, "to"))
+        sql << " AND period_start < '" << sql_escape(*to) << "'";
     sql << " ORDER BY period_start DESC LIMIT " << top_k;
 
     try
     {
         for (const auto& row : m_client->execSqlSync(sql.str()))
-            hits.append(makeHit(row["id"].as<int64_t>(), 0.5, row["report_text"].as<std::string>()));
+            hits.append(make_hit(row["id"].as<int64_t>(), 0.5, row["report_text"].as<std::string>()));
     }
     catch (const std::exception& e)
     {

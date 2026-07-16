@@ -15,7 +15,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    drogon::HttpResponsePtr demoResponse(
+    drogon::HttpResponsePtr demo_response(
         const drogon::HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id)
@@ -25,7 +25,7 @@ namespace
         return resp;
     }
 
-    int parsePositiveInt(const std::string& raw, int fallback)
+    int parse_positive_int(const std::string& raw, int fallback)
     {
         if (raw.empty())
             return fallback;
@@ -36,7 +36,7 @@ namespace
         return static_cast<int>(value);
     }
 
-    int64_t parseInt64Param(const std::string& raw)
+    int64_t parse_int64_param(const std::string& raw)
     {
         if (raw.empty())
             return 0;
@@ -68,13 +68,13 @@ void NotificationsController::listNotifications(
         return;
     }
 
-    const int limit = parsePositiveInt(req->getParameter("limit"), 20);
-    const int64_t before_id = parseInt64Param(req->getParameter("beforeId"));
+    const int limit = parse_positive_int(req->getParameter("limit"), 20);
+    const int64_t before_id = parse_int64_param(req->getParameter("beforeId"));
 
     if (demoVirtualDevicesEnabled())
     {
         const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        callback(demoResponse(
+        callback(demo_response(
             req,
             demoListNotifications(runtime_id, *user_id, state.db(), limit, before_id),
             runtime_id));
@@ -108,7 +108,7 @@ void NotificationsController::markAllRead(
     if (demoVirtualDevicesEnabled())
     {
         const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        callback(demoResponse(
+        callback(demo_response(
             req,
             demoMarkAllNotificationsRead(runtime_id, *user_id, state.db()),
             runtime_id));
@@ -140,7 +140,7 @@ void NotificationsController::markRead(
         return;
     }
 
-    const int64_t id = parseInt64Param(notification_id);
+    const int64_t id = parse_int64_param(notification_id);
     if (id <= 0)
     {
         respondError(callback, 400, "INVALID_ID", "알림 id가 올바르지 않습니다.");
@@ -156,7 +156,7 @@ void NotificationsController::markRead(
             respondError(callback, 404, "NOT_FOUND", "알림을 찾을 수 없습니다.");
             return;
         }
-        callback(demoResponse(req, item, runtime_id));
+        callback(demo_response(req, item, runtime_id));
         return;
     }
 

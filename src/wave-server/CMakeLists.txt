@@ -2,7 +2,6 @@ set(_wave_server_sources
     main.cpp
     app/app_state.cpp
     app/app_config.cpp
-    app/app_setting.cpp
     core/logger.cpp
     core/task_queue.cpp
     

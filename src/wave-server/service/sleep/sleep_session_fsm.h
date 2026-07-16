@@ -61,10 +61,10 @@ public:
     SessionState& mutableState() { return m_state; }
 
 private:
-    static bool isAsleepMinute(const MinuteStat& minute);
-    static bool isWakeMinute(const MinuteStat& minute);
-    static bool isAbsentMinute(const MinuteStat& minute);
-    static std::string dateFromTimestamp(const std::string& timestamp);
+    static bool is_asleep_minute(const MinuteStat& minute);
+    static bool is_wake_minute(const MinuteStat& minute);
+    static bool is_absent_minute(const MinuteStat& minute);
+    static std::string date_from_timestamp(const std::string& timestamp);
 
     SessionState m_state;
 };

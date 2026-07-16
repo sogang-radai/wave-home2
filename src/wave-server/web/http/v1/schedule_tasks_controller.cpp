@@ -17,7 +17,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    std::optional<int64_t> parseInt64(const std::string& raw)
+    std::optional<int64_t> parse_int64(const std::string& raw)
     {
         if (raw.empty())
             return std::nullopt;
@@ -31,7 +31,7 @@ namespace
         }
     }
 
-    std::optional<bool> parseBool(const std::string& raw)
+    std::optional<bool> parse_bool(const std::string& raw)
     {
         if (raw == "true" || raw == "1")
             return true;
@@ -40,7 +40,7 @@ namespace
         return std::nullopt;
     }
 
-    std::optional<int64_t> requireActiveUser(
+    std::optional<int64_t> require_active_user(
         const drogon::HttpRequestPtr& req,
         const std::function<void(const drogon::HttpResponsePtr&)>& callback)
     {
@@ -62,22 +62,22 @@ namespace
         return user_id;
     }
 
-    Json::Value withoutUserId(const Json::Value& item)
+    Json::Value without_user_id(const Json::Value& item)
     {
         Json::Value view = item;
         view.removeMember("userId");
         return view;
     }
 
-    Json::Value withoutUserIds(const Json::Value& items)
+    Json::Value without_user_ids(const Json::Value& items)
     {
         Json::Value out(Json::arrayValue);
         for (const auto& item : items)
-            out.append(withoutUserId(item));
+            out.append(without_user_id(item));
         return out;
     }
 
-    drogon::HttpResponsePtr demoResponse(
+    drogon::HttpResponsePtr demo_response(
         const drogon::HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id,
@@ -94,7 +94,7 @@ void ScheduleTasksController::listTasks(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
@@ -110,7 +110,7 @@ void ScheduleTasksController::listTasks(
         filter.from = req->getParameter("from");
     if (!req->getParameter("to").empty())
         filter.to = req->getParameter("to");
-    if (const auto done = parseBool(req->getParameter("done")))
+    if (const auto done = parse_bool(req->getParameter("done")))
         filter.done = *done;
 
     internal::ScheduleTasksInternalStore store(AppState::get().db());
@@ -135,17 +135,17 @@ void ScheduleTasksController::listTasks(
                 continue;
             filtered.append(item);
         }
-        callback(demoResponse(req, withoutUserIds(filtered), runtime_id));
+        callback(demo_response(req, without_user_ids(filtered), runtime_id));
         return;
     }
-    callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserIds(store.list(filter))));
+    callback(drogon::HttpResponse::newHttpJsonResponse(without_user_ids(store.list(filter))));
 }
 
 void ScheduleTasksController::createTask(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
@@ -197,10 +197,10 @@ void ScheduleTasksController::createTask(
 
     if (demoVirtualDevicesEnabled())
     {
-        callback(demoResponse(req, withoutUserId(created), runtime_id, drogon::k201Created));
+        callback(demo_response(req, without_user_id(created), runtime_id, drogon::k201Created));
         return;
     }
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(withoutUserId(created));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(without_user_id(created));
     resp->setStatusCode(drogon::k201Created);
     callback(resp);
 }
@@ -210,11 +210,11 @@ void ScheduleTasksController::updateTask(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string taskId)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseInt64(taskId);
+    const auto id = parse_int64(taskId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "일정을 찾을 수 없습니다.");
@@ -273,10 +273,10 @@ void ScheduleTasksController::updateTask(
 
     if (demoVirtualDevicesEnabled())
     {
-        callback(demoResponse(req, withoutUserId(updated), runtime_id));
+        callback(demo_response(req, without_user_id(updated), runtime_id));
         return;
     }
-    callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserId(updated)));
+    callback(drogon::HttpResponse::newHttpJsonResponse(without_user_id(updated)));
 }
 
 void ScheduleTasksController::deleteTask(
@@ -284,11 +284,11 @@ void ScheduleTasksController::deleteTask(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     std::string taskId)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseInt64(taskId);
+    const auto id = parse_int64(taskId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "일정을 찾을 수 없습니다.");
@@ -320,7 +320,7 @@ void ScheduleTasksController::deleteTask(
 
     if (demoVirtualDevicesEnabled())
     {
-        callback(demoResponse(req, removed, runtime_id));
+        callback(demo_response(req, removed, runtime_id));
         return;
     }
     callback(drogon::HttpResponse::newHttpJsonResponse(removed));

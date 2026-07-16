@@ -8,34 +8,34 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    double asleepFraction(const ThirtyMinStat& stat)
+    double asleep_fraction(const ThirtyMinStat& stat)
     {
         if (!stat.statusRatio.is_object())
             return 0.0;
         return stat.statusRatio.value("asleep", 0.0);
     }
 
-    double moderateFraction(const ThirtyMinStat& stat)
+    double moderate_fraction(const ThirtyMinStat& stat)
     {
         if (!stat.tossRatio.is_object())
             return 0.0;
         return stat.tossRatio.value("moderate", 0.0);
     }
 
-    int cycleIndex(int32_t asleep_minutes)
+    int cycle_index(int32_t asleep_minutes)
     {
         if (asleep_minutes < 0)
             return 0;
         return asleep_minutes / 90;
     }
 
-    double cycleDeepWeight(int index)
+    double cycle_deep_weight(int index)
     {
         const double t = std::min(1.0, index / 4.0);
         return 1.6 - t * 1.1;
     }
 
-    double cycleRemWeight(int index)
+    double cycle_rem_weight(int index)
     {
         const double t = std::min(1.0, index / 4.0);
         return 0.5 + t * 1.1;
@@ -49,7 +49,7 @@ StageSynthResult synthesizeThirtyMinStage(
     StageSynthResult result;
     result.stageRatio = json::object();
 
-    const double asleep_r = asleepFraction(stat);
+    const double asleep_r = asleep_fraction(stat);
     if (asleep_r < 0.2)
     {
         if (stat.statusRatio.is_object() && stat.statusRatio.value("absent", 0.0) > 0.5)
@@ -61,7 +61,7 @@ StageSynthResult synthesizeThirtyMinStage(
         return result;
     }
 
-    if (moderateFraction(stat) > 0.15 || stat.tossMean > 0.35)
+    if (moderate_fraction(stat) > 0.15 || stat.tossMean > 0.35)
     {
         result.stageLabel = "light";
         result.stageRatio = {{"light", 0.7}, {"awake", 0.3}};
@@ -69,9 +69,9 @@ StageSynthResult synthesizeThirtyMinStage(
         return result;
     }
 
-    const int cycle = cycleIndex(asleep_minutes_before_window);
-    const double deep_w = cycleDeepWeight(cycle);
-    const double rem_w = cycleRemWeight(cycle);
+    const int cycle = cycle_index(asleep_minutes_before_window);
+    const double deep_w = cycle_deep_weight(cycle);
+    const double rem_w = cycle_rem_weight(cycle);
     const double light_w = 1.0;
 
     const double sum = deep_w + rem_w + light_w;

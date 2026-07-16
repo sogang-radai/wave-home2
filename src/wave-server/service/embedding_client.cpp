@@ -393,7 +393,7 @@ Result EmbeddingClient::ensureModelLoaded()
 
 std::future<Result> EmbeddingClient::ensureModelLoadedAsync()
 {
-    return TaskQueue::enqueueAsync([this]() { return ensureModelLoaded(); });
+    return TaskQueue::enqueue_async([this]() { return ensureModelLoaded(); });
 }
 
 Result EmbeddingClient::embed(std::string_view text, EmbeddingVector& out_embedding)
@@ -444,7 +444,7 @@ Result EmbeddingClient::embedBatch(
 std::future<Result> EmbeddingClient::embedAsync(const std::string& text, EmbeddingVector& out_embedding)
 {
     std::string owned = text;
-    return TaskQueue::enqueueAsync(
+    return TaskQueue::enqueue_async(
         [this, owned = std::move(owned), &out_embedding]() {
             return embed(owned, out_embedding);
         });
@@ -455,7 +455,7 @@ std::future<Result> EmbeddingClient::embedBatchAsync(
     std::vector<EmbeddingVector>& out_embeddings)
 {
     std::vector<std::string> owned = texts;
-    return TaskQueue::enqueueAsync(
+    return TaskQueue::enqueue_async(
         [this, owned = std::move(owned), &out_embeddings]() {
             std::vector<std::string_view> views;
             views.reserve(owned.size());

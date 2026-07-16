@@ -82,7 +82,7 @@ Json::Value DemoDeviceBackend::deviceRowToJson(const drogon::orm::Row& row, cons
     item["name"] = row["name"].as<std::string>();
     item["description"] = row["description"].as<std::string>();
     item["class"] = device_class;
-    item["classLabel"] = web::internal::DeviceClassRegistry::labelForClass(device_class);
+    item["classLabel"] = web::internal::DeviceClassRegistry::label_for_class(device_class);
     item["panel"] = panel_for_class(device_class);
     item["sleepAnalysis"] =
         !row["sleep_analysis"].isNull() &&
@@ -126,7 +126,7 @@ Json::Value DemoDeviceBackend::stateForDevice(
     auto state = demoSeedStateForClass(device_class);
     if (device_class == "tuya_ep2h")
     {
-        const double rated_power = DemoPowerMeter::ratedPowerForDevice(device_id);
+        const double rated_power = DemoPowerMeter::rated_power_for_device(device_id);
         const bool switch_on =
             device_id != "0000000000000009" && device_id != "000000000000000e";
         state["switch"] = switch_on;
@@ -258,7 +258,7 @@ Json::Value DemoDeviceBackend::getState(
     {
         // Refresh from the shared table so code edits take effect even if the
         // session already cached an older ratedPower.
-        const double rated_power = DemoPowerMeter::ratedPowerForDevice(device_id);
+        const double rated_power = DemoPowerMeter::rated_power_for_device(device_id);
         state["ratedPower"] = rated_power;
         const auto reading = DemoPowerMeter::instance().samplePlug(
             runtime_id,
@@ -383,7 +383,7 @@ Json::Value DemoDeviceBackend::invokeAction(
     }
     if (device_class == "tuya_ep2h")
     {
-        const double rated = DemoPowerMeter::ratedPowerForDevice(device_id);
+        const double rated = DemoPowerMeter::rated_power_for_device(device_id);
         const bool switch_on = next.get("switch", false).asBool();
         const double voltage = next.get("voltage", 235.0).asDouble();
         DemoPowerMeter::instance().syncPlug(runtime_id, device_id, switch_on, rated, voltage);

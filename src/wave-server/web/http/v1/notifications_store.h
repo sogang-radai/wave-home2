@@ -24,7 +24,7 @@ public:
 private:
     db::DbClientPtr m_client;
 
-    static std::string toCreatedAtIso(const std::string& db_time);
+    static std::string to_created_at_iso(const std::string& db_time);
 };
 
 } // namespace v1

@@ -139,7 +139,7 @@ IotRuntime::IotRuntime(AppState& app) :
 {
 }
 
-std::string IotRuntime::isoNowKst()
+std::string IotRuntime::iso_now_kst()
 {
     const auto now = formatTimestamp();
     if (now.size() >= 19)
@@ -159,7 +159,7 @@ void IotRuntime::logEvent(
     Json::Value event;
     event["id"] = static_cast<Json::Int64>(m_nextEventId++);
     event["type"] = type;
-    event["occurredAt"] = isoNowKst();
+    event["occurredAt"] = iso_now_kst();
     if (!device_id.empty())
         event["deviceId"] = device_id;
     event["deviceName"] = device_name;
@@ -579,7 +579,7 @@ void AppState::init(const LaunchOptions& launch)
     }
     config_dir = resolved_config.parent_path();
 
-    if (!AppConfig::loadFromFile(resolved_config, launch.profile, config))
+    if (!AppConfig::load_from_file(resolved_config, launch.profile, config))
     {
         LOG_ERROR("Failed to load app config: {}", resolved_config.string());
         return;

@@ -8,7 +8,7 @@ WAVE_NAMESPACE_BEGIN
 
 namespace
 {
-    bool applyConfigSection(const json& root, AppConfig& out)
+    bool apply_config_section(const json& root, AppConfig& out)
     {
         if (!root.contains("server") || !root["server"].is_object())
         {
@@ -68,7 +68,7 @@ namespace
     }
 }
 
-bool AppConfig::loadFromFile(
+bool AppConfig::load_from_file(
     const std::filesystem::path& path,
     const std::string& profile,
     AppConfig& out)
@@ -92,12 +92,12 @@ bool AppConfig::loadFromFile(
     }
 
     if (root.contains(profile) && root[profile].is_object())
-        return applyConfigSection(root[profile], out);
+        return apply_config_section(root[profile], out);
 
     if (root.contains("server") && root["server"].is_object())
     {
         LOG_INFO("Loading legacy flat config from {}", path.string());
-        return applyConfigSection(root, out);
+        return apply_config_section(root, out);
     }
 
     LOG_ERROR(

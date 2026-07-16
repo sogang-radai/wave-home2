@@ -15,7 +15,7 @@ namespace
     constexpr double kCoverageSkipThreshold = 0.3;
     constexpr int32_t kExpectedSamplesPerMinute = 1200;
 
-    std::tm parseLocalTm(const std::string& timestamp)
+    std::tm parse_local_tm(const std::string& timestamp)
     {
         std::tm tm{};
         if (timestamp.size() >= 19)
@@ -30,14 +30,14 @@ namespace
         return tm;
     }
 
-    std::string formatTm(const std::tm& tm)
+    std::string format_tm(const std::tm& tm)
     {
         std::ostringstream oss;
         oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
         return oss.str();
     }
 
-    std::string shiftTm(const std::tm& base, int field, int delta)
+    std::string shift_tm(const std::tm& base, int field, int delta)
     {
         std::tm tm = base;
         if (field == 0)
@@ -47,10 +47,10 @@ namespace
         else
             tm.tm_hour += delta;
         std::mktime(&tm);
-        return formatTm(tm);
+        return format_tm(tm);
     }
 
-    int32_t argmaxScores(const std::vector<float>& scores)
+    int32_t argmax_scores(const std::vector<float>& scores)
     {
         if (scores.empty())
             return -1;
@@ -80,7 +80,7 @@ namespace
         }
     }
 
-    json normalizeRatio(const json& counts)
+    json normalize_ratio(const json& counts)
     {
         double total = 0.0;
         for (auto it = counts.begin(); it != counts.end(); ++it)
@@ -121,30 +121,30 @@ std::string floorToMinute(const std::string& timestamp)
 
 std::string minuteEnd(const std::string& minute_start)
 {
-    auto tm = parseLocalTm(minute_start);
-    return shiftTm(tm, 1, 1);
+    auto tm = parse_local_tm(minute_start);
+    return shift_tm(tm, 1, 1);
 }
 
 std::string floorToThirtyMin(const std::string& timestamp)
 {
-    auto tm = parseLocalTm(timestamp);
+    auto tm = parse_local_tm(timestamp);
     tm.tm_sec = 0;
     tm.tm_min = (tm.tm_min / 30) * 30;
-    return formatTm(tm);
+    return format_tm(tm);
 }
 
 std::string thirtyMinEnd(const std::string& window_start)
 {
-    auto tm = parseLocalTm(window_start);
-    return shiftTm(tm, 1, 30);
+    auto tm = parse_local_tm(window_start);
+    return shift_tm(tm, 1, 30);
 }
 
 std::string mondayOfWeek(const std::string& date)
 {
-    auto tm = parseLocalTm(date + " 00:00:00");
+    auto tm = parse_local_tm(date + " 00:00:00");
     const int wday = tm.tm_wday;
     const int diff = wday == 0 ? -6 : 1 - wday;
-    return shiftTm(tm, 2, diff).substr(0, 10);
+    return shift_tm(tm, 2, diff).substr(0, 10);
 }
 
 std::string buildSummaryTemplate(const ThirtyMinStat& stat)
@@ -221,7 +221,7 @@ bool SecondAggregator::flush(SecondSnapshot& out_snapshot)
     out_snapshot.sampleCount = m_sampleCount;
     out_snapshot.connected = m_connectedSamples > 0;
 
-    const int32_t status_class = argmaxScores(m_statusScoreSum);
+    const int32_t status_class = argmax_scores(m_statusScoreSum);
     out_snapshot.statusLabel = statusLabel(status_class);
     out_snapshot.asleepR = m_asleepRCount > 0 ? m_asleepRSum / static_cast<double>(m_asleepRCount) : 0.0;
 
@@ -324,7 +324,7 @@ bool MinuteAggregator::flush(MinuteStat& out_stat)
     status_counts["absent"] = m_statusCounts[0];
     status_counts["awake"] = m_statusCounts[1];
     status_counts["asleep"] = m_statusCounts[2];
-    out_stat.statusRatio = normalizeRatio(status_counts);
+    out_stat.statusRatio = normalize_ratio(status_counts);
     out_stat.asleepR = m_asleepRCount > 0 ? m_asleepRSum / static_cast<double>(m_asleepRCount) : 0.0;
 
     if (!m_tossIndices.empty())
@@ -349,7 +349,7 @@ bool MinuteAggregator::flush(MinuteStat& out_stat)
         toss_counts["calm"] = m_tossClassCounts[0];
         toss_counts["slight"] = m_tossClassCounts[1];
         toss_counts["moderate"] = m_tossClassCounts[2];
-        out_stat.tossRatio = normalizeRatio(toss_counts);
+        out_stat.tossRatio = normalize_ratio(toss_counts);
     }
     else
     {
@@ -414,8 +414,8 @@ bool ThirtyMinAggregator::flush(ThirtyMinStat& out_stat)
     out_stat.timeStart = m_windowStart;
     out_stat.timeEnd = thirtyMinEnd(m_windowStart);
     out_stat.coverage = m_coverageSum / static_cast<double>(m_minuteCount);
-    out_stat.statusRatio = normalizeRatio(m_statusRatioSum);
-    out_stat.tossRatio = normalizeRatio(m_tossRatioSum);
+    out_stat.statusRatio = normalize_ratio(m_statusRatioSum);
+    out_stat.tossRatio = normalize_ratio(m_tossRatioSum);
     out_stat.tossMean = m_tossMeanSum / static_cast<double>(m_minuteCount);
     out_stat.tossMax = m_tossMax;
     out_stat.tossP90 = percentile90(m_tossP90Values);

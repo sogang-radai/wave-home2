@@ -21,7 +21,7 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::string weekdayToken(int wday)
+    std::string weekday_token(int wday)
     {
         switch (wday)
         {
@@ -56,7 +56,7 @@ namespace
         return value;
     }
 
-    void enqueueAction(const std::string& device_id, const std::string& action, const json& params, const std::string& source)
+    void enqueue_action(const std::string& device_id, const std::string& action, const json& params, const std::string& source)
     {
         auto& app = AppState::get();
         if (!app.automationReady())
@@ -237,7 +237,7 @@ bool AlarmManager::isDueNow(const AlarmRecord& alarm, const std::string& today) 
     if (alarm.days_of_week.empty())
         return true;
 
-    const std::string token = weekdayToken(local_tm.tm_wday);
+    const std::string token = weekday_token(local_tm.tm_wday);
     return std::find(alarm.days_of_week.begin(), alarm.days_of_week.end(), token)
         != alarm.days_of_week.end();
 }
@@ -306,8 +306,8 @@ void AlarmManager::executeMethod(const AlarmRecord& alarm)
     if (type == "light_on")
     {
         const int brightness = alarm.method.get("brightness", 70).asInt();
-        enqueueAction(alarm.device_external_id, "on", json::object(), source);
-        enqueueAction(
+        enqueue_action(alarm.device_external_id, "on", json::object(), source);
+        enqueue_action(
             alarm.device_external_id,
             "brightness",
             json{{"value", std::clamp(brightness, 10, 100)}},
@@ -321,8 +321,8 @@ void AlarmManager::executeMethod(const AlarmRecord& alarm)
         const int interval_sec = std::clamp(alarm.method.get("intervalSec", 2).asInt(), 1, 10);
         const std::string device_id = alarm.device_external_id;
 
-        enqueueAction(device_id, "on", json::object(), source);
-        enqueueAction(
+        enqueue_action(device_id, "on", json::object(), source);
+        enqueue_action(
             device_id,
             "brightness",
             json{{"value", std::clamp(brightness, 10, 100)}},
@@ -331,24 +331,24 @@ void AlarmManager::executeMethod(const AlarmRecord& alarm)
         std::thread([device_id, interval_sec, source]()
         {
             std::this_thread::sleep_for(std::chrono::seconds(interval_sec));
-            enqueueAction(device_id, "off", json::object(), source);
+            enqueue_action(device_id, "off", json::object(), source);
         }).detach();
         return;
     }
 
     if (type == "plug_toggle")
     {
-        enqueueAction(alarm.device_external_id, "toggle", json::object(), source);
+        enqueue_action(alarm.device_external_id, "toggle", json::object(), source);
         return;
     }
     if (type == "plug_on")
     {
-        enqueueAction(alarm.device_external_id, "on", json::object(), source);
+        enqueue_action(alarm.device_external_id, "on", json::object(), source);
         return;
     }
     if (type == "plug_off")
     {
-        enqueueAction(alarm.device_external_id, "off", json::object(), source);
+        enqueue_action(alarm.device_external_id, "off", json::object(), source);
         return;
     }
 

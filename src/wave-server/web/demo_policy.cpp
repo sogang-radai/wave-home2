@@ -17,17 +17,17 @@ namespace
         "시연 모드입니다. 여러 분이 함께 사용하는 환경이므로 기기 조작, 알림·일정 설정 등 "
         "변경 작업은 지원하지 않습니다. 수면·전력 등 현재 데이터 조회와 질문 답변만 가능합니다.";
 
-    bool isReadMethod(drogon::HttpMethod method)
+    bool is_read_method(drogon::HttpMethod method)
     {
         return method == drogon::Get || method == drogon::Head || method == drogon::Options;
     }
 
-    bool isApiPath(std::string_view path)
+    bool is_api_path(std::string_view path)
     {
         return path.starts_with("/api/v1/") || path.starts_with("/internal/v1/");
     }
 
-    bool isDemoReadPost(std::string_view path)
+    bool is_demo_read_post(std::string_view path)
     {
         static constexpr std::string_view kReadPosts[] = {
             "/internal/v1/db/query",
@@ -49,18 +49,18 @@ namespace
         return false;
     }
 
-    bool isDemoVirtualWritePath(std::string_view path, drogon::HttpMethod method)
+    bool is_demo_virtual_write_path(std::string_view path, drogon::HttpMethod method)
     {
         if (!demoVirtualDevicesEnabled())
             return false;
 
-        if (isReadMethod(method))
+        if (is_read_method(method))
             return true;
 
         if (path.starts_with("/api/v1/chat"))
             return true;
 
-        if (isDemoReadPost(path))
+        if (is_demo_read_post(path))
             return true;
 
         if (path == "/internal/v1/tools/device.control")
@@ -93,18 +93,18 @@ namespace
         return false;
     }
 
-    bool isDemoMutationAllowed(std::string_view path, drogon::HttpMethod method)
+    bool is_demo_mutation_allowed(std::string_view path, drogon::HttpMethod method)
     {
-        if (isReadMethod(method))
+        if (is_read_method(method))
             return true;
 
         if (path.starts_with("/api/v1/chat"))
             return true;
 
-        if (isDemoReadPost(path))
+        if (is_demo_read_post(path))
             return true;
 
-        if (isDemoVirtualWritePath(path, method))
+        if (is_demo_virtual_write_path(path, method))
             return true;
 
         return false;
@@ -118,10 +118,10 @@ void registerDemoPolicy()
         if (!AppState::get().demo_mode)
             return nullptr;
 
-        if (!isApiPath(req->path()))
+        if (!is_api_path(req->path()))
             return nullptr;
 
-        if (isDemoMutationAllowed(req->path(), req->method()))
+        if (is_demo_mutation_allowed(req->path(), req->method()))
             return nullptr;
 
         auto resp = drogon::HttpResponse::newHttpJsonResponse(v1::makeError(

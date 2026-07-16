@@ -27,8 +27,8 @@ public:
     Json::Value getWeeklyReport(int64_t user_id, const std::string& week_start) const;
 
 private:
-    static std::string toIsoKst(const std::string& timestamp);
-    static int computeScore(double efficiency);
+    static std::string to_iso_kst(const std::string& timestamp);
+    static int compute_score(double efficiency);
     Json::Value buildHypnogram(const drogon::orm::Result& stats, const std::string& start, const std::string& end) const;
 
     db::DbClientPtr m_client;

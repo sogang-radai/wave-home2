@@ -12,7 +12,7 @@ namespace v1 {
 
 namespace
 {
-    std::string extractBearerToken(const drogon::HttpRequestPtr& req)
+    std::string extract_bearer_token(const drogon::HttpRequestPtr& req)
     {
         const auto auth = req->getHeader("Authorization");
         constexpr std::string_view prefix = "Bearer ";
@@ -55,7 +55,7 @@ SessionStore::SessionStore(db::DbClientPtr client) :
 
 int64_t SessionStore::resolveSessionId(const drogon::HttpRequestPtr& req) const
 {
-    const auto token = extractBearerToken(req);
+    const auto token = extract_bearer_token(req);
     if (!token.empty())
     {
         auto rows = m_client->execSqlSync(

@@ -12,8 +12,8 @@ namespace v1 {
 
 namespace {
 
-Json::Value triggerToFrontend(const json& trigger)
-{
+    Json::Value trigger_to_frontend(const json& trigger)
+    {
     Json::Value out;
     if (trigger.contains("high_threshold"))
         out["highThreshold"] = trigger["high_threshold"].get<double>();
@@ -26,22 +26,22 @@ Json::Value triggerToFrontend(const json& trigger)
     if (trigger.contains("cooldown_ms"))
         out["cooldownMs"] = static_cast<Json::Int64>(trigger["cooldown_ms"].get<int64_t>());
     return out;
-}
+    }
 
-std::string gestureClassKind(const json& cls)
-{
+    std::string gesture_class_kind(const json& cls)
+    {
     if (cls.contains("kind") && cls["kind"].is_string())
         return cls["kind"].get<std::string>();
     const int class_id = cls.value("class_id", 0);
     return class_id < 3 ? "state" : "trigger";
-}
+    }
 
-Json::Value classToFrontend(const json& cls, const std::string& asset_set_dir)
-{
+    Json::Value class_to_frontend(const json& cls, const std::string& asset_set_dir)
+    {
     Json::Value out;
     out["classId"] = cls.value("class_id", 0);
     out["name"] = cls.value("name", std::string());
-    out["kind"] = gestureClassKind(cls);
+    out["kind"] = gesture_class_kind(cls);
 
     const auto thumb = cls.value("thumbnail", std::string());
     if (!thumb.empty())
@@ -50,13 +50,13 @@ Json::Value classToFrontend(const json& cls, const std::string& asset_set_dir)
         out["thumbnail"] = Json::nullValue;
 
     if (cls.contains("trigger") && cls["trigger"].is_object())
-        out["trigger"] = triggerToFrontend(cls["trigger"]);
+        out["trigger"] = trigger_to_frontend(cls["trigger"]);
 
     return out;
-}
+    }
 
-void appendClassCounts(const json& set_config, Json::Value& item)
-{
+    void append_class_counts(const json& set_config, Json::Value& item)
+    {
     if (!set_config.contains("classes") || !set_config["classes"].is_array())
         return;
 
@@ -66,18 +66,18 @@ void appendClassCounts(const json& set_config, Json::Value& item)
     Json::UInt trigger_count = 0;
     for (const auto& cls : classes)
     {
-        if (gestureClassKind(cls) == "trigger")
+        if (gesture_class_kind(cls) == "trigger")
             ++trigger_count;
     }
     item["triggerClassCount"] = trigger_count;
-}
+    }
 
-Json::Value setConfigToFrontend(
+    Json::Value set_config_to_frontend(
     const json& set_config,
     const std::string& set_wire_id,
     const std::string& entry_name,
     const std::string& entry_path)
-{
+    {
     const auto asset_set_dir = std::filesystem::path(entry_path).parent_path().filename().string();
 
     Json::Value out;
@@ -95,13 +95,13 @@ Json::Value setConfigToFrontend(
     if (set_config.contains("classes") && set_config["classes"].is_array())
     {
         for (const auto& cls : set_config["classes"])
-            classes.append(classToFrontend(cls, asset_set_dir));
+            classes.append(class_to_frontend(cls, asset_set_dir));
     }
     out["classes"] = classes;
     return out;
-}
+    }
 
-} // namespace
+    } // namespace
 
 bool GestureStore::load(
     const std::filesystem::path& registry_path,
@@ -348,7 +348,7 @@ Json::Value GestureStore::listGestureSets() const
                     in >> set_config;
                 }
                 item["description"] = set_config.value("description", std::string());
-                appendClassCounts(set_config, item);
+                append_class_counts(set_config, item);
             }
             catch (...)
             {
@@ -382,7 +382,7 @@ Json::Value GestureStore::loadSetDefinition(const RegistryEntry& entry) const
         in >> set_config;
     }
 
-    return setConfigToFrontend(set_config, entry.wire_id, entry.name, entry.path);
+    return set_config_to_frontend(set_config, entry.wire_id, entry.name, entry.path);
 }
 
 Json::Value GestureStore::getGestureSetDefinition(const std::string& gesture_set_id, std::string& code) const

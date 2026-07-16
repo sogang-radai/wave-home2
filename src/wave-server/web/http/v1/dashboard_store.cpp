@@ -18,7 +18,7 @@ namespace
 {
     const char* kDays[] = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
 
-    int dayIndexForName(const std::string& day)
+    int day_index_for_name(const std::string& day)
     {
         for (int i = 0; i < 7; ++i)
         {
@@ -28,7 +28,7 @@ namespace
         return -1;
     }
 
-    std::tm localNowTm()
+    std::tm local_now_tm()
     {
         const auto now = std::chrono::system_clock::now();
         const auto time = std::chrono::system_clock::to_time_t(now);
@@ -41,13 +41,13 @@ namespace
         return local_tm;
     }
 
-    std::time_t localTmToTimeT(std::tm tm)
+    std::time_t local_tm_to_time_t(std::tm tm)
     {
         tm.tm_isdst = -1;
         return std::mktime(&tm);
     }
 
-    std::tm startOfDay(std::tm tm)
+    std::tm start_of_day(std::tm tm)
     {
         tm.tm_hour = 0;
         tm.tm_min = 0;
@@ -56,12 +56,12 @@ namespace
         return tm;
     }
 
-    bool isRingingSoon(const std::tm& next_fire_local, const std::tm& now_local)
+    bool is_ringing_soon(const std::tm& next_fire_local, const std::tm& now_local)
     {
-        const auto next_day = startOfDay(next_fire_local);
-        const auto now_day = startOfDay(now_local);
-        const auto next_ts = localTmToTimeT(next_day);
-        const auto now_ts = localTmToTimeT(now_day);
+        const auto next_day = start_of_day(next_fire_local);
+        const auto now_day = start_of_day(now_local);
+        const auto next_ts = local_tm_to_time_t(next_day);
+        const auto now_ts = local_tm_to_time_t(now_day);
         const int diff_days = static_cast<int>(std::lround(
             std::difftime(next_ts, now_ts) / (24.0 * 60.0 * 60.0)));
         if (diff_days == 0)
@@ -71,7 +71,7 @@ namespace
         return false;
     }
 
-    std::optional<std::tm> computeNextFireLocal(
+    std::optional<std::tm> compute_next_fire_local(
         int time_minute,
         const Json::Value& days_of_week,
         const std::tm& now_local)
@@ -79,7 +79,7 @@ namespace
         const int hour = time_minute / 60;
         const int minute = time_minute % 60;
 
-        std::tm base = startOfDay(now_local);
+        std::tm base = start_of_day(now_local);
         base.tm_hour = hour;
         base.tm_min = minute;
         base.tm_isdst = -1;
@@ -87,8 +87,8 @@ namespace
         if (!days_of_week.isArray() || days_of_week.empty())
         {
             std::tm candidate = base;
-            const auto candidate_ts = localTmToTimeT(candidate);
-            const auto now_ts = localTmToTimeT(now_local);
+            const auto candidate_ts = local_tm_to_time_t(candidate);
+            const auto now_ts = local_tm_to_time_t(now_local);
             if (candidate_ts <= now_ts)
             {
                 candidate.tm_mday += 1;
@@ -104,7 +104,7 @@ namespace
         {
             if (!day.isString())
                 continue;
-            const int index = dayIndexForName(day.asString());
+            const int index = day_index_for_name(day.asString());
             if (index >= 0)
                 target_indices.push_back(index);
         }
@@ -124,8 +124,8 @@ namespace
             }
             if (add == 0)
             {
-                const auto candidate_ts = localTmToTimeT(candidate);
-                const auto now_ts = localTmToTimeT(now_local);
+                const auto candidate_ts = local_tm_to_time_t(candidate);
+                const auto now_ts = local_tm_to_time_t(now_local);
                 if (candidate_ts <= now_ts)
                     continue;
             }
@@ -135,7 +135,7 @@ namespace
         return base;
     }
 
-    std::string deviceNameForWireId(db::DbClientPtr client, const std::string& wire_id)
+    std::string device_name_for_wire_id(db::DbClientPtr client, const std::string& wire_id)
     {
         const auto db_id = dev::dbIdForWireId(client, wire_id);
         if (!db_id)
@@ -148,7 +148,7 @@ namespace
         return rows[0]["name"].as<std::string>();
     }
 
-    std::string toUtcIsoFromLocalTm(std::tm local_tm)
+    std::string to_utc_iso_from_local_tm(std::tm local_tm)
     {
         local_tm.tm_isdst = -1;
         const std::time_t epoch = std::mktime(&local_tm);
@@ -169,7 +169,7 @@ DashboardStore::DashboardStore(db::DbClientPtr client) :
 {
 }
 
-Json::Value DashboardStore::parseJsonColumn(const drogon::orm::Field& field)
+Json::Value DashboardStore::parse_json_column(const drogon::orm::Field& field)
 {
     if (field.isNull())
         return Json::nullValue;
@@ -184,7 +184,7 @@ Json::Value DashboardStore::parseJsonColumn(const drogon::orm::Field& field)
     return Json::nullValue;
 }
 
-Json::Value DashboardStore::parseDaysJson(const std::string& raw)
+Json::Value DashboardStore::parse_days_json(const std::string& raw)
 {
     Json::CharReaderBuilder reader;
     Json::Value value(Json::arrayValue);
@@ -230,7 +230,7 @@ Json::Value DashboardStore::upcomingAlarms(int64_t user_id) const
         alarm["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
         alarm["name"] = row["name"].as<std::string>();
         alarm["timeMinute"] = row["time_minute"].as<int>();
-        alarm["daysOfWeek"] = parseDaysJson(row["days_of_week"].as<std::string>());
+        alarm["daysOfWeek"] = parse_days_json(row["days_of_week"].as<std::string>());
         alarm["enabled"] = true;
         alarms.append(alarm);
     }
@@ -248,7 +248,7 @@ Json::Value DashboardStore::upcomingAlarmsFromItems(const Json::Value& alarms) c
         std::tm next_fire;
     };
 
-    const auto now_local = localNowTm();
+    const auto now_local = local_now_tm();
     std::vector<Candidate> candidates;
     if (alarms.isArray())
         candidates.reserve(alarms.size());
@@ -258,11 +258,11 @@ Json::Value DashboardStore::upcomingAlarmsFromItems(const Json::Value& alarms) c
         if (!item.isObject() || !item.get("enabled", true).asBool())
             continue;
         const auto days = item.isMember("daysOfWeek") ? item["daysOfWeek"] : Json::Value(Json::arrayValue);
-        const auto next_fire = computeNextFireLocal(
+        const auto next_fire = compute_next_fire_local(
             item.get("timeMinute", 0).asInt(),
             days,
             now_local);
-        if (!next_fire || !isRingingSoon(*next_fire, now_local))
+        if (!next_fire || !is_ringing_soon(*next_fire, now_local))
             continue;
 
         candidates.push_back(Candidate{
@@ -275,7 +275,7 @@ Json::Value DashboardStore::upcomingAlarmsFromItems(const Json::Value& alarms) c
     }
 
     std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
-        return localTmToTimeT(a.next_fire) < localTmToTimeT(b.next_fire);
+        return local_tm_to_time_t(a.next_fire) < local_tm_to_time_t(b.next_fire);
     });
 
     Json::Value out(Json::arrayValue);
@@ -286,7 +286,7 @@ Json::Value DashboardStore::upcomingAlarmsFromItems(const Json::Value& alarms) c
         alarm["name"] = item.name;
         alarm["timeMinute"] = item.time_minute;
         alarm["daysOfWeek"] = item.days_of_week;
-        alarm["nextFireAt"] = toUtcIsoFromLocalTm(item.next_fire);
+        alarm["nextFireAt"] = to_utc_iso_from_local_tm(item.next_fire);
         out.append(alarm);
     }
     return out;
@@ -302,11 +302,11 @@ Json::Value DashboardStore::activeGestureRules(int64_t user_id) const
     Json::Value out(Json::arrayValue);
     for (const auto& row : rows)
     {
-        const auto trigger = parseJsonColumn(row["trigger_json"]);
+        const auto trigger = parse_json_column(row["trigger_json"]);
         if (!trigger.isObject() || trigger.get("kind", "").asString() != "gesture")
             continue;
 
-        const auto actions = parseJsonColumn(row["actions_json"]);
+        const auto actions = parse_json_column(row["actions_json"]);
         Json::Value primary_action;
         if (actions.isArray() && !actions.empty())
             primary_action = actions[0];
@@ -346,7 +346,7 @@ Json::Value DashboardStore::activeGestureRules(int64_t user_id) const
             item["classId"] = 0;
 
         item["actionDeviceId"] = device_id;
-        item["actionDeviceName"] = deviceNameForWireId(m_client, device_id);
+        item["actionDeviceName"] = device_name_for_wire_id(m_client, device_id);
         item["actionName"] = primary_action.get("name", "").asString();
         out.append(item);
     }
