@@ -4,6 +4,8 @@
         "io_threads_num": 8,
         "server": {
             "port": 8500,
+            "agent_api_port": 8501,
+            "agent_api_bind": "127.0.0.1",
             "threads_num": 4,
             "document_root": "../site",
             "home_page": "index.html",
@@ -21,7 +23,7 @@
             "subject": "mailto:wavehome@local"
         },
         "agent": {
-            "base_url": "http://127.0.0.1:8501"
+            "base_url": "http://127.0.0.1:8502"
         }
     },
     "demo": {
@@ -30,7 +32,9 @@
         "anchor_date": "2026-06-30",
         "devices_enabled": false,
         "server": {
-            "port": 8502,
+            "port": 8510,
+            "agent_api_port": 8511,
+            "agent_api_bind": "127.0.0.1",
             "threads_num": 4,
             "document_root": "../site-demo",
             "home_page": "index.html",
@@ -50,7 +54,7 @@
             "subject": "mailto:wavehome@local"
         },
         "agent": {
-            "base_url": "http://127.0.0.1:8501"
+            "base_url": "http://127.0.0.1:8512"
         }
     },
     "test": {
@@ -58,7 +62,7 @@
         "io_threads_num": 4,
         "devices_enabled": false,
         "server": {
-            "port": 8503,
+            "port": 8520,
             "threads_num": 2,
             "document_root": "../site-test",
             "home_page": "index.html"
@@ -69,7 +73,7 @@
             "subject": "mailto:wavehome@local"
         },
         "agent": {
-            "base_url": "http://127.0.0.1:8501"
+            "base_url": "http://127.0.0.1:8502"
         }
     }
 }

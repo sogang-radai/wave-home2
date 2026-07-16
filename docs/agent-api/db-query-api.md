@@ -1,6 +1,6 @@
 # DB 조회 API
 
-호출 방향: **에이전트(:8501) → 백엔드(:8500)** · **POST** `/internal/v1/db/query`
+호출 방향: **에이전트(:8502) → 백엔드 agent-api(:8501)** · **POST** `/internal/v1/db/query`
 
 에이전트가 SQLite 에 직접 접근하지 않고, **백엔드에 배치 조회를 위임**한다.
 한 HTTP 요청에 여러 테이블 조회를 `queries[]` 로 묶어 보내고, `results[]` 로 1:1 받는다.
@@ -760,7 +760,7 @@ POST /internal/v1/db/query
 import httpx
 from langchain_core.tools import tool
 
-BACKEND = "http://127.0.0.1:8500/internal/v1"
+BACKEND = "http://127.0.0.1:8501/internal/v1"
 
 @tool
 def query_db(queries: list[dict]) -> list[dict]:

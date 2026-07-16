@@ -19,7 +19,7 @@ struct AppConfig
 
     struct AgentConfig
     {
-        std::string base_url = "http://127.0.0.1:8501";
+        std::string base_url = "http://127.0.0.1:8502";
         std::string embedding_model = "nomic-embed-text";
     };
 

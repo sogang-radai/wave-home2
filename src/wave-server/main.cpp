@@ -55,7 +55,7 @@ namespace
     {
         ArgParser parser(
             "wave-server",
-            "Wave Home server (real :8500, demo :8502, test :8503 — see --help)");
+            "Wave Home server (real :8500/:8501, demo :8510/:8511, test :8520 — see docs/ports.txt)");
         parser.addArgument("--config", "-c")
             .help("config file path")
             .defaultValue("config.json");

@@ -1,6 +1,6 @@
 # 대화 (Chat) API
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)** · Base URL: `/chat/v1`
+호출 방향: **백엔드(:8500) → 에이전트(:8502)** · Base URL: `/chat/v1`
 
 
 에이전트 서버가 제공하는 **에이전틱 대화 API**다. 백엔드가 한 번의 대화 턴을 요청하면, 에이전트가
@@ -16,7 +16,7 @@ LangGraph 로 돌며 **필요할 때** 백엔드에 RAG·DB 조회·기기 제�
 5. 에이전트: 수신 스니펫 + 대화로 답변 생성 → SSE 스트림
 6. 백엔드: SSE 수신 → 프론트 표시 + `chat_history` 저장
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)** (단, 3단계 tool 은 에이전트 → 백엔드)
+호출 방향: **백엔드(:8500) → 에이전트(:8502)** (단, 3단계 tool 은 에이전트 → 백엔드)
 
 한 턴에서 커넥션은 2종류가 동시에 열린다.
 
@@ -28,7 +28,7 @@ LangGraph 로 돌며 **필요할 때** 백엔드에 RAG·DB 조회·기기 제�
 sequenceDiagram
     participant F as 프론트
     participant B as 백엔드(:8500)
-    participant A as 에이전트(:8501)
+    participant A as 에이전트(:8502)
     participant P as LLM
 
     F->>B: 1. POST /api/v1/chat/.../messages
@@ -51,7 +51,7 @@ sequenceDiagram
 
 ### 공통
 
-- Base URL: `/chat/v1` (에이전트 서버, `http://<agent>:8501/chat/v1`)
+- Base URL: `/chat/v1` (에이전트 서버, `http://<agent>:8502/chat/v1`)
 - 대화는 실시간이라 리포트/요약과 달리 **SSE** 를 쓴다(잡 패턴 아님).
 - **LLM 호출은 에이전트가 직접** 수행한다(Ollama 로컬 모델, OpenAI 호환 외부 API 등). `/llm/v1` 포워딩 API 를
   거치지 않는다. 백엔드가 쓰는 LLM 포워딩과 챗 턴 LLM 은 별개 경로다.

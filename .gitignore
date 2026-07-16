@@ -1,5 +1,5 @@
 # bin/ — ignore built binaries and downloadable TTS weights only
-#   TTS: scripts/download-tts-model.sh
+#   TTS: scripts/download/tts-model.sh
 bin/wave-server
 bin/test/
 bin/models/tts/ko-kr/
@@ -108,3 +108,4 @@ docs/vapid.txt
 *.webm
 
 .deps
+.cursorrules

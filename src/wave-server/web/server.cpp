@@ -143,7 +143,9 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     if (base_dir.empty())
         LOG_WARN("Executable directory is unknown; using relative paths from cwd");
 
-    const uint16_t port = config.value("port", 8502);
+    const uint16_t port = static_cast<uint16_t>(config.value("port", 8500));
+    const uint16_t agent_api_port = static_cast<uint16_t>(config.value("agent_api_port", 0));
+    const std::string agent_api_bind = config.value("agent_api_bind", "127.0.0.1");
     const size_t thread_num = config.value("threads_num", 2);
     const std::string document_root = config.value(
         "document_root",
@@ -201,7 +203,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     if (!std::filesystem::exists(resolved_document_root))
     {
         LOG_WARN(
-            "Document root does not exist: {} (run scripts/build-site.sh, build-site-test.sh, or build-site-demo.sh)",
+            "Document root does not exist: {} (run scripts/build/site.sh, site-test.sh, or site-demo.sh)",
             resolved_document_root.string());
     }
 
@@ -249,6 +251,14 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     }
 
     app.addListener("0.0.0.0", port);
+    if (agent_api_port != 0)
+    {
+        app.addListener(agent_api_bind, agent_api_port);
+        LOG_INFO(
+            "Agent API listener: {}:{} (loopback recommended; see docs/ports.txt)",
+            agent_api_bind,
+            agent_api_port);
+    }
 
     if (demo_mode)
         registerDemoPolicy();
@@ -318,8 +328,9 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     m_impl->documentRoot = resolved_document_root.string();
 
     LOG_INFO(
-        "Web server configured: port={}, threads={}, document_root={}, database={}, uploads={}, test_mode={}, demo_mode={}, read_only={}, skip_migrations={}",
+        "Web server configured: port={}, agent_api_port={}, threads={}, document_root={}, database={}, uploads={}, test_mode={}, demo_mode={}, read_only={}, skip_migrations={}",
         port,
+        agent_api_port == 0 ? std::string("(none)") : std::to_string(agent_api_port),
         thread_num,
         m_impl->documentRoot,
         test_mode ? "(disabled)" : resolved_database_path.string(),

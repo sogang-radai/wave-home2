@@ -17,8 +17,8 @@ import json
 import sqlite3
 from pathlib import Path
 
-from lib import ollama_client
-from lib.schema import INSIGHT_SURFACE_TO_VEC, ensure_runtime_schema
+from _lib import ollama_client
+from _lib.schema import INSIGHT_SURFACE_TO_VEC, ensure_runtime_schema
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"

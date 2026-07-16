@@ -1,7 +1,7 @@
 # 전력(power) 목업 시나리오
 
 `bin/data/demo.db`의 `power_energy`/`power_report`를 채우는 시나리오·모델 정리 문서입니다.
-생성 스크립트는 [`scripts/lib/power_model.py`](./scripts/lib/power_model.py)(원시 시뮬레이션,
+생성 스크립트는 [`_lib/power_model.py`](./_lib/power_model.py)(원시 시뮬레이션,
 `01_gen_raw_data.py`에서 실행)이고, `power_report`(에이전트 실호출 결과)는
 [`scripts/02_call_agent_reports.py`](./scripts/02_call_agent_reports.py)에서 채웁니다.
 

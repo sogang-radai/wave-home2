@@ -16,7 +16,7 @@ import random
 import sqlite3
 from pathlib import Path
 
-from lib import devices, narrative, power_model, schema, timeutil
+from _lib import devices, narrative, power_model, schema, timeutil
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"

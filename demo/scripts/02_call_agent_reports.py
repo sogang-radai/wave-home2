@@ -21,8 +21,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from lib import agent_client, timeutil
-from lib.sleep_scenario import SCENARIO
+from _lib import agent_client, timeutil
+from _lib.sleep_scenario import SCENARIO
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"

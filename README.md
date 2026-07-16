@@ -11,23 +11,25 @@ git submodule update --init --recursive
 | 경로 | 설명 |
 |------|------|
 | `wave-home-front` | React SPA |
-| `wave-home-agent` | FastAPI + LangGraph 에이전트 (:8501) |
+| `wave-home-agent` | FastAPI + LangGraph 에이전트 (prod :8502 / demo :8512) |
 
 에이전트 최초 클론(비공개 repo) — **본인 터미널**에서 실행:
 
 ```bash
 git clone https://github.com/sogang-radai/wave-home-agent.git wave-home-agent
-./scripts/register-agent-submodule.sh
-./scripts/bootstrap-agent-dev.sh
+./scripts/configure/agent-dev.sh
 ```
 
-## 연동 테스트
+## 빌드·실행
 
 ```bash
-./scripts/test-agent-integration.sh --check-only   # README·환경
-./scripts/test-agent-integration.sh              # :8500 / :8501 스모크
+./scripts/build/server.sh
+./scripts/build/site.sh          # production front → site/
+./scripts/run/prod.sh            # backend client :8500, agent-api :8501
+# agent: uvicorn … --port 8502
 ```
 
-자세한 절차: [docs/agent-integration.md](docs/agent-integration.md)  
-API 계약: [docs/agent-tool-api.md](docs/agent-tool-api.md)  
-포트·경계: [docs/wave-server-boundaries.md](docs/wave-server-boundaries.md)
+데모: `./scripts/build/site-demo.sh` → `./scripts/run/demo.sh` (client :8510 / agent-api :8511 / agent :8512)
+
+포트: [docs/ports.txt](docs/ports.txt) · [docs/wave-server-boundaries.md](docs/wave-server-boundaries.md)  
+API 계약: [docs/agent-api/README.md](docs/agent-api/README.md)

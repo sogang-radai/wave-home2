@@ -1,6 +1,8 @@
 # 에이전트 API 명세
 
-백엔드(:8500)와 에이전트 서버(:8501) 사이의 HTTP 계약입니다.
+백엔드(client-api :8500, agent-api :8501)와 에이전트 서버(:8502) 사이의 HTTP 계약입니다.
+포트 SSOT: [`docs/ports.txt`](../ports.txt) · [`wave-server-boundaries.md`](../wave-server-boundaries.md).
+
 기존 단일 문서 `docs/agent-tool-api.md`를 역할별로 분할했습니다.
 
 ## 변경 내역 (2026-07-08)
@@ -19,12 +21,11 @@
 ## 서버 구성
 
 - **프론트엔드** (React SPA) — API 미제공. 백엔드 `/api/v1` 만 호출하는 클라이언트.
-- **백엔드** (C++ Drogon, real :8500 / demo :8502 / test :8503) — 공개 게이트웨이. 프론트 API + 에이전트 대상 내부 API.
+- **백엔드** (C++ Drogon) — client-api real **8500** / demo **8510** / test **8520**; agent-api real **8501** / demo **8511** (루프백).
   SQLite 소유·R/W 전담(데모는 RO). RAG·DB 조회 수행.
-- **에이전트** (Python FastAPI + LangGraph, :8501) — 내부 서버. **DB에 직접 접근하지 않는다.**
+- **에이전트** (Python FastAPI + LangGraph) — real **8502** / demo **8512**. **DB에 직접 접근하지 않는다.**
 
-포트·호출 방향·`/internal` 격리 목표의 SSOT: [wave-server-boundaries.md](../wave-server-boundaries.md).  
-시연(데모) 모드 채팅 기능·제한: [demo-chat-features.md](../demo-chat-features.md) (데모 코어는 :8502).
+시연(데모) 모드 채팅 기능·제한: [demo-chat-features.md](../demo-chat-features.md) (데모 client-api :8510).
 
 ### 호출 방향 요약
 
@@ -33,11 +34,11 @@
 | 백엔드 → 에이전트 | [forwarding-api.md](./forwarding-api.md), [chat-api.md](./chat-api.md), [sleep-analysis-api.md](./sleep-analysis-api.md), [power-analysis-api.md](./power-analysis-api.md), [insight-generation-api.md](./insight-generation-api.md), [weekly-plan-analysis-api.md](./weekly-plan-analysis-api.md), [posture-analysis-api.md](./posture-analysis-api.md) |
 | 에이전트 → 백엔드 | [device-tool-api.md](./device-tool-api.md), [schedule-tasks-api.md](./schedule-tasks-api.md), [alarms-api.md](./alarms-api.md), [db-query-api.md](./db-query-api.md), [rag-api.md](./rag-api.md) |
 
-예시:
+예시 (production):
 
-- 프론트 → 백엔드(:8500): `/api/v1/*`
-- 백엔드 → 에이전트(:8501): LLM 포워딩, 수면·전력·인사이트·주간배너 분석 잡
-- 에이전트 → 백엔드(:8500): 장치 제어·룰·예약, 일정·알람 CRUD, RAG 검색, DB **조회** 등 `/internal/v1/*`
+- 프론트 → 백엔드 client-api(:8500): `/api/v1/*`
+- 백엔드 → 에이전트(:8502): LLM 포워딩, 수면·전력·인사이트·주간배너 분석 잡
+- 에이전트 → 백엔드 agent-api(:8501): `/internal/v1/*`
 
 ### 룰·일정·알람 (프론트 vs 에이전트)
 

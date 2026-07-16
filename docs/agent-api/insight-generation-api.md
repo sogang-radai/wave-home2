@@ -1,13 +1,13 @@
 # Insight Generation API
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)** · Base URL: `/insight/v1`
+호출 방향: **백엔드(:8500) → 에이전트(:8502)** · Base URL: `/insight/v1`
 
 백엔드가 리포트 생성·일일 갱신 시점에 에이전트에 인사이트 배치 생성을 **요청**한다.  
 에이전트는 필요 시 `POST /internal/v1/db/query`·`POST /internal/v1/rag/search` 로 데이터를 보강하고, **생성 결과(인사이트 행 + 임베딩)를 반환한다.**
 
 ### 공통
 
-- Base URL: `/insight/v1` (`http://<agent>:8501/insight/v1`)
+- Base URL: `/insight/v1` (`http://<agent>:8502/insight/v1`)
 - 비동기 잡 패턴은 [sleep-analysis-api.md](./sleep-analysis-api.md) 와 동일 (`POST` → `202` + `jobId`, `GET /jobs/{jobId}`).
 - 동일 대상(`userId` + `surface` + `date`)에 `queued`/`running` 잡이 있으면 `409 JOB_ALREADY_RUNNING`.
 - `embed`(기본 `true`): 각 인사이트에 `embedding` 포함. 백엔드가 `vec_insight_*` 에 upsert.

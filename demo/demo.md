@@ -14,11 +14,11 @@ demo/
 ├── sleep.md                   # 수면 30일 시나리오(레이더+삼성헬스 분석 포함)
 ├── power.md                   # 전력 시나리오(플러그별 모델)
 ├── scripts/
-│   ├── lib/                   # 공용 모듈(schema, devices, timeutil, ollama_client, agent_client,
+│   ├── _lib/                   # 공용 모듈(schema, devices, timeutil, ollama_client, agent_client,
 │   │                          #  power_model, sleep_model, sleep_scenario, narrative, manual_texts)
 │   ├── 01_gen_raw_data.py      # AI 불필요 원시 데이터 전체(수면 제외)
 │   ├── 01b_gen_sleep_raw.py    # sleep_session/sleep_stat 원시 데이터
-│   ├── 02_call_agent_reports.py# 에이전트(:8501) 실호출 — 수면 daily/weekly, 전력 24h/1w/1mo
+│   ├── 02_call_agent_reports.py# 에이전트(:8502) 실호출 — 수면 daily/weekly, 전력 24h/1w/1mo
 │   ├── 03_gen_manual_ai_texts.py # 에이전트 미지원 영역 수동 작성 + 1h전력/30m수면 템플릿
 │   ├── 04_embed_manual_texts.py  # 03 산출물을 Ollama로 직접 임베딩
 │   └── 05_load_ai_json_to_db.py  # 02+03/04 산출물을 최종 demo.db에 반영
@@ -39,12 +39,12 @@ demo/
 사전 준비:
 
 1. Ollama가 로컬에서 떠 있어야 한다(`nomic-embed-text` 모델 필요). 기본 `http://127.0.0.1:11434`.
-2. 에이전트 서버(`wave-home-agent`)가 `:8501`에서 떠 있어야 한다(02 단계에만 필요):
+2. 에이전트 서버(`wave-home-agent`)가 `:8502`에서 떠 있어야 한다(02 단계에만 필요):
    ```bash
    cd wave-home-agent
-   .venv/bin/uvicorn app.main:app --port 8501
+   .venv/bin/uvicorn app.main:app --port 8502
    ```
-   헬스체크: `curl http://127.0.0.1:8501/health`
+   헬스체크: `curl http://127.0.0.1:8502/health`
 3. (선택) `vec_*` 테이블까지 채우려면 Python 환경에 `sqlite-vec`가 있어야 한다.
    없으면 `05_load_ai_json_to_db.py`가 `sleep_report`·`power_report` 등 본 테이블만 반영하고
    `vec_*`는 건너뛴다(데모 UI 조회에는 영향 없음, RAG/임베딩 검색만 비어 있음).
@@ -107,7 +107,7 @@ Ollama로 직접 임베딩한다(LLM 생성 호출 없음).
 쓰기 때문에, 두 인스턴스를 동시에 켜면 같은 대상에 대해 `JOB_ALREADY_RUNNING` 오류가
 나고, 체크포인트 파일에 경쟁 상태(race condition)가 생겨 진행 상황이 덮어써질 수 있다.
 실행 전 `ps aux | grep 02_call_agent_reports`로 기존 프로세스가 없는지 꼭 확인한다.
-같은 이유로 에이전트 서버(uvicorn)도 항상 하나만 띄운다(`curl :8501/health`로 확인).
+같은 이유로 에이전트 서버(uvicorn)도 항상 하나만 띄운다(`curl :8502/health`로 확인).
 
 **진행 상황 확인**:
 
