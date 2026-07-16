@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """에이전트(:8501)에 daily/weekly 수면 리포트 + 24h/1w/1mo 전력 리포트를 실호출한다(축소안).
 
-DB에는 쓰지 않고 결과를 mock/ai_reports/*.json 으로만 남긴다(05_load_ai_json_to_db.py가 반영).
+DB에는 쓰지 않고 결과를 demo/ai_reports/*.json 으로만 남긴다(05_load_ai_json_to_db.py가 반영).
 전력은 계측 플러그 합산(device_id=NULL)만 실호출한다(약속된 축소 범위: 24h 30 + 1w 24 + 1mo 1 = 55건).
 수면은 daily 30 + weekly 24(롤링 7일 창, period_start=창 첫날) = 54건.
 
@@ -9,7 +9,7 @@ DB에는 쓰지 않고 결과를 mock/ai_reports/*.json 으로만 남긴다(05_l
     uvicorn app.main:app --port 8501   (wave-home-agent/)
 
 실행:
-    python3 mock/scripts/02_call_agent_reports.py
+    python3 demo/scripts/02_call_agent_reports.py
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from lib import agent_client, timeutil
 from lib.sleep_scenario import SCENARIO
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = REPO_ROOT / "mock" / "data" / "mock.db"
-OUT_DIR = REPO_ROOT / "mock" / "ai_reports"
+DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"
+OUT_DIR = REPO_ROOT / "demo" / "ai_reports"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_WORKERS = 1

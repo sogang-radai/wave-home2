@@ -72,9 +72,9 @@ public:
         bool speakerOpus = true;
         bool irReceive = true;
         bool irTransmit = true;
-        bool ambientLight = false;
-        bool temperature = false;
-        bool humidity = false;
+        bool ambientLight = true;
+        bool temperature = true;
+        bool humidity = true;
     };
 
     struct SubscriptionState

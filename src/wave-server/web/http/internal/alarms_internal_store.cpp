@@ -105,6 +105,7 @@ Json::Value AlarmsInternalStore::rowToJson(const drogon::orm::Row& row) const
     item["name"] = row["name"].as<std::string>();
     item["timeMinute"] = row["time_minute"].as<int>();
     item["daysOfWeek"] = parseDaysJson(row["days_of_week"].as<std::string>());
+    item["repeatWeekly"] = item["daysOfWeek"].isArray() && !item["daysOfWeek"].empty();
     item["smartWake"] = row["smart_wake"].as<int>() != 0;
     if (row["radar_device_id"].isNull())
         item["radarDeviceId"] = Json::nullValue;

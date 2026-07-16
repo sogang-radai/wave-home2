@@ -6,8 +6,8 @@
 - 수면(sleep_session/sleep_stat)은 sleep.md 검수 후 별도 스크립트에서 채운다(현재는 스키마만 생성).
 
 실행:
-    python3 mock/scripts/01_gen_raw_data.py
-    uv run --with sqlite-vec mock/scripts/01_gen_raw_data.py   # vec_* 테이블까지 생성(비어 있음)
+    python3 demo/scripts/01_gen_raw_data.py
+    uv run --with sqlite-vec demo/scripts/01_gen_raw_data.py   # vec_* 테이블까지 생성(비어 있음)
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 from lib import devices, narrative, power_model, schema, timeutil
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = REPO_ROOT / "mock" / "data" / "mock.db"
+DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"
 SEED = 20260601
 CREATED_AT = "2026-05-20 09:00:00"
 
@@ -210,8 +210,8 @@ def main() -> None:
     print(f"schema_version: 1")
     print(f"vec_* 테이블: {vec_count}/{len(schema.VEC_TABLES)} (ready={vec_ready})")
     if not vec_ready:
-        print("  → vec 없음: uv run --with sqlite-vec mock/scripts/01_gen_raw_data.py 로 재생성하거나")
-        print("    uv run --with sqlite-vec mock/scripts/00_ensure_schema.py 로 기존 DB에 추가")
+        print("  → vec 없음: uv run --with sqlite-vec demo/scripts/01_gen_raw_data.py 로 재생성하거나")
+        print("    uv run --with sqlite-vec demo/scripts/00_ensure_schema.py 로 기존 DB에 추가")
     for t in (
         "user", "room", "room_user_map", "device", "device_user_map", "device_room_map",
         "user_sleep_config", "user_general_settings", "user_ai_agent_settings",

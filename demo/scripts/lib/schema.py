@@ -603,7 +603,7 @@ def try_load_vec_extension(conn: sqlite3.Connection) -> bool:
     except Exception as exc:  # noqa: BLE001 - best effort, report and continue
         print(
             "[schema] sqlite-vec 확장 로드 실패, vec_* 테이블은 건너뜁니다.\n"
-            "         해결: uv run --with sqlite-vec mock/scripts/01_gen_raw_data.py\n"
+            "         해결: uv run --with sqlite-vec demo/scripts/01_gen_raw_data.py\n"
             f"         ({exc})"
         )
         return False
@@ -639,7 +639,7 @@ def create_vec_tables(conn: sqlite3.Connection) -> int:
 
 
 def ensure_runtime_schema(conn: sqlite3.Connection, with_vec: bool = True) -> bool:
-    """기존 mock.db에 누락된 테이블·인덱스·schema_version·vec_* 를 보강한다(데이터 유지)."""
+    """기존 demo.db에 누락된 테이블·인덱스·schema_version·vec_* 를 보강한다(데이터 유지)."""
     conn.executescript(
         """
 CREATE TABLE IF NOT EXISTS push_subscription (

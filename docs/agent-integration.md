@@ -51,14 +51,20 @@ git commit -m "Add wave-home-agent submodule"
 
 | 서비스 | 포트 | Base URL |
 |--------|------|----------|
-| 백엔드 | 8500 | `http://127.0.0.1:8500` |
+| 백엔드 (real) | 8500 | `http://127.0.0.1:8500` |
+| 백엔드 (demo) | 8502 | `http://127.0.0.1:8502` |
+| 백엔드 (test) | 8503 | `http://127.0.0.1:8503` |
 | 에이전트 | 8501 | `http://127.0.0.1:8501` |
+
+프로필·`/internal` 격리 목표(18500/18502)는 [wave-server-boundaries.md](./wave-server-boundaries.md)가 SSOT다.
 
 **호출 방향**
 
 - 프론트 → 백엔드: `/api/v1/*`
-- 백엔드 → 에이전트: `/chat/v1`, `/llm/v1`, `/sleep/v1`, `/power/v1`
-- 에이전트 → 백엔드: `/internal/v1/*` (`db/query`, `rag/search`, `tools/device.*` 등)
+- 백엔드 → 에이전트: `/chat/v1`, `/llm/v1`, `/sleep/v1`, `/power/v1`, `/insight/v1`, …
+- 에이전트 → 백엔드: `/internal/v1/*` (`db/query`, `rag/search`, `tools/device.*` 등)  
+  - real: `scripts/configure-agent-real.sh`  
+  - demo: `scripts/configure-agent-demo.sh`
 
 ## 3. 설정
 

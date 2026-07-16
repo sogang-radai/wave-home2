@@ -81,7 +81,18 @@
             "settings": {
                 "channels": 1,
                 "sample_rate": 16000,
-                "sample_size": 16
+                "sample_size": 16,
+                "capabilities": {
+                    "mic_pcm": true,
+                    "mic_opus": true,
+                    "speaker_pcm": false,
+                    "speaker_opus": true,
+                    "ir_receive": true,
+                    "ir_transmit": true,
+                    "ambient_light": true,
+                    "temperature": true,
+                    "humidity": true
+                }
             },
             "vendor": "RADAI",
             "room_id": "0000000000000002"

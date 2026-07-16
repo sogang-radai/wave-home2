@@ -200,10 +200,28 @@ namespace
 }
 
 void IotController::getSummary(
-    const drogon::HttpRequestPtr& /*req*/,
+    const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
     auto& state = AppState::get();
+    if (demoVirtualDevicesEnabled())
+    {
+        if (!state.db())
+        {
+            respondError(callback, 503, "DB_UNAVAILABLE", "데이터베이스를 사용할 수 없습니다.");
+            return;
+        }
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        DemoDeviceBackend backend(state.db());
+        std::string code;
+        const auto body = backend.getSummary(runtime_id, code);
+        if (!code.empty())
+            respondError(callback, 503, code, "장치 요약을 조회할 수 없습니다.");
+        else
+            respondDemoJson(req, callback, body, runtime_id);
+        return;
+    }
+
     IotStore store(state.deviceManager);
     if (!requireDevices(callback, store))
         return;
@@ -424,6 +442,14 @@ void IotController::listEvents(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
     auto& state = AppState::get();
+    if (demoVirtualDevicesEnabled())
+    {
+        // Virtual demo has no shared event ring; keep empty so UI matches summary.
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        respondDemoJson(req, callback, Json::Value(Json::arrayValue), runtime_id);
+        return;
+    }
+
     IotStore store(state.deviceManager);
     if (!requireDevices(callback, store))
         return;
@@ -867,6 +893,7 @@ void IotController::streamWaveStationTelemetry(
     resp->setContentTypeString("text/event-stream");
     resp->addHeader("Cache-Control", "no-cache, no-store");
     resp->addHeader("Connection", "keep-alive");
+    resp->addHeader("X-Accel-Buffering", "no");
     callback(resp);
 }
 

@@ -1,4 +1,4 @@
-"""mock/sleep.md 의 "30일 시나리오 표"를 그대로 코드화한 것. 표를 수정하면 여기도 맞춰 수정한다."""
+"""demo/sleep.md 의 "30일 시나리오 표"를 그대로 코드화한 것. 표를 수정하면 여기도 맞춰 수정한다."""
 
 from __future__ import annotations
 

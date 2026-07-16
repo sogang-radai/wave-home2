@@ -6,7 +6,7 @@
 
 30초 1샘플로 와트를 시뮬레이션한 뒤 5분 버킷으로 적분하고, 5m -> 1h -> 24h 로 달력
 롤업, 1h/24h -> 1w(슬라이딩 7일)/1mo(슬라이딩 30일)로 다시 롤업한다. 자세한 시나리오
-설명은 mock/power.md 를 참고.
+설명은 demo/power.md 를 참고.
 """
 
 from __future__ import annotations

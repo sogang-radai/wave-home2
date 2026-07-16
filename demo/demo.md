@@ -1,4 +1,4 @@
-# Mock DB 생성 가이드
+# Demo DB 생성 가이드
 
 `docs/db-schema.md`(2026-07-08 버전) 기준으로 2026년 6월 1일~30일(30일) 목업 데이터를 생성한다.
 사용자는 `김건강`(user_id=1, 침실에서 취침)과 `박헬스`(user_id=2, 침실에서 취침하지 않음— 수면 데이터 없음)
@@ -9,12 +9,10 @@
 ## 폴더 구조
 
 ```
-mock/
-├── mock.md                    # 이 문서
+demo/
+├── demo.md                    # 이 문서
 ├── sleep.md                   # 수면 30일 시나리오(레이더+삼성헬스 분석 포함)
 ├── power.md                   # 전력 시나리오(플러그별 모델)
-├── data/
-│   └── mock.db                # 최종 산출물(SQLite, sqlite-vec 포함)
 ├── scripts/
 │   ├── lib/                   # 공용 모듈(schema, devices, timeutil, ollama_client, agent_client,
 │   │                          #  power_model, sleep_model, sleep_scenario, narrative, manual_texts)
@@ -23,7 +21,7 @@ mock/
 │   ├── 02_call_agent_reports.py# 에이전트(:8501) 실호출 — 수면 daily/weekly, 전력 24h/1w/1mo
 │   ├── 03_gen_manual_ai_texts.py # 에이전트 미지원 영역 수동 작성 + 1h전력/30m수면 템플릿
 │   ├── 04_embed_manual_texts.py  # 03 산출물을 Ollama로 직접 임베딩
-│   └── 05_load_ai_json_to_db.py  # 02+03/04 산출물을 최종 mock.db에 반영
+│   └── 05_load_ai_json_to_db.py  # 02+03/04 산출물을 최종 demo.db에 반영
 ├── ai_reports/                 # 02 산출물(중간 JSON, git 커밋 대상 아님 권장)
 │   ├── power_reports.json
 │   └── sleep_reports.json
@@ -32,6 +30,8 @@ mock/
     ├── weekly_plan_report.json
     ├── power_report_1h.json
     └── sleep_stat_30m_summary.json
+
+최종 DB 산출물: `bin/data/demo.db` (SQLite, sqlite-vec 포함)
 ```
 
 ## 실행 순서(전체 재생성 시)
@@ -49,23 +49,23 @@ mock/
    없으면 `05_load_ai_json_to_db.py`가 `sleep_report`·`power_report` 등 본 테이블만 반영하고
    `vec_*`는 건너뛴다(데모 UI 조회에는 영향 없음, RAG/임베딩 검색만 비어 있음).
    ```bash
-   uv run --with sqlite-vec mock/scripts/05_load_ai_json_to_db.py
+   uv run --with sqlite-vec demo/scripts/05_load_ai_json_to_db.py
    ```
 
 실행:
 
 ```bash
-cd mock/scripts
+cd demo/scripts
 python3 01_gen_raw_data.py        # DB 새로 생성 + 스키마 + AI 불필요 데이터 전체
 python3 01b_gen_sleep_raw.py      # sleep_session / sleep_stat(1m, 30m + 템플릿 summary_text)
 python3 02_call_agent_reports.py  # 에이전트 실호출(아래 "02 단계 상세" 참고, 시간이 오래 걸림)
 python3 03_gen_manual_ai_texts.py # insight / weekly_plan_report / 1h전력 / 30m수면 텍스트 작성
 python3 04_embed_manual_texts.py  # 위 텍스트 Ollama 임베딩
-python3 05_load_ai_json_to_db.py  # 02+03/04 결과를 mock.db에 반영(여러 번 실행해도 안전)
+python3 05_load_ai_json_to_db.py  # 02+03/04 결과를 demo.db에 반영(여러 번 실행해도 안전)
 ```
 
 데모 서버 반영: `05` 이후 `wave-server --profile demo`를 재시작하고 브라우저를 새로고침한다.
-프론트는 `mock.db`를 직접 읽지 않고 API를 통해 조회한다.
+프론트는 `demo.db`를 직접 읽지 않고 API를 통해 조회한다.
 
 ## 02 단계 상세 — 에이전트 실호출 (가장 오래 걸리는 단계)
 
@@ -99,11 +99,11 @@ Ollama로 직접 임베딩한다(LLM 생성 호출 없음).
   `model` 옵션 참고).
 
 **재실행/이어하기**: `02_call_agent_reports.py`는 실행할 때마다
-`mock/ai_reports/power_reports.json`·`sleep_reports.json`을 읽어 **이미 끝난 대상은
+`demo/ai_reports/power_reports.json`·`sleep_reports.json`을 읽어 **이미 끝난 대상은
 건너뛴다**. 매 건 완료 후 즉시 파일에 체크포인트 저장하므로, 중간에 서버를 껐다 켜도
 `python3 02_call_agent_reports.py`를 다시 실행하면 남은 것만 이어서 진행한다.
 
-**주의 — 절대 동시에 2개 이상 실행하지 말 것**: 같은 `mock.db`·같은 에이전트 서버를
+**주의 — 절대 동시에 2개 이상 실행하지 말 것**: 같은 `demo.db`·같은 에이전트 서버를
 쓰기 때문에, 두 인스턴스를 동시에 켜면 같은 대상에 대해 `JOB_ALREADY_RUNNING` 오류가
 나고, 체크포인트 파일에 경쟁 상태(race condition)가 생겨 진행 상황이 덮어써질 수 있다.
 실행 전 `ps aux | grep 02_call_agent_reports`로 기존 프로세스가 없는지 꼭 확인한다.
@@ -112,7 +112,7 @@ Ollama로 직접 임베딩한다(LLM 생성 호출 없음).
 **진행 상황 확인**:
 
 ```bash
-cd mock/scripts
+cd demo/scripts
 python3 -c "import json; print('power', len(json.load(open('../ai_reports/power_reports.json'))))"
 python3 -c "
 import json
@@ -128,8 +128,8 @@ print('sleep', len(rows), f'(daily {daily} + weekly {weekly})')
 
 ```
 === 02_call_agent_reports 완료 ===
-power_reports: 55 -> .../mock/ai_reports/power_reports.json
-sleep_reports: 54 -> .../mock/ai_reports/sleep_reports.json
+power_reports: 55 -> .../demo/ai_reports/power_reports.json
+sleep_reports: 54 -> .../demo/ai_reports/sleep_reports.json
 ```
 
 ### 주간 리포트만 다시 생성할 때
@@ -137,7 +137,7 @@ sleep_reports: 54 -> .../mock/ai_reports/sleep_reports.json
 에이전트 스펙·프롬프트를 바꿨거나 weekly만 갱신하고 싶을 때:
 
 ```bash
-cd mock/scripts
+cd demo/scripts
 # sleep_reports.json 에서 period=="weekly" 항목만 제거(또는 파일 백업 후 weekly 삭제)
 python3 -c "
 import json
@@ -162,10 +162,10 @@ python3 05_load_ai_json_to_db.py   # 03/04는 건너뛰어도 됨(weekly만 바�
 | --- | --- | --- |
 | `03_gen_manual_ai_texts.py` | insight·weekly_plan·1h전력·30m수면 템플릿 작성. `sleep_reports.json`의 weekly는 DB 메트릭으로 **본문만** 재병합(에이전트 `report_text`·`embedding`은 daily·weekly 모두 유지) | weekly만 갱신했으면 생략 가능 |
 | `04_embed_manual_texts.py` | 03 산출물 Ollama 임베딩 | 03을 안 돌렸으면 생략 |
-| `05_load_ai_json_to_db.py` | `ai_reports`·`ai_manual` → `mock.db` | **필수** |
+| `05_load_ai_json_to_db.py` | `ai_reports`·`ai_manual` → `demo.db` | **필수** |
 
 ```bash
-cd mock/scripts
+cd demo/scripts
 python3 03_gen_manual_ai_texts.py
 python3 04_embed_manual_texts.py
 python3 05_load_ai_json_to_db.py
@@ -187,7 +187,7 @@ weekly_plan_report: 60건
 ## 검증 쿼리(로드 후)
 
 ```bash
-sqlite3 mock/data/mock.db
+sqlite3 bin/data/demo.db
 ```
 
 ```sql

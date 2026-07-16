@@ -34,7 +34,7 @@
             "threads_num": 4,
             "document_root": "../site-demo",
             "home_page": "index.html",
-            "database_path": "../mock/data/mock.db",
+            "database_path": "data/demo.db",
             "skip_migrations": true,
             "read_only": true
         },

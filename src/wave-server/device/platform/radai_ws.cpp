@@ -2035,12 +2035,6 @@ void RadaiWs::onSensor(wsp::Type type, const wsp::SensorBody& sensor)
     }
 
     updateEnv(env);
-    LOG_INFO(
-        "RadaiWs: sensor {} = {} (unit={}, quality={})",
-        name,
-        sensor.value,
-        static_cast<unsigned>(sensor.unit),
-        static_cast<unsigned>(sensor.quality));
 }
 
 void RadaiWs::onIrReceived(const wsp::IrReceiveBody& body, const std::vector<uint16_t>& timings)

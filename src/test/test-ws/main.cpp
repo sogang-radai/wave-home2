@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
@@ -105,7 +106,7 @@ namespace
             "  irrx [seconds]             wait for raw IR receive (default 30)\n"
             "  env [seconds]              subscribe sensors + poll until data (default 10)\n"
             "  rec wav <path> [seconds]   record mic to WAV (default 5)\n"
-            "  play wav <path>            play WAV on speaker\n"
+            "  play wav <path> [volume]   play WAV on speaker (volume 0.0~2.0, default 1.0)\n"
             "  mic                        fetch latest mic frame (subscribes if needed)\n"
             "  wait [seconds]             poll status until IR or timeout (default 30)\n"
             "  h q                        help / quit\n";
@@ -484,7 +485,24 @@ namespace
         return true;
     }
 
-    bool playWav(RadaiWs& ws, IAudioSink& sink, const std::string& path)
+    void apply_volume(std::vector<int16_t>& samples, float volume)
+    {
+        if (std::fabs(volume - 1.0f) < 1e-6f)
+            return;
+
+        for (int16_t& sample : samples)
+        {
+            const float scaled = static_cast<float>(sample) * volume;
+            if (scaled > 32767.0f)
+                sample = 32767;
+            else if (scaled < -32768.0f)
+                sample = -32768;
+            else
+                sample = static_cast<int16_t>(scaled);
+        }
+    }
+
+    bool playWav(RadaiWs& ws, IAudioSink& sink, const std::string& path, float volume)
     {
         WavPcm wav;
         if (!readWavFile(path, wav))
@@ -501,12 +519,15 @@ namespace
             return false;
         }
 
+        apply_volume(wav.samples, volume);
+
         const uint32_t frameMs = ws.getAudioConfig().frameDurationMs;
         const size_t frameSamples = std::max<size_t>(
             1,
             static_cast<size_t>(sinkFmt.sampleRate) * frameMs / 1000 * sinkFmt.channels);
 
-        std::cout << "  playing " << path << " (" << wav.samples.size() << " samples)\n";
+        std::cout << "  playing " << path << " (" << wav.samples.size() << " samples"
+                  << ", volume=" << volume << ")\n";
 
         const auto start = std::chrono::steady_clock::now();
         size_t samplesSent = 0;
@@ -733,8 +754,22 @@ namespace
             in >> kind >> path;
             if (kind != "wav" || path.empty())
             {
-                std::cout << "  usage: play wav <path>\n";
+                std::cout << "  usage: play wav <path> [volume]\n";
                 return true;
+            }
+
+            float volume = 1.0f;
+            if (in >> volume)
+            {
+                if (!(volume >= 0.0f && volume <= 2.0f))
+                {
+                    std::cout << "  volume must be between 0.0 and 2.0\n";
+                    return true;
+                }
+            }
+            else
+            {
+                in.clear();
             }
 
             auto* sink = dynamic_cast<IAudioSink*>(&ws);
@@ -744,7 +779,7 @@ namespace
                 return true;
             }
 
-            (void)playWav(ws, *sink, path);
+            (void)playWav(ws, *sink, path, volume);
             return true;
         }
 

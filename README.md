@@ -29,4 +29,5 @@ git clone https://github.com/sogang-radai/wave-home-agent.git wave-home-agent
 ```
 
 자세한 절차: [docs/agent-integration.md](docs/agent-integration.md)  
-API 계약: [docs/agent-tool-api.md](docs/agent-tool-api.md)
+API 계약: [docs/agent-tool-api.md](docs/agent-tool-api.md)  
+포트·경계: [docs/wave-server-boundaries.md](docs/wave-server-boundaries.md)

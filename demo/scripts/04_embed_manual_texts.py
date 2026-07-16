@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""03의 산출물(mock/ai_manual/*.json)을 읽어 Ollama(nomic-embed-text)로 직접 임베딩한다.
+"""03의 산출물(demo/ai_manual/*.json)을 읽어 Ollama(nomic-embed-text)로 직접 임베딩한다.
 
 이미 embedding 필드가 있어도 재생성한다(항상 최신 텍스트 기준으로 재임베딩).
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 from lib import ollama_client
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OUT_DIR = REPO_ROOT / "mock" / "ai_manual"
+OUT_DIR = REPO_ROOT / "demo" / "ai_manual"
 
 BATCH_SIZE = 16
 

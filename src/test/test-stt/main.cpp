@@ -20,6 +20,7 @@
 
 #include "core/json.h"
 #include "core/task_queue.h"
+#include "device/platform/radai_ws.h"
 #include "mic_capture.h"
 #include "service/stt_service.h"
 
@@ -31,6 +32,7 @@ using ws::stt::Capability;
 using ws::stt::RecognizeResult;
 using ws::stt::Result;
 using ws::stt::Service;
+using namespace ws::dev;
 
 std::atomic<bool> g_stopMicCapture{false};
 
@@ -190,6 +192,55 @@ void printStreamResult(const StreamOutputState& state, const RecognizeResult& re
     std::cout << "] " << result.text << "\n";
 }
 
+void appendInt16AsFloat(std::vector<float>& out, const std::vector<int16_t>& samples, float gain)
+{
+    out.reserve(out.size() + samples.size());
+    for (int16_t sample : samples)
+    {
+        float value = (static_cast<float>(sample) / 32768.0f) * gain;
+        if (value > 1.0f)
+            value = 1.0f;
+        else if (value < -1.0f)
+            value = -1.0f;
+        out.push_back(value);
+    }
+}
+
+void appendFloatWithGain(std::vector<float>& out, const float* samples, size_t count, float gain)
+{
+    out.reserve(out.size() + count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        float value = samples[i] * gain;
+        if (value > 1.0f)
+            value = 1.0f;
+        else if (value < -1.0f)
+            value = -1.0f;
+        out.push_back(value);
+    }
+}
+
+json loadDeviceList(const std::filesystem::path& path)
+{
+    std::ifstream in(path);
+    if (!in.is_open())
+        throw std::runtime_error("failed to open " + path.string());
+
+    json root;
+    in >> root;
+    return root;
+}
+
+json findWaveStationConfig(const json& root)
+{
+    for (const auto& device : root.at("device_list"))
+    {
+        if (device.at("class").get<std::string>() == RadaiWs::kClass)
+            return device;
+    }
+    throw std::runtime_error("wave_station device not found in device list");
+}
+
 int runMicMode(
     Service& service,
     std::string_view locale,
@@ -197,11 +248,18 @@ int runMicMode(
     int32_t mic_sample_rate,
     int32_t chunk_ms,
     int32_t duration_sec,
-    bool interaction)
+    bool interaction,
+    float gain)
 {
     if (chunk_ms <= 0)
     {
         std::cerr << "chunk-ms must be greater than 0.\n";
+        return 1;
+    }
+
+    if (gain <= 0.0f)
+    {
+        std::cerr << "gain must be greater than 0.\n";
         return 1;
     }
 
@@ -261,9 +319,9 @@ int runMicMode(
         device_index,
         mic_sample_rate,
         1,
-        [&shared_audio](const float* samples, size_t count) {
+        [&shared_audio, gain](const float* samples, size_t count) {
             std::lock_guard<std::mutex> lock(shared_audio.mutex);
-            shared_audio.pending.insert(shared_audio.pending.end(), samples, samples + count);
+            appendFloatWithGain(shared_audio.pending, samples, count, gain);
         },
         use_explicit_device);
     if (!opened)
@@ -272,7 +330,7 @@ int runMicMode(
         return 1;
     }
 
-    std::cout << "Listening";
+    std::cout << "Listening (gain=" << gain << ")";
     if (interaction)
         std::cout << " (interaction mode, Ctrl+C to stop)";
     else if (duration_sec > 0)
@@ -330,6 +388,203 @@ int runMicMode(
     if (interaction && !output_state.lastPartial.empty())
         std::cout << "\n";
     std::cout << "Microphone capture finished.\n";
+    return 0;
+}
+
+int runWaveStationMode(
+    Service& service,
+    std::string_view locale,
+    const std::filesystem::path& device_list_path,
+    const std::string& host_override,
+    int32_t chunk_ms,
+    int32_t duration_sec,
+    bool interaction,
+    float gain)
+{
+    if (chunk_ms <= 0)
+    {
+        std::cerr << "chunk-ms must be greater than 0.\n";
+        return 1;
+    }
+
+    if (gain <= 0.0f)
+    {
+        std::cerr << "gain must be greater than 0.\n";
+        return 1;
+    }
+
+    if (duration_sec < 0)
+    {
+        std::cerr << "duration must be 0 or greater.\n";
+        return 1;
+    }
+
+    json config;
+    try
+    {
+        config = findWaveStationConfig(loadDeviceList(device_list_path));
+    }
+    catch (const std::exception& ex)
+    {
+        std::cerr << ex.what() << "\n";
+        return 1;
+    }
+
+    if (!config.contains("room_id"))
+        config["room_id"] = "1111111111111111";
+    if (!host_override.empty())
+        config["interface"]["host"] = host_override;
+
+    RadaiWs station;
+    const int init_rc = station.init(config);
+    if (init_rc != 0)
+    {
+        std::cerr << "Wave Station init failed: " << init_rc
+                  << " (" << station.getErrorString(init_rc) << ")\n";
+        return 1;
+    }
+
+    const AudioFormat fmt = station.getSourceFormat();
+    if (fmt.sampleRate == 0 || fmt.channels == 0)
+    {
+        std::cerr << "Wave Station reported invalid audio format.\n";
+        station.shutdown();
+        return 1;
+    }
+
+    const size_t chunk_samples =
+        static_cast<size_t>(fmt.sampleRate) * static_cast<size_t>(chunk_ms) / 1000
+        * static_cast<size_t>(fmt.channels);
+    if (chunk_samples == 0)
+    {
+        std::cerr << "chunk-ms is too small for the Wave Station sample rate.\n";
+        station.shutdown();
+        return 1;
+    }
+
+    // Keep enough backlog so STT processing does not drop 20ms frames.
+    const size_t prev_queue = station.getAudioQueueSize();
+    station.setAudioQueueSize(std::max<size_t>(prev_queue, 64));
+
+    {
+        AudioFrame discard;
+        while (station.popFrame(discard))
+        {
+        }
+    }
+
+    g_stopMicCapture.store(false);
+    std::signal(SIGINT, handleStopSignal);
+
+    StreamOutputState output_state;
+    output_state.interaction = interaction;
+
+    auto onPartial = [&output_state](const RecognizeResult& result) {
+        printStreamResult(output_state, result);
+        if (output_state.interaction && result.isEndpoint)
+        {
+            ++output_state.segment;
+            output_state.lastPartial.clear();
+        }
+        else if (!result.text.empty())
+        {
+            output_state.lastPartial = result.text;
+        }
+    };
+
+    const Result begin_result = service.beginRecognizeStream(locale, onPartial);
+    if (begin_result != Result::SUCCESS)
+    {
+        std::cerr << "beginRecognizeStream failed: " << resultToString(begin_result) << "\n";
+        station.setAudioQueueSize(prev_queue);
+        station.shutdown();
+        return 1;
+    }
+
+    const auto& iface = station.getInterfaceConfig();
+    std::cout << "Wave Station mic: " << iface.host << ":" << iface.port
+              << " @ " << fmt.sampleRate << " Hz, " << fmt.channels << " ch"
+              << " (gain=" << gain << ")\n";
+    std::cout << "Listening";
+    if (interaction)
+        std::cout << " (interaction mode, Ctrl+C to stop)";
+    else if (duration_sec > 0)
+        std::cout << " for " << duration_sec << " s";
+    else
+        std::cout << " (Ctrl+C to stop)";
+    std::cout << "...\n";
+
+    const auto started_at = std::chrono::steady_clock::now();
+    std::vector<float> pending;
+    pending.reserve(chunk_samples * 4);
+    std::vector<float> chunk;
+    chunk.reserve(chunk_samples);
+
+    while (!g_stopMicCapture.load())
+    {
+        if (duration_sec > 0)
+        {
+            const auto elapsed = std::chrono::steady_clock::now() - started_at;
+            if (elapsed >= std::chrono::seconds(duration_sec))
+                break;
+        }
+
+        if (!station.isLinkConnected())
+        {
+            std::cerr << "Wave Station link lost.\n";
+            break;
+        }
+
+        AudioFrame frame;
+        bool got = false;
+        while (station.popFrame(frame))
+        {
+            got = true;
+            if (!frame.samples.empty())
+                appendInt16AsFloat(pending, frame.samples, gain);
+        }
+
+        while (pending.size() >= chunk_samples)
+        {
+            chunk.assign(pending.begin(), pending.begin() + static_cast<ptrdiff_t>(chunk_samples));
+            pending.erase(pending.begin(), pending.begin() + static_cast<ptrdiff_t>(chunk_samples));
+
+            AudioInput input;
+            input.samples = chunk.data();
+            input.sampleCount = chunk.size();
+            input.sampleRate = fmt.sampleRate;
+
+            const Result push_result = service.pushAudio(locale, input);
+            if (push_result != Result::SUCCESS)
+            {
+                std::cerr << "pushAudio failed: " << resultToString(push_result) << "\n";
+                service.endRecognizeStream(locale);
+                station.setAudioQueueSize(prev_queue);
+                station.shutdown();
+                return 1;
+            }
+        }
+
+        if (!got)
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    if (!pending.empty())
+    {
+        AudioInput input;
+        input.samples = pending.data();
+        input.sampleCount = pending.size();
+        input.sampleRate = fmt.sampleRate;
+        (void)service.pushAudio(locale, input);
+    }
+
+    service.endRecognizeStream(locale);
+    station.setAudioQueueSize(prev_queue);
+    station.shutdown();
+
+    if (interaction && !output_state.lastPartial.empty())
+        std::cout << "\n";
+    std::cout << "Wave Station capture finished.\n";
     return 0;
 }
 
@@ -455,8 +710,17 @@ int main(int argc, const char* argv[])
     parser.addArgument("--mic")
         .help("Capture audio from the default or selected microphone.")
         .actionFlag();
+    parser.addArgument("--ws")
+        .help("Capture audio from Wave Station (device_list.json). Implies live console output.")
+        .actionFlag();
+    parser.addArgument("--device-list")
+        .help("device_list.json path for --ws.")
+        .defaultValue("bin/device/device_list.json");
+    parser.addArgument("--ws-host")
+        .help("Override Wave Station host/IP from --device-list.")
+        .defaultValue("");
     parser.addArgument("--interaction", "-i")
-        .help("Continuous microphone interaction: keep streaming and print recognized text.")
+        .help("Continuous streaming with live partial text (default for --ws).")
         .actionFlag();
     parser.addArgument("--mic-list")
         .help("List CoreAudio input devices and exit.")
@@ -468,10 +732,13 @@ int main(int argc, const char* argv[])
         .help("Microphone capture sample rate in Hz for --mic.")
         .defaultValue("16000");
     parser.addArgument("--duration")
-        .help("Capture duration in seconds for --mic. 0 runs until interrupted.")
+        .help("Capture duration in seconds for --mic/--ws. 0 runs until interrupted.")
         .defaultValue("0");
+    parser.addArgument("--gain", "-g")
+        .help("Microphone input gain for --mic/--ws (e.g. 2.0 amplifies). Clamped to [-1, 1].")
+        .defaultValue("1.0");
     parser.addArgument("--chunk-ms")
-        .help("Chunk duration in milliseconds for --stream and --mic modes.")
+        .help("Chunk duration in milliseconds for --stream, --mic, and --ws modes.")
         .defaultValue("100");
     parser.addArgument("--list")
         .help("List loaded locales and models, then exit.")
@@ -499,14 +766,28 @@ int main(int argc, const char* argv[])
         return 1;
     }
 
+    if (parser.has("ws") && parser.has("stream"))
+    {
+        std::cerr << "--ws and --stream cannot be used together.\n";
+        return 1;
+    }
+
+    if (parser.has("ws") && parser.has("mic"))
+    {
+        std::cerr << "--ws and --mic cannot be used together.\n";
+        return 1;
+    }
+
     if (parser.has("interaction") && parser.has("stream"))
     {
         std::cerr << "--interaction and --stream cannot be used together.\n";
         return 1;
     }
 
-    const bool interaction_mode = parser.has("interaction");
-    const bool mic_mode = parser.has("mic") || interaction_mode;
+    const bool ws_mode = parser.has("ws");
+    // Wave Station mode always prints live partials; --interaction only matters for local mic.
+    const bool interaction_mode = parser.has("interaction") || ws_mode;
+    const bool mic_mode = parser.has("mic") || (parser.has("interaction") && !ws_mode);
 
     const std::filesystem::path base_dir = parser.get<std::string>("base-dir");
     const std::filesystem::path config_path = base_dir / parser.get<std::string>("config");
@@ -549,12 +830,40 @@ int main(int argc, const char* argv[])
         return 1;
     }
 
+    if (ws_mode)
+    {
+        const int32_t chunk_ms = parser.get<int32_t>("chunk-ms");
+        // --ws keeps live console output; --duration still limits the session when set.
+        const int32_t duration_sec = parser.get<int32_t>("duration");
+        const float gain = parser.get<float>("gain");
+        const std::filesystem::path device_list = parser.get<std::string>("device-list");
+        const std::string ws_host = parser.get<std::string>("ws-host");
+
+        std::cout << "Mode: wave-station (live)\n";
+        if (static_cast<int32_t>(capability->sampleRate) != 16000)
+        {
+            std::cout << "Note: engine rate is " << capability->sampleRate
+                      << " Hz; Wave Station typically streams 16000 Hz.\n";
+        }
+
+        return runWaveStationMode(
+            service,
+            locale,
+            device_list,
+            ws_host,
+            chunk_ms,
+            duration_sec,
+            /*interaction=*/true,
+            gain);
+    }
+
     if (mic_mode)
     {
         const int32_t mic_device = parser.get<int32_t>("mic-device");
         const int32_t mic_rate = parser.get<int32_t>("mic-rate");
         const int32_t chunk_ms = parser.get<int32_t>("chunk-ms");
         const int32_t duration_sec = interaction_mode ? 0 : parser.get<int32_t>("duration");
+        const float gain = parser.get<float>("gain");
 
         std::cout << "Mode: " << (interaction_mode ? "interaction" : "microphone") << "\n";
         if (mic_rate != static_cast<int32_t>(capability->sampleRate))
@@ -571,7 +880,8 @@ int main(int argc, const char* argv[])
             mic_rate,
             chunk_ms,
             duration_sec,
-            interaction_mode);
+            interaction_mode,
+            gain);
     }
 
     const std::filesystem::path wav_path = parser.get<std::string>("file");

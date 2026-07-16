@@ -80,6 +80,7 @@ namespace
     void configureStaticFileTypes(drogon::HttpAppFramework& app)
     {
         // Drogon defaults omit .json; CRA ships manifest.json and asset-manifest.json.
+        // Landing WaveCanvas also needs .mp4 (public/water-crossfade.mp4).
         app.registerCustomExtensionMime("json", "application/json");
         app.registerCustomExtensionMime("map", "application/json");
         app.registerCustomExtensionMime("gltf", "model/gltf+json");
@@ -105,6 +106,8 @@ namespace
             "ico",
             "icns",
             "webp",
+            "mp4",
+            "webm",
             "json",
             "map",
             "gltf",

@@ -747,7 +747,7 @@ INSERT INTO device (id, name, description, class, archived, enabled, interface_j
  '{"angle_z":0.0,"angle_y":0.0,"min_x":-5.0,"max_x":5.0,"min_y":0.0,"max_y":10.0,"min_z":-2.0,"max_z":2.0}'),
 (2, 'Wave Station', '침실 Wave Station', 'wave_station', 0, 1,
  '{"host":"192.168.0.60","port":8765}',
- '{"sample_rate":16000,"sample_size":16,"channels":1}'),
+ '{"sample_rate":16000,"sample_size":16,"channels":1,"capabilities":{"mic_pcm":true,"mic_opus":true,"speaker_pcm":false,"speaker_opus":true,"ir_receive":true,"ir_transmit":true,"ambient_light":true,"temperature":true,"humidity":true}}'),
 (3, '거실 카메라', '거실 IoT 카메라', 'reolink_e1_pro', 0, 1,
  '{"host":"192.168.0.50","mac":"94:8C:D7:A2:6A:97","user":"enc:0500120444","password":"enc:0500120444595d5e51","rtsp_port":554,"go2rtc":true}',
  NULL),

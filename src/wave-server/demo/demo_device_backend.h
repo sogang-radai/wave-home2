@@ -23,6 +23,8 @@ public:
     explicit DemoDeviceBackend(drogon::orm::DbClientPtr client);
 
     Json::Value listDevices(const std::string& runtime_id, std::string& code) const;
+    /** Session-scoped summary for IoT header cards (devices / rules / events). */
+    Json::Value getSummary(const std::string& runtime_id, std::string& code) const;
     Json::Value getState(const std::string& runtime_id, const std::string& device_id, std::string& code) const;
     Json::Value queryDevice(
         const std::string& runtime_id,

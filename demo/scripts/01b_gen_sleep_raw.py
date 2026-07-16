@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""mock/sleep.md 검수 완료 후 실행하는 수면 원시 데이터(sleep_session/sleep_stat) 생성 스크립트.
+"""demo/sleep.md 검수 완료 후 실행하는 수면 원시 데이터(sleep_session/sleep_stat) 생성 스크립트.
 
-01_gen_raw_data.py 로 이미 만들어진 mock/data/mock.db 에 이어서 실행한다(스키마/다른 테이블은
+01_gen_raw_data.py 로 이미 만들어진 bin/data/demo.db 에 이어서 실행한다(스키마/다른 테이블은
 그대로 두고 sleep_session/sleep_stat 만 채움). 박헬스(user_id=2)는 침실을 쓰지 않으므로 대상에서
 제외한다.
 
 실행:
-    python3 mock/scripts/01_gen_raw_data.py   # 먼저 실행되어 있어야 함
-    python3 mock/scripts/01b_gen_sleep_raw.py
+    python3 demo/scripts/01_gen_raw_data.py   # 먼저 실행되어 있어야 함
+    python3 demo/scripts/01b_gen_sleep_raw.py
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 from lib import devices, sleep_model
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = REPO_ROOT / "mock" / "data" / "mock.db"
+DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"
 
 USER_ID = 1
 ROOM_ID = devices.ROOM_NAME_TO_ID["침실"]

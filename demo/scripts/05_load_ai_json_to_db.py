@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""02(에이전트 실호출)·03/04(수동 작성+임베딩) 산출물을 최종 mock/data/mock.db 에 반영한다.
+"""02(에이전트 실호출)·03/04(수동 작성+임베딩) 산출물을 최종 bin/data/demo.db 에 반영한다.
 
-- mock/ai_reports/power_reports.json  -> power_report(24h/1w/1mo) + vec_power_report
-- mock/ai_reports/sleep_reports.json  -> sleep_report(daily/weekly) + vec_sleep_report
-- mock/ai_manual/power_report_1h.json -> power_report(1h) + vec_power_report
-- mock/ai_manual/sleep_stat_30m_summary.json -> sleep_stat.summary_text(이미 있음) + vec_sleep_stat
-- mock/ai_manual/insight.json         -> insight + vec_insight_{surface}
-- mock/ai_manual/weekly_plan_report.json -> weekly_plan_report + vec_weekly_plan_report
+- demo/ai_reports/power_reports.json  -> power_report(24h/1w/1mo) + vec_power_report
+- demo/ai_reports/sleep_reports.json  -> sleep_report(daily/weekly) + vec_sleep_report
+- demo/ai_manual/power_report_1h.json -> power_report(1h) + vec_power_report
+- demo/ai_manual/sleep_stat_30m_summary.json -> sleep_stat.summary_text(이미 있음) + vec_sleep_stat
+- demo/ai_manual/insight.json         -> insight + vec_insight_{surface}
+- demo/ai_manual/weekly_plan_report.json -> weekly_plan_report + vec_weekly_plan_report
 
 여러 번 실행해도 안전하도록, 로드 전 대상 테이블의 관련 행을 지우고 다시 넣는다.
 """
@@ -21,9 +21,9 @@ from lib import ollama_client
 from lib.schema import INSIGHT_SURFACE_TO_VEC, ensure_runtime_schema
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = REPO_ROOT / "mock" / "data" / "mock.db"
-AI_REPORTS_DIR = REPO_ROOT / "mock" / "ai_reports"
-AI_MANUAL_DIR = REPO_ROOT / "mock" / "ai_manual"
+DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"
+AI_REPORTS_DIR = REPO_ROOT / "demo" / "ai_reports"
+AI_MANUAL_DIR = REPO_ROOT / "demo" / "ai_manual"
 
 
 def load_json(path: Path) -> list[dict]:
@@ -203,7 +203,7 @@ def main() -> None:
     if not vec_ready:
         print(
             "경고: sqlite-vec 확장을 로드할 수 없어 vec_* 테이블 반영을 건너뜁니다.\n"
-            "      uv run --with sqlite-vec mock/scripts/00_ensure_schema.py 를 먼저 실행하세요."
+            "      uv run --with sqlite-vec demo/scripts/00_ensure_schema.py 를 먼저 실행하세요."
         )
 
     print(f"power_report: {load_power_reports(conn, vec_ready)}건")

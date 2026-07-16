@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """에이전트 미지원 영역(insight, weekly_plan_report) + 템플릿 텍스트(1h 전력, 30m 수면 요약)를
-manuel/템플릿으로 작성해 mock/ai_manual/*.json 에 저장한다(임베딩은 04에서 채움).
+manuel/템플릿으로 작성해 demo/ai_manual/*.json 에 저장한다(임베딩은 04에서 채움).
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ from pathlib import Path
 from lib import manual_texts
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = REPO_ROOT / "mock" / "data" / "mock.db"
-OUT_DIR = REPO_ROOT / "mock" / "ai_manual"
-AI_REPORTS_DIR = REPO_ROOT / "mock" / "ai_reports"
+DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"
+OUT_DIR = REPO_ROOT / "demo" / "ai_manual"
+AI_REPORTS_DIR = REPO_ROOT / "demo" / "ai_reports"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 NOW = "2026-07-01 00:00:00"

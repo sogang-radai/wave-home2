@@ -1,6 +1,6 @@
 # 수면(sleep) 목업 시나리오 — 검수용
 
-`mock/data/mock.db`의 `sleep_session`/`sleep_stat`/`sleep_report`를 채우기 위한 계획서입니다.
+`bin/data/demo.db`의 `sleep_session`/`sleep_stat`/`sleep_report`를 채우기 위한 계획서입니다.
 **이 문서의 30일 시나리오 표를 검수받은 뒤** `sleep_session`/`sleep_stat` 생성 스크립트를 작성합니다
 (코드 작성 전 문서 우선 원칙).
 

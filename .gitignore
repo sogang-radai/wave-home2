@@ -19,7 +19,10 @@ bin/*.db
 bin/*.db-shm
 bin/*.db-wal
 
-# Mock DB pipeline (regenerate: mock/scripts/, see mock/mock.md)
+# Demo DB pipeline (regenerate: demo/scripts/, see demo/demo.md)
+demo/data/
+demo/ai_reports/
+demo/ai_manual/
 mock/data/
 mock/ai_reports/
 mock/ai_manual/
@@ -100,6 +103,7 @@ Thumbs.db
 
 docs/videos/
 docs/papers/
+docs/ppt/
 docs/vapid.txt
 *.webm
 

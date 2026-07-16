@@ -90,20 +90,45 @@ namespace
             return false;
 
         auto pcm = floatSamplesToPcm16(audio);
-        const auto sink_rate = static_cast<int32_t>(wave_station.getAudioConfig().sampleRate);
+        const auto& audio_cfg = wave_station.getAudioConfig();
+        const auto sink_rate = static_cast<int32_t>(audio_cfg.sampleRate);
         if (sink_rate > 0 && sink_rate != sample_rate)
             pcm = resampleLinearPcm16(pcm, sample_rate, sink_rate);
 
-        constexpr size_t kMaxSamplesPerFrame = 960;
-        for (size_t offset = 0; offset < pcm.size(); offset += kMaxSamplesPerFrame)
+        const int32_t play_rate = sink_rate > 0 ? sink_rate : sample_rate;
+        const size_t channels = std::max<uint8_t>(1, audio_cfg.channels);
+        const size_t frame_samples = std::max<size_t>(
+            1,
+            static_cast<size_t>(play_rate) * audio_cfg.frameDurationMs / 1000 * channels);
+
+        const auto start = std::chrono::steady_clock::now();
+        size_t samples_sent = 0;
+
+        for (size_t offset = 0; offset < pcm.size(); offset += frame_samples)
         {
-            const size_t count = std::min(kMaxSamplesPerFrame, pcm.size() - offset);
+            const size_t count = std::min(frame_samples, pcm.size() - offset);
             dev::AudioFrame frame;
-            frame.samples.assign(pcm.begin() + static_cast<std::ptrdiff_t>(offset),
+            frame.samples.assign(
+                pcm.begin() + static_cast<std::ptrdiff_t>(offset),
                 pcm.begin() + static_cast<std::ptrdiff_t>(offset + count));
+            // Opus path requires an exact frame; pad the final short frame with silence.
+            if (frame.samples.size() < frame_samples)
+                frame.samples.resize(frame_samples, 0);
+
             if (!wave_station.playFrame(frame))
+            {
+                wave_station.stopPlayback();
                 return false;
+            }
+
+            samples_sent += frame_samples;
+            const auto target = start + std::chrono::microseconds(
+                static_cast<int64_t>(samples_sent) * 1000000
+                / static_cast<int64_t>(play_rate * channels));
+            std::this_thread::sleep_until(target);
         }
+
+        wave_station.stopPlayback();
         return true;
     }
 #endif
@@ -460,12 +485,13 @@ Json::Value IotStore::normalizeState(const dev::Device* device, const nlohmann::
             else if (state.isMember("humidity"))
                 env["humidity"] = state["humidity"];
         }
+        // Keep missing sensors as null so the UI can show "—" instead of fake zeros.
         if (!env.isMember("lux"))
-            env["lux"] = 0;
+            env["lux"] = Json::nullValue;
         if (!env.isMember("tempC"))
-            env["tempC"] = 0.0;
+            env["tempC"] = Json::nullValue;
         if (!env.isMember("humidity"))
-            env["humidity"] = 0;
+            env["humidity"] = Json::nullValue;
         normalized["env"] = env;
         return normalized;
     }
@@ -744,6 +770,37 @@ Json::Value IotStore::queryDevice(const std::string& external_id, const std::str
 
         code = "QUERY_FAILED";
         return Json::Value();
+    }
+
+    if (std::string(device->getClass()) == "wave_station"
+        && (query_name == "env" || query_name == "mic_level" || query_name == "status"))
+    {
+        if (auto* actionable = dynamic_cast<dev::Actionable*>(device))
+        {
+            auto* wave_station = dynamic_cast<dev::RadaiWs*>(device);
+            if (wave_station && (query_name == "mic_level" || query_name == "status"))
+            {
+                const auto& caps = wave_station->getCapabilities();
+                const auto& audio = wave_station->getAudioConfig();
+                json sub_params;
+                if (audio.preferCompressedMic && caps.micOpus)
+                {
+                    sub_params["target"] = "mic_opus";
+                    sub_params["compressed"] = true;
+                }
+                else
+                {
+                    sub_params["target"] = "mic_pcm";
+                }
+                (void)actionable->invoke("subscribe", sub_params);
+            }
+            if (query_name == "env" || query_name == "status")
+            {
+                (void)actionable->invoke("subscribe", json{{"target", "ambient_light"}, {"on_change_only", true}});
+                (void)actionable->invoke("subscribe", json{{"target", "temperature"}, {"on_change_only", true}});
+                (void)actionable->invoke("subscribe", json{{"target", "humidity"}, {"on_change_only", true}});
+            }
+        }
     }
 
     const auto raw = queryable->query(query_name, {});
@@ -1065,6 +1122,12 @@ Json::Value IotStore::snapshotWaveStationTelemetry(const std::string& external_i
             sub_params["target"] = "mic_pcm";
         }
         mic_rc = actionable->invoke("subscribe", sub_params);
+
+        // Wave Station hardware always exposes these sensors; subscribe on demand
+        // even when settings.capabilities omitted them (older device_list).
+        (void)actionable->invoke("subscribe", json{{"target", "ambient_light"}, {"on_change_only", true}});
+        (void)actionable->invoke("subscribe", json{{"target", "temperature"}, {"on_change_only", true}});
+        (void)actionable->invoke("subscribe", json{{"target", "humidity"}, {"on_change_only", true}});
     }
     else
     {

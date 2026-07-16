@@ -9,6 +9,7 @@
 #include "demo_power_meter.h"
 #include "demo_runtime_id.h"
 #include "demo_session_registry.h"
+#include "demo_session_writes.h"
 
 WAVE_NAMESPACE_BEGIN
 
@@ -182,6 +183,44 @@ ORDER BY d.id
     Json::Value body;
     body["items"] = items;
     body["count"] = static_cast<Json::UInt>(items.size());
+    return body;
+}
+
+Json::Value DemoDeviceBackend::getSummary(const std::string& runtime_id, std::string& code) const
+{
+    const auto listed = listDevices(runtime_id, code);
+    if (!code.empty())
+        return Json::Value();
+
+    int online = 0;
+    int total = 0;
+    const auto& items = listed.isMember("items") ? listed["items"] : listed;
+    if (items.isArray())
+    {
+        total = static_cast<int>(items.size());
+        for (const auto& item : items)
+        {
+            if (item.isObject() && item.get("connected", false).asBool())
+                ++online;
+        }
+    }
+
+    ensureDemoSessionSeeded(runtime_id, m_client);
+    int active_rules = 0;
+    for (const auto& rule : demoListRules(runtime_id, 0))
+    {
+        if (rule.isObject() && rule.get("enabled", true).asBool())
+            ++active_rules;
+    }
+
+    // Demo sessions do not keep a persistent IoT event ring yet.
+    Json::Value body;
+    body["onlineDeviceCount"] = online;
+    body["totalDeviceCount"] = total;
+    body["initializingDeviceCount"] = 0;
+    body["devicesStarting"] = false;
+    body["todayEventCount"] = 0;
+    body["activeRuleCount"] = active_rules;
     return body;
 }
 

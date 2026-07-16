@@ -19,9 +19,12 @@
 ## 서버 구성
 
 - **프론트엔드** (React SPA) — API 미제공. 백엔드 `/api/v1` 만 호출하는 클라이언트.
-- **백엔드** (C++ Drogon, :8500) — 유일한 공개 게이트웨이. 프론트 API + 에이전트 대상 내부 API.
-  SQLite 소유·R/W 전담. RAG·DB 조회 수행.
+- **백엔드** (C++ Drogon, real :8500 / demo :8502 / test :8503) — 공개 게이트웨이. 프론트 API + 에이전트 대상 내부 API.
+  SQLite 소유·R/W 전담(데모는 RO). RAG·DB 조회 수행.
 - **에이전트** (Python FastAPI + LangGraph, :8501) — 내부 서버. **DB에 직접 접근하지 않는다.**
+
+포트·호출 방향·`/internal` 격리 목표의 SSOT: [wave-server-boundaries.md](../wave-server-boundaries.md).  
+시연(데모) 모드 채팅 기능·제한: [demo-chat-features.md](../demo-chat-features.md) (데모 코어는 :8502).
 
 ### 호출 방향 요약
 
@@ -76,5 +79,6 @@
 
 ## 관련 문서
 
+- [wave-server-boundaries.md](../wave-server-boundaries.md) — 포트·공개/internal/에이전트 경계 (Phase 0)
 - [agent-integration.md](../agent-integration.md) — 통합 테스트·배포
 - [db-schema.md](../db-schema.md) — SQLite 스키마

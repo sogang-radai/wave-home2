@@ -344,7 +344,7 @@ def gen_alarms(pks: dict[str, int], created_at: str) -> list[tuple]:
     rows = [
         # 김건강(1) — 침실 레이더·조명 중심
         (
-            1, "평일 기상", 7 * 60, json.dumps(["mon", "tue", "wed", "thu", "fri"]), 1,
+            1, "평일 아침 기상", 7 * 60, json.dumps(["mon", "tue", "wed", "thu", "fri"]), 1,
             pks["bed_radar"], pks["bedroom_light"], method_light_on(75), 1, created_at, created_at,
         ),
         (
