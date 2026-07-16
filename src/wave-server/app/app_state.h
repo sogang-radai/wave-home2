@@ -15,13 +15,13 @@
 #include "../web/server.h"
 #include "app_config.h"
 #include "launch_options.h"
+#include "runtime/profile_runtime.h"
 #include "../db/database.h"
 #include "../service/action_queue.h"
 #include "../service/rule_store.h"
 #include "../service/trigger_manager.h"
 #include "../web/http/v1/gesture_store.h"
 #include "../web/http/v1/ir_store.h"
-
 
 #ifdef WAVE_BUILD_TTS
 #include "../service/tts_service.h"
@@ -118,10 +118,12 @@ public:
 
     db::DbClientPtr db() const;
 
+    IProfileRuntime& runtime();
+    const IProfileRuntime& runtime() const;
+
     service::ActionQueue& actionQueue();
     service::RuleStore& ruleStore();
     service::TriggerManager& triggerManager();
-    // Alarm scheduling runtime: service::AlarmManager::get()
     web::v1::GestureStore& gestureStore();
     web::v1::IrStore& irStore();
 
@@ -131,6 +133,14 @@ public:
     bool hasIrStore() const;
 
     void onDatabaseReady(const db::DbClientPtr& client);
+
+    /** Profile runtimes: automation / device helpers. */
+    void startAutomationServices();
+    void stopAutomationServices();
+    void startTriggerRuntime();
+    void bindAutomationDatabase(const db::DbClientPtr& client);
+    bool loadDeviceManifests(const db::DbClientPtr& client);
+    void markDatabaseReady();
 
     // App
     std::atomic<bool> running{false};
@@ -154,10 +164,7 @@ public:
     IotRuntime iot;
 
 private:
-    bool loadDeviceManifests(const db::DbClientPtr& client);
-    void startAutomationServices();
-    void stopAutomationServices();
-    void startTriggerRuntime();
+    std::unique_ptr<IProfileRuntime> m_runtime;
 
     std::unique_ptr<service::ActionQueue> m_actionQueue;
     std::unique_ptr<service::RuleStore> m_ruleStore;

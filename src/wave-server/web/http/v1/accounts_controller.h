@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -19,23 +21,10 @@ public:
     ADD_METHOD_TO(AccountsController::deleteAccount, "/api/v1/accounts/{accountId}", drogon::Delete);
     METHOD_LIST_END
 
-    void listAccounts(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void createAccount(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void updateAccount(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t accountId);
-
-    void deleteAccount(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t accountId);
+    void listAccounts(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void createAccount(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void updateAccount(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t accountId);
+    void deleteAccount(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t accountId);
 };
 
 } // namespace v1

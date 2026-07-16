@@ -427,8 +427,18 @@ void DeviceManager::startDevicesAsync()
             online,
             m_manifest.size());
 
+        if (m_onStartupComplete)
+            m_onStartupComplete();
+
         startRetryLoop();
     });
+}
+
+void DeviceManager::setOnStartupComplete(std::function<void()> callback)
+{
+    m_onStartupComplete = std::move(callback);
+    if (m_startupComplete.load(std::memory_order_acquire) && m_onStartupComplete)
+        m_onStartupComplete();
 }
 
 void DeviceManager::shutdown()

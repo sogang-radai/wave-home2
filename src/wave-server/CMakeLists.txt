@@ -2,6 +2,10 @@ set(_wave_server_sources
     main.cpp
     app/app_state.cpp
     app/app_config.cpp
+    app/runtime/profile_runtime.cpp
+    app/runtime/production_profile_runtime.cpp
+    app/runtime/demo_profile_runtime.cpp
+    app/runtime/test_profile_runtime.cpp
     core/logger.cpp
     core/task_queue.cpp
     

@@ -51,7 +51,7 @@ namespace
     }
 
     db::DbClientPtr require_db(
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback)
+        const HttpResponseCallback& callback)
     {
         auto& state = AppState::get();
         if (!state.db())
@@ -87,14 +87,14 @@ namespace
     }
 
     void respond_device_error(
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const HttpResponseCallback& callback,
         const std::string& code,
         const std::string& message)
     {
         v1::respondError(callback, map_device_error_status(code), code, message);
     }
 
-    void enrich_demo_runtime_body(const drogon::HttpRequestPtr& req, Json::Value& body)
+    void enrich_demo_runtime_body(const HttpRequestPtr& req, Json::Value& body)
     {
         if (!demoVirtualDevicesEnabled())
             return;
@@ -108,7 +108,7 @@ namespace
     }
 
     void attach_demo_runtime_cookie(
-        const drogon::HttpRequestPtr& req,
+        const HttpRequestPtr& req,
         const drogon::HttpResponsePtr& resp,
         const Json::Value& body)
     {
@@ -134,7 +134,7 @@ namespace
     }
 
     bool require_iot_devices(
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const HttpResponseCallback& callback,
         v1::IotStore& store)
     {
         if (!store.devicesAvailable())
@@ -159,9 +159,7 @@ namespace
     }
 }
 
-void InternalController::queryDb(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::queryDb(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -187,9 +185,7 @@ void InternalController::queryDb(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::searchRag(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::searchRag(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -220,9 +216,7 @@ void InternalController::searchRag(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::listDevices(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::listDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -263,10 +257,7 @@ void InternalController::listDevices(
     }
 }
 
-void InternalController::getDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void InternalController::getDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -293,16 +284,12 @@ void InternalController::getDevice(
     }
 }
 
-void InternalController::listDeviceClasses(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::listDeviceClasses(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     callback(drogon::HttpResponse::newHttpJsonResponse(DeviceClassRegistry::list_classes()));
 }
 
-void InternalController::getDeviceState(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::getDeviceState(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     const auto client = require_db(callback);
@@ -330,9 +317,7 @@ void InternalController::getDeviceState(
     }
 }
 
-void InternalController::queryDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::queryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string deviceId,
     std::string queryName)
 {
@@ -359,9 +344,7 @@ void InternalController::queryDevice(
     }
 }
 
-void InternalController::invokeDeviceAction(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::invokeDeviceAction(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string deviceId,
     std::string actionName)
 {
@@ -388,9 +371,7 @@ void InternalController::invokeDeviceAction(
     }
 }
 
-void InternalController::getPtzCapabilities(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::getPtzCapabilities(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     const auto client = require_db(callback);
@@ -417,10 +398,7 @@ void InternalController::getPtzCapabilities(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::movePtz(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void InternalController::movePtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -454,10 +432,7 @@ void InternalController::movePtz(
     }
 }
 
-void InternalController::stopPtz(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void InternalController::stopPtz(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback, std::string deviceId)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -486,10 +461,7 @@ void InternalController::stopPtz(
     }
 }
 
-void InternalController::zoomPtz(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void InternalController::zoomPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -518,9 +490,7 @@ void InternalController::zoomPtz(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::getCameraStream(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::getCameraStream(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     const auto client = require_db(callback);
@@ -547,9 +517,7 @@ void InternalController::getCameraStream(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::setCameraStream(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::setCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     const auto client = require_db(callback);
@@ -583,9 +551,7 @@ void InternalController::setCameraStream(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::captureSnapshot(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::captureSnapshot(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     const auto client = require_db(callback);
@@ -624,10 +590,7 @@ void InternalController::captureSnapshot(
     }).detach();
 }
 
-void InternalController::sendTts(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void InternalController::sendTts(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -662,9 +625,7 @@ void InternalController::sendTts(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::listRules(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::listRules(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     RuleListFilter filter;
     if (!req->getParameter("deviceId").empty())
@@ -732,10 +693,7 @@ void InternalController::listRules(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::getRule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void InternalController::getRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     if (demoVirtualDevicesEnabled())
     {
@@ -764,9 +722,7 @@ void InternalController::getRule(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::createRule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::createRule(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto json = req->getJsonObject();
     if (!json)
@@ -807,10 +763,7 @@ void InternalController::createRule(
     }
 }
 
-void InternalController::updateRule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void InternalController::updateRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     const auto json = req->getJsonObject();
     if (!json)
@@ -847,10 +800,7 @@ void InternalController::updateRule(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::deleteRule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void InternalController::deleteRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     if (demoVirtualDevicesEnabled())
     {
@@ -878,10 +828,7 @@ void InternalController::deleteRule(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::setRuleEnabled(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void InternalController::setRuleEnabled(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("enabled") || !(*json)["enabled"].isBool())
@@ -919,10 +866,7 @@ void InternalController::setRuleEnabled(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::executeRule(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void InternalController::executeRule(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback, std::string ruleId)
 {
     RulesInternalStore store;
     std::string code;
@@ -933,9 +877,7 @@ void InternalController::executeRule(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::listIrCommands(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::listIrCommands(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.hasIrStore())
@@ -969,9 +911,7 @@ void InternalController::listIrCommands(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::getIrCommand(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::getIrCommand(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string commandId)
 {
     auto& state = AppState::get();
@@ -991,9 +931,7 @@ void InternalController::getIrCommand(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::listEvents(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::listEvents(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1020,9 +958,7 @@ void InternalController::listEvents(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::toolListDevices(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::toolListDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1044,9 +980,7 @@ void InternalController::toolListDevices(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::toolControlDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::toolControlDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1075,9 +1009,7 @@ void InternalController::toolControlDevice(
     }
 }
 
-void InternalController::toolQueryDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::toolQueryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1099,9 +1031,7 @@ void InternalController::toolQueryDevice(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::toolSchedule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::toolSchedule(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto json = req->getJsonObject();
     if (!json)
@@ -1123,9 +1053,7 @@ void InternalController::toolSchedule(
     }
 }
 
-void InternalController::toolScheduleList(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::toolScheduleList(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto json = req->getJsonObject();
     if (!json)
@@ -1143,9 +1071,7 @@ void InternalController::toolScheduleList(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::toolScheduleCancel(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::toolScheduleCancel(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto json = req->getJsonObject();
     if (!json)
@@ -1163,9 +1089,7 @@ void InternalController::toolScheduleCancel(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InternalController::listAlarms(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::listAlarms(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1199,9 +1123,7 @@ void InternalController::listAlarms(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listAlarms(filter)));
 }
 
-void InternalController::createAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::createAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1247,10 +1169,7 @@ void InternalController::createAlarm(
     }
 }
 
-void InternalController::updateAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string id)
+void InternalController::updateAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string id)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1308,10 +1227,7 @@ void InternalController::updateAlarm(
     }
 }
 
-void InternalController::deleteAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string id)
+void InternalController::deleteAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string id)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1358,9 +1274,7 @@ void InternalController::deleteAlarm(
     }
 }
 
-void InternalController::listScheduleTasks(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::listScheduleTasks(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1402,9 +1316,7 @@ void InternalController::listScheduleTasks(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.list(filter)));
 }
 
-void InternalController::createScheduleTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InternalController::createScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto client = require_db(callback);
     if (!client)
@@ -1451,9 +1363,7 @@ void InternalController::createScheduleTask(
     callback(resp);
 }
 
-void InternalController::updateScheduleTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::updateScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string taskId)
 {
     const auto client = require_db(callback);
@@ -1511,9 +1421,7 @@ void InternalController::updateScheduleTask(
     callback(drogon::HttpResponse::newHttpJsonResponse(*updated));
 }
 
-void InternalController::deleteScheduleTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void InternalController::deleteScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string taskId)
 {
     const auto client = require_db(callback);

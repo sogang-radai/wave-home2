@@ -16,7 +16,7 @@ namespace v1 {
 namespace
 {
     drogon::HttpResponsePtr demo_response(
-        const drogon::HttpRequestPtr& req,
+        const HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id)
     {
@@ -48,9 +48,7 @@ namespace
     }
 }
 
-void NotificationsController::listNotifications(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void NotificationsController::listNotifications(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -85,9 +83,7 @@ void NotificationsController::listNotifications(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listForUser(*user_id, limit, before_id)));
 }
 
-void NotificationsController::markAllRead(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void NotificationsController::markAllRead(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -119,9 +115,7 @@ void NotificationsController::markAllRead(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.markAllRead(*user_id)));
 }
 
-void NotificationsController::markRead(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void NotificationsController::markRead(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     const std::string& notification_id)
 {
     auto& state = AppState::get();

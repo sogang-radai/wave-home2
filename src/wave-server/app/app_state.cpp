@@ -1,5 +1,4 @@
 #include "app_state.h"
-#include "../db/database.h"
 
 #include <fstream>
 
@@ -7,15 +6,12 @@
 
 #include "../core/logger.h"
 #include "../core/task_queue.h"
-#include "../service/power_manager.h"
-#include "../service/sleep/sleep_manager.h"
-#include "../service/alarm_manager.h"
 #include "../service/go2rtc_service.h"
 #include "util/time_util.h"
-#include "../demo/demo_automation_runtime.h"
 #include "../device/device.h"
 #include "../device/platform/droid_cam.h"
 #include "util/exe_path.h"
+#include "runtime/profile_runtime.h"
 
 #ifdef WAVE_BUILD_TTS
 #include "../core/json.h"
@@ -488,6 +484,13 @@ void AppState::startAutomationServices()
 
 void AppState::onDatabaseReady(const db::DbClientPtr& client)
 {
+    if (!m_runtime)
+        return;
+    m_runtime->onDatabaseReady(*this, client);
+}
+
+void AppState::bindAutomationDatabase(const db::DbClientPtr& client)
+{
     if (!m_ruleStore || !client)
         return;
 
@@ -508,27 +511,10 @@ void AppState::onDatabaseReady(const db::DbClientPtr& client)
         LOG_WARN("RuleStore load failed: {}", rules_error);
     else
         LOG_INFO("RuleStore loaded from automation_rule");
+}
 
-    startTriggerRuntime();
-
-    if (!no_devices)
-    {
-        if (!deviceManager.manifestLoaded())
-        {
-            if (!loadDeviceManifests(client))
-                LOG_WARN("Device manager load failed");
-            else
-                deviceManager.startDevicesAsync();
-        }
-
-        service::SleepManager::get().reconcile();
-        service::SleepManager::get().start();
-        LOG_INFO("SleepManager started");
-
-        service::AlarmManager::get().start();
-        LOG_INFO("AlarmManager started");
-    }
-
+void AppState::markDatabaseReady()
+{
     m_dbReady.store(true, std::memory_order_release);
 }
 
@@ -558,7 +544,20 @@ void AppState::stopAutomationServices()
     m_actionQueue.reset();
     m_ruleStore.reset();
     m_gestureStore.reset();
+    m_irStore.reset();
     m_triggerRuntimeStarted = false;
+}
+
+IProfileRuntime& AppState::runtime()
+{
+    assert(m_runtime != nullptr);
+    return *m_runtime;
+}
+
+const IProfileRuntime& AppState::runtime() const
+{
+    assert(m_runtime != nullptr);
+    return *m_runtime;
 }
 
 void AppState::init(const LaunchOptions& launch)
@@ -568,6 +567,11 @@ void AppState::init(const LaunchOptions& launch)
 
     test_mode = launch.profile == "test";
     demo_mode = launch.profile == "demo";
+
+    const ProfileKind kind = test_mode
+        ? ProfileKind::Test
+        : (demo_mode ? ProfileKind::Demo : ProfileKind::Production);
+    m_runtime = createProfileRuntime(kind);
 
     std::filesystem::path resolved_config(launch.config_path);
     if (!resolved_config.is_absolute())
@@ -585,6 +589,8 @@ void AppState::init(const LaunchOptions& launch)
         return;
     }
 
+    m_runtime->applyConfigDefaults(config);
+
     no_devices = demo_mode || launch.no_devices || !config.devices_enabled;
     anchor_date = config.anchor_date;
 
@@ -599,42 +605,17 @@ void AppState::init(const LaunchOptions& launch)
         return;
     }
 
-    if (!test_mode)
-    {
-        if (no_devices && demo_mode)
-            LOG_INFO("Devices skipped (demo profile)");
-        else if (no_devices)
-            LOG_INFO("Devices skipped (--no-devices or devices_enabled=false)");
-
-        startAutomationServices();
-    }
-    else
-    {
-        LOG_INFO("Test profile: skipping settings, devices, and database");
-    }
+    m_runtime->startServices(*this);
 
     server.run();
     running.store(true, std::memory_order_release);
 
-    if (demo_mode)
-    {
-        DemoAutomationRuntime::get().start();
-        LOG_INFO("DemoAutomationRuntime started (demo_mode)");
-    }
-
-    if (!test_mode && !no_devices)
-    {
-        ws::service::PowerManager::get().start();
-
-        std::string tts_error;
-        if (!tts.warmUp(tts_error))
-            LOG_WARN("TTS warmup failed: {}", tts_error);
-    }
+    m_runtime->startPostListen(*this);
 
     LOG_INFO(
         "App initialized (config: {}, profile: {}, test_mode: {}, demo_mode: {}, no_devices: {}, anchor_date: {})",
         resolved_config.string(),
-        launch.profile,
+        m_runtime->name(),
         test_mode,
         demo_mode,
         no_devices,
@@ -651,11 +632,9 @@ void AppState::shutdown()
     running.store(false, std::memory_order_release);
     m_dbReady.store(false, std::memory_order_release);
 
-    DemoAutomationRuntime::get().stop();
-    ws::service::PowerManager::get().stop();
-    service::SleepManager::get().stop();
-    service::AlarmManager::get().stop();
-    stopAutomationServices();
+    if (m_runtime)
+        m_runtime->shutdown(*this);
+
     deviceManager.shutdown();
 
     iot.shutdown();
@@ -663,6 +642,7 @@ void AppState::shutdown()
     service::Go2RtcService::get().shutdownAll();
 
     server.shutdown();
+    m_runtime.reset();
 
     LOG_INFO("App shutdown complete");
     m_initialized = false;

@@ -20,9 +20,7 @@ namespace
     }
 }
 
-void AccountsController::listAccounts(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void AccountsController::listAccounts(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -38,9 +36,7 @@ void AccountsController::listAccounts(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void AccountsController::createAccount(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void AccountsController::createAccount(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -71,10 +67,7 @@ void AccountsController::createAccount(
     callback(resp);
 }
 
-void AccountsController::updateAccount(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t accountId)
+void AccountsController::updateAccount(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t accountId)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -105,10 +98,7 @@ void AccountsController::updateAccount(
     callback(drogon::HttpResponse::newHttpJsonResponse(account_json(*account)));
 }
 
-void AccountsController::deleteAccount(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t accountId)
+void AccountsController::deleteAccount(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t accountId)
 {
     auto& state = AppState::get();
     if (!state.db())

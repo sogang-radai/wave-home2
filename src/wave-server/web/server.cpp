@@ -143,7 +143,12 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     if (base_dir.empty())
         LOG_WARN("Executable directory is unknown; using relative paths from cwd");
 
-    const uint16_t port = static_cast<uint16_t>(config.value("port", 8500));
+    const uint16_t port = static_cast<uint16_t>(config.value("port", 0));
+    if (port == 0)
+    {
+        LOG_ERROR("server.port is required (see docs/ports.txt; profile defaults apply in IProfileRuntime)");
+        return false;
+    }
     const uint16_t agent_api_port = static_cast<uint16_t>(config.value("agent_api_port", 0));
     const std::string agent_api_bind = config.value("agent_api_bind", "127.0.0.1");
     const size_t thread_num = config.value("threads_num", 2);

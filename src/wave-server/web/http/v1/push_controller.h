@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -18,17 +20,11 @@ public:
     ADD_METHOD_TO(PushController::deleteSubscription, "/api/v1/push/subscription", drogon::Delete);
     METHOD_LIST_END
 
-    void vapidPublicKey(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void vapidPublicKey(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void saveSubscription(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void saveSubscription(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void deleteSubscription(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void deleteSubscription(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 } // namespace v1

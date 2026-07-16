@@ -9,9 +9,7 @@ WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
 
-void RoomsController::listRooms(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void RoomsController::listRooms(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -24,9 +22,7 @@ void RoomsController::listRooms(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listRooms()));
 }
 
-void RoomsController::createRoom(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void RoomsController::createRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -65,10 +61,7 @@ void RoomsController::createRoom(
     callback(resp);
 }
 
-void RoomsController::updateRoom(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t roomId)
+void RoomsController::updateRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -103,10 +96,7 @@ void RoomsController::updateRoom(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void RoomsController::deleteRoom(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t roomId)
+void RoomsController::deleteRoom(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback, int64_t roomId)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -130,10 +120,7 @@ void RoomsController::deleteRoom(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void RoomsController::getMembers(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t roomId)
+void RoomsController::getMembers(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback, int64_t roomId)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -152,10 +139,7 @@ void RoomsController::getMembers(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listMembers(roomId)));
 }
 
-void RoomsController::putMembers(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t roomId)
+void RoomsController::putMembers(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId)
 {
     auto& state = AppState::get();
     if (!state.db())

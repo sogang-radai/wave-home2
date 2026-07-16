@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -20,24 +22,10 @@ public:
     ADD_METHOD_TO(InsightsController::generateInsights, "/api/v1/insights/generate", drogon::Post);
     METHOD_LIST_END
 
-    void listInsights(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void getInsight(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t insightId);
-
-    void applyInsight(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t insightId);
-
-    void updateInsight(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t insightId);
+    void listInsights(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void getInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId);
+    void applyInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId);
+    void updateInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId);
 
     /**
      * 특정 surface/date 인사이트를 에이전트에 즉시 생성 요청하고 저장한다
@@ -45,9 +33,7 @@ public:
      * weekly_plan/dashboard_banner 등 다른 surface 는 아직 자동 트리거가 없어
      * 수동/운영 트리거로도 쓸 수 있게 열어둔다).
      */
-    void generateInsights(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void generateInsights(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 } // namespace v1

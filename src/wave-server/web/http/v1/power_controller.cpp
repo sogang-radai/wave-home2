@@ -12,9 +12,7 @@ WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
 
-void PowerController::listPlugs(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void PowerController::listPlugs(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     if (demoVirtualDevicesEnabled())
     {
@@ -38,9 +36,7 @@ void PowerController::listPlugs(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listPlugs()));
 }
 
-void PowerController::comboTrend(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void PowerController::comboTrend(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto device_id = req->getParameter("deviceId");
     const auto range = req->getParameter("range");
@@ -74,9 +70,7 @@ void PowerController::comboTrend(
         store.comboTrend(device_id, range, metric.empty() ? "w" : metric)));
 }
 
-void PowerController::periodTrend(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void PowerController::periodTrend(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -98,9 +92,7 @@ void PowerController::periodTrend(
         PowerStore::period_trend(client, device_id, period, ref_date)));
 }
 
-void PowerController::powerReport(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void PowerController::powerReport(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)

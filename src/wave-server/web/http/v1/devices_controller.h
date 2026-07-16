@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -21,33 +23,12 @@ public:
     ADD_METHOD_TO(DevicesController::unassignRoom, "/api/v1/devices/{deviceId}/room", drogon::Delete);
     METHOD_LIST_END
 
-    void listDevices(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void createDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void updateDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
-
-    void deleteDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
-
-    void assignRoom(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
-
-    void unassignRoom(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void listDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void createDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void updateDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
+    void deleteDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
+    void assignRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
+    void unassignRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 };
 
 } // namespace v1

@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace internal {
@@ -55,180 +57,89 @@ public:
     ADD_METHOD_TO(InternalController::deleteScheduleTask, "/internal/v1/schedule-tasks/{taskId}", drogon::Delete);
     METHOD_LIST_END
 
-    void queryDb(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void queryDb(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void searchRag(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void searchRag(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void listDevices(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getDevice(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback, std::string deviceId);
+    void getDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void listDeviceClasses(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listDeviceClasses(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getDeviceState(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void getDeviceState(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void queryDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    void queryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,
         std::string queryName);
 
-    void invokeDeviceAction(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    void invokeDeviceAction(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,
         std::string actionName);
 
-    void getPtzCapabilities(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void getPtzCapabilities(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void movePtz(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void movePtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void stopPtz(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void stopPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void zoomPtz(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void zoomPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void getCameraStream(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void getCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void setCameraStream(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void setCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void captureSnapshot(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void captureSnapshot(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void sendTts(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void sendTts(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void listRules(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listRules(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void getRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
-    void createRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void createRule(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void updateRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void updateRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
-    void deleteRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void deleteRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
-    void setRuleEnabled(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void setRuleEnabled(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
-    void executeRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void executeRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
-    void listIrCommands(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listIrCommands(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getIrCommand(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string commandId);
+    void getIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string commandId);
 
-    void listEvents(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listEvents(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void toolListDevices(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void toolListDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void toolControlDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void toolControlDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void toolQueryDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void toolQueryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void toolSchedule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void toolSchedule(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void toolScheduleList(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void toolScheduleList(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void toolScheduleCancel(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void toolScheduleCancel(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void listAlarms(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listAlarms(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void createAlarm(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void createAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void updateAlarm(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string id);
+    void updateAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string id);
 
-    void deleteAlarm(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string id);
+    void deleteAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string id);
 
-    void listScheduleTasks(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listScheduleTasks(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void createScheduleTask(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void createScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void updateScheduleTask(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string taskId);
+    void updateScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId);
 
-    void deleteScheduleTask(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string taskId);
+    void deleteScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId);
 };
 
 } // namespace internal

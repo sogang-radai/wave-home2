@@ -19,7 +19,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolve_user_id(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
@@ -46,9 +46,7 @@ namespace
     }
 }
 
-void InsightsController::listInsights(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InsightsController::listInsights(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -80,10 +78,7 @@ void InsightsController::listInsights(
         actionable)));
 }
 
-void InsightsController::getInsight(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t insightId)
+void InsightsController::getInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -110,10 +105,7 @@ void InsightsController::getInsight(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void InsightsController::applyInsight(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t insightId)
+void InsightsController::applyInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -250,10 +242,7 @@ void InsightsController::applyInsight(
     callback(drogon::HttpResponse::newHttpJsonResponse(response));
 }
 
-void InsightsController::updateInsight(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t insightId)
+void InsightsController::updateInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -326,9 +315,7 @@ void InsightsController::updateInsight(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.getById(*user_id, insightId)));
 }
 
-void InsightsController::generateInsights(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void InsightsController::generateInsights(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)

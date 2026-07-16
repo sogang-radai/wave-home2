@@ -16,7 +16,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolve_user_id(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
@@ -24,7 +24,7 @@ namespace
     }
 
     bool require_db(
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const HttpResponseCallback& callback,
         db::DbClientPtr& client_out)
     {
         client_out = AppState::get().db();
@@ -37,8 +37,8 @@ namespace
     }
 
     std::optional<int64_t> require_active_user(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback,
         db::DbClientPtr client)
     {
         const auto user_id = resolve_user_id(req, client);
@@ -51,9 +51,7 @@ namespace
     }
 }
 
-void DashboardController::dailyMessage(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DashboardController::dailyMessage(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     db::DbClientPtr client;
     if (!require_db(callback, client))
@@ -74,9 +72,7 @@ void DashboardController::dailyMessage(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void DashboardController::currentState(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DashboardController::currentState(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     db::DbClientPtr client;
     if (!require_db(callback, client))
@@ -89,9 +85,7 @@ void DashboardController::currentState(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.currentState()));
 }
 
-void DashboardController::upcomingAlarms(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DashboardController::upcomingAlarms(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     db::DbClientPtr client;
     if (!require_db(callback, client))
@@ -117,9 +111,7 @@ void DashboardController::upcomingAlarms(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.upcomingAlarms(*user_id)));
 }
 
-void DashboardController::activeGestureRules(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DashboardController::activeGestureRules(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     db::DbClientPtr client;
     if (!require_db(callback, client))

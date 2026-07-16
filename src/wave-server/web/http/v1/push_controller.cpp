@@ -10,9 +10,7 @@ WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
 
-void PushController::vapidPublicKey(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void PushController::vapidPublicKey(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (state.test_mode || state.config.push.vapid_public_key.empty())
@@ -26,9 +24,7 @@ void PushController::vapidPublicKey(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void PushController::saveSubscription(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void PushController::saveSubscription(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (state.test_mode || !state.db())
@@ -70,9 +66,7 @@ void PushController::saveSubscription(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void PushController::deleteSubscription(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void PushController::deleteSubscription(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (state.test_mode || !state.db())

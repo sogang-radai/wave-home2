@@ -20,7 +20,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolve_user_id(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
@@ -36,9 +36,7 @@ namespace
     }
 }
 
-void GoalsController::createGoal(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void GoalsController::createGoal(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -80,9 +78,7 @@ void GoalsController::createGoal(
     callback(resp);
 }
 
-void GoalsController::listGoals(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void GoalsController::listGoals(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -104,10 +100,7 @@ void GoalsController::listGoals(
         store.list(*user_id, status.empty() ? std::nullopt : std::optional<std::string>(status))));
 }
 
-void GoalsController::updateGoal(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t goalId)
+void GoalsController::updateGoal(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t goalId)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -143,10 +136,7 @@ void GoalsController::updateGoal(
     callback(drogon::HttpResponse::newHttpJsonResponse(*updated));
 }
 
-void GoalsController::getCoaching(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t goalId)
+void GoalsController::getCoaching(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t goalId)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -197,9 +187,7 @@ void GoalsController::getCoaching(
     callback(drogon::HttpResponse::newHttpJsonResponse(*generated));
 }
 
-void GoalsController::applyRecommendation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void GoalsController::applyRecommendation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     int64_t goalId,
     int64_t recommendationId)
 {
@@ -350,9 +338,7 @@ void GoalsController::applyRecommendation(
     callback(drogon::HttpResponse::newHttpJsonResponse(response));
 }
 
-void GoalsController::updateRecommendation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void GoalsController::updateRecommendation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     int64_t goalId,
     int64_t recommendationId)
 {

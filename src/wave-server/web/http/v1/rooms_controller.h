@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -21,33 +23,17 @@ public:
     ADD_METHOD_TO(RoomsController::putMembers, "/api/v1/rooms/{roomId}/members", drogon::Put);
     METHOD_LIST_END
 
-    void listRooms(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listRooms(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void createRoom(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void createRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void updateRoom(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t roomId);
+    void updateRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId);
 
-    void deleteRoom(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t roomId);
+    void deleteRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId);
 
-    void getMembers(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t roomId);
+    void getMembers(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId);
 
-    void putMembers(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        int64_t roomId);
+    void putMembers(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId);
 };
 
 } // namespace v1

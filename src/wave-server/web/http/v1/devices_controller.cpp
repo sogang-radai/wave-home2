@@ -9,9 +9,7 @@ WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
 
-void DevicesController::listDevices(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DevicesController::listDevices(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -24,9 +22,7 @@ void DevicesController::listDevices(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listDevices()));
 }
 
-void DevicesController::createDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DevicesController::createDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -58,10 +54,7 @@ void DevicesController::createDevice(
     callback(resp);
 }
 
-void DevicesController::updateDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void DevicesController::updateDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -91,9 +84,7 @@ void DevicesController::updateDevice(
     callback(drogon::HttpResponse::newHttpJsonResponse(*device));
 }
 
-void DevicesController::deleteDevice(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void DevicesController::deleteDevice(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
@@ -116,10 +107,7 @@ void DevicesController::deleteDevice(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void DevicesController::assignRoom(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void DevicesController::assignRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -160,9 +148,7 @@ void DevicesController::assignRoom(
     callback(drogon::HttpResponse::newHttpJsonResponse(*device));
 }
 
-void DevicesController::unassignRoom(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void DevicesController::unassignRoom(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();

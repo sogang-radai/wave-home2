@@ -6,9 +6,7 @@
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 
-void ApiController::status(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ApiController::status(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     Json::Value body;
     body["status"] = "ok";
@@ -19,9 +17,7 @@ void ApiController::status(
     callback(resp);
 }
 
-void ApiController::apps(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ApiController::apps(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     Json::Value body;
     Json::Value apps(Json::arrayValue);

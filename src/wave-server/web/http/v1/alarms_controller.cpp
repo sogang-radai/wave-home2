@@ -32,8 +32,8 @@ namespace
     }
 
     std::optional<int64_t> require_active_user(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback)
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback)
     {
         auto& state = AppState::get();
         if (!state.db())
@@ -74,7 +74,7 @@ namespace
     }
 
     drogon::HttpResponsePtr demo_response(
-        const drogon::HttpRequestPtr& req,
+        const HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id,
         drogon::HttpStatusCode status = drogon::k200OK)
@@ -86,9 +86,7 @@ namespace
     }
 }
 
-void AlarmsController::listAlarms(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void AlarmsController::listAlarms(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = require_active_user(req, callback);
     if (!user_id)
@@ -111,9 +109,7 @@ void AlarmsController::listAlarms(
     callback(drogon::HttpResponse::newHttpJsonResponse(without_user_ids(store.listAlarms(filter))));
 }
 
-void AlarmsController::createAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void AlarmsController::createAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = require_active_user(req, callback);
     if (!user_id)
@@ -159,10 +155,7 @@ void AlarmsController::createAlarm(
     callback(resp);
 }
 
-void AlarmsController::updateAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string alarmId)
+void AlarmsController::updateAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string alarmId)
 {
     const auto user_id = require_active_user(req, callback);
     if (!user_id)
@@ -207,10 +200,7 @@ void AlarmsController::updateAlarm(
     callback(drogon::HttpResponse::newHttpJsonResponse(without_user_id(updated)));
 }
 
-void AlarmsController::deleteAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string alarmId)
+void AlarmsController::deleteAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string alarmId)
 {
     const auto user_id = require_active_user(req, callback);
     if (!user_id)

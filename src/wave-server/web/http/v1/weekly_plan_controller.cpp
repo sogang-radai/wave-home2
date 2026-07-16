@@ -13,7 +13,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolve_user_id(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
@@ -21,9 +21,7 @@ namespace
     }
 }
 
-void WeeklyPlanController::weeklyReport(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void WeeklyPlanController::weeklyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -51,9 +49,7 @@ void WeeklyPlanController::weeklyReport(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void WeeklyPlanController::recommendations(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void WeeklyPlanController::recommendations(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)

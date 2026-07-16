@@ -42,8 +42,8 @@ namespace
     }
 
     std::optional<int64_t> resolve_user_id(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback)
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback)
     {
         auto& state = AppState::get();
         if (!state.db())
@@ -275,32 +275,6 @@ namespace
             out_error);
     }
 
-    std::vector<service::AgentChatMessage> build_agent_messages_from_json(const Json::Value& messages)
-    {
-        std::vector<service::AgentChatMessage> out;
-        if (!messages.isArray())
-            return out;
-
-        for (const auto& message : messages)
-        {
-            if (!message.isMember("role") || !message["role"].isString())
-                continue;
-            if (!message.isMember("text") || !message["text"].isString())
-                continue;
-
-            const std::string role = message["role"].asString();
-            if (role != "user" && role != "assistant")
-                continue;
-
-            const std::string text = message["text"].asString();
-            if (text.empty())
-                continue;
-
-            out.push_back({role, text});
-        }
-        return out;
-    }
-
     std::string trim_personal_prompt(const std::string& value)
     {
         const auto start = value.find_first_not_of(" \t\r\n");
@@ -340,19 +314,6 @@ namespace
         if (prompt.empty())
             return;
         messages.insert(messages.begin(), {"system", prompt});
-    }
-
-    std::optional<int64_t> parse_required_int64(
-        const Json::Value& json,
-        const char* field,
-        std::string& error)
-    {
-        if (!json.isMember(field) || !json[field].isInt64())
-        {
-            error = std::string("필수 필드가 없습니다: ") + field;
-            return std::nullopt;
-        }
-        return json[field].asInt64();
     }
 
     bool run_agent_stream_core(
@@ -638,9 +599,7 @@ namespace
             stream->close();
     }
 
-    void start_stream_response(
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        const drogon::HttpRequestPtr& req,
+    void start_stream_response(HttpResponseCallback&& callback, const HttpRequestPtr& req,
         int64_t user_id,
         std::optional<int64_t> conversation_id,
         const std::string& text)
@@ -724,118 +683,9 @@ namespace
         callback(resp);
     }
 
-    void start_ephemeral_stream_response(
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        const drogon::HttpRequestPtr& req,
-        int64_t user_id,
-        int64_t conversation_id,
-        int64_t assistant_message_id,
-        const Json::Value& messages_json)
-    {
-        auto agent_messages = build_agent_messages_from_json(messages_json);
-        if (agent_messages.empty())
-        {
-            respondError(callback, 400, "INVALID_MESSAGE", "메시지 기록이 비어 있습니다.", "messages");
-            return;
-        }
-
-        const auto demo_runtime_id = demoVirtualDevicesEnabled()
-            ? resolveDemoRuntimeId(req, nullptr)
-            : std::string{};
-        prepend_personal_prompt(agent_messages, user_id, demo_runtime_id);
-
-        auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-            [user_id, conversation_id, assistant_message_id, agent_messages, demo_runtime_id](
-                drogon::ResponseStreamPtr response_stream)
-            {
-                std::thread([user_id, conversation_id, assistant_message_id, agent_messages, demo_runtime_id, response = std::shared_ptr<drogon::ResponseStream>{
-                                 std::move(response_stream)}]() mutable
-                {
-                    std::string accumulated_text;
-                    std::string accumulated_reasoning;
-                    Json::Value tool_events(Json::arrayValue);
-
-                    run_agent_stream_core(
-                        response,
-                        user_id,
-                        conversation_id,
-                        assistant_message_id,
-                        agent_messages,
-                        accumulated_text,
-                        accumulated_reasoning,
-                        tool_events,
-                        demo_runtime_id);
-
-                    Json::Value message_done;
-                    message_done["type"] = "message_done";
-                    message_done["conversationId"] = static_cast<Json::Int64>(conversation_id);
-                    message_done["messageId"] = static_cast<Json::Int64>(assistant_message_id);
-                    message_done["text"] = accumulated_text;
-                    send_sse_event(response, message_done);
-
-                    if (response)
-                        response->close();
-                }).detach();
-            },
-            true);
-
-        resp->setContentTypeString("text/event-stream");
-        resp->addHeader("Cache-Control", "no-cache, no-store");
-        resp->addHeader("Connection", "keep-alive");
-        if (!demo_runtime_id.empty())
-            attachDemoRuntimeCookieIfNeeded(req, resp, demo_runtime_id);
-        callback(resp);
-    }
-
-    void handle_stream_ephemeral(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback)
-    {
-        const auto user_id = resolve_user_id(req, callback);
-        if (!user_id)
-            return;
-
-        const auto json = req->getJsonObject();
-        if (!json)
-        {
-            respondError(callback, 400, "INVALID_REQUEST", "요청 본문이 필요합니다.");
-            return;
-        }
-
-        std::string error;
-        const auto conversation_id = parse_required_int64(*json, "conversationId", error);
-        if (!conversation_id)
-        {
-            respondError(callback, 400, "INVALID_REQUEST", error);
-            return;
-        }
-
-        const auto assistant_message_id = parse_required_int64(*json, "assistantMessageId", error);
-        if (!assistant_message_id)
-        {
-            respondError(callback, 400, "INVALID_REQUEST", error);
-            return;
-        }
-
-        if (!json->isMember("messages") || !(*json)["messages"].isArray())
-        {
-            respondError(callback, 400, "INVALID_REQUEST", "messages 배열이 필요합니다.", "messages");
-            return;
-        }
-
-        start_ephemeral_stream_response(
-            std::move(callback),
-            req,
-            *user_id,
-            *conversation_id,
-            *assistant_message_id,
-            (*json)["messages"]);
-    }
 }
 
-void ChatController::listConversations(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::listConversations(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
@@ -855,9 +705,7 @@ void ChatController::listConversations(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listSummaries(*user_id)));
 }
 
-void ChatController::createConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::createConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
@@ -958,9 +806,7 @@ void ChatController::createConversation(
     callback(resp);
 }
 
-void ChatController::getConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::getConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
     const auto user_id = resolve_user_id(req, callback);
@@ -1001,9 +847,7 @@ void ChatController::getConversation(
     callback(drogon::HttpResponse::newHttpJsonResponse(*conversation));
 }
 
-void ChatController::renameConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::renameConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
     const auto user_id = resolve_user_id(req, callback);
@@ -1057,9 +901,7 @@ void ChatController::renameConversation(
     callback(drogon::HttpResponse::newHttpJsonResponse(*summary));
 }
 
-void ChatController::deleteConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::deleteConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
     const auto user_id = resolve_user_id(req, callback);
@@ -1100,9 +942,7 @@ void ChatController::deleteConversation(
     callback(resp);
 }
 
-void ChatController::appendMessage(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::appendMessage(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
     const auto user_id = resolve_user_id(req, callback);
@@ -1197,9 +1037,7 @@ void ChatController::appendMessage(
     callback(resp);
 }
 
-void ChatController::streamMessage(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::streamMessage(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
     const auto user_id = resolve_user_id(req, callback);
@@ -1245,9 +1083,7 @@ void ChatController::streamMessage(
     start_stream_response(std::move(callback), req, *user_id, id, text);
 }
 
-void ChatController::streamNewConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::streamNewConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
@@ -1266,16 +1102,8 @@ void ChatController::streamNewConversation(
     start_stream_response(std::move(callback), req, *user_id, std::nullopt, text);
 }
 
-void ChatController::streamEphemeral(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
-{
-    handle_stream_ephemeral(req, std::move(callback));
-}
 
-void ChatController::getSuggestions(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::getSuggestions(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
@@ -1285,9 +1113,7 @@ void ChatController::getSuggestions(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.defaultSuggestions()));
 }
 
-void ChatController::askInsight(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::askInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = resolve_user_id(req, callback);
     if (!user_id)

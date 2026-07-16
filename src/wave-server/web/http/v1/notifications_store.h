@@ -9,7 +9,7 @@
 #include "core/coredefs.h"
 
 WAVE_NAMESPACE_BEGIN
-namespace web {
+WEB_NAMESPACE_BEGIN
 namespace v1 {
 
 class NotificationsStore
@@ -28,5 +28,5 @@ private:
 };
 
 } // namespace v1
-} // namespace web
+WEB_NAMESPACE_END
 WAVE_NAMESPACE_END

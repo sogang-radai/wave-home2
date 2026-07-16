@@ -2,6 +2,8 @@
 
 #include "../../core/coredefs.h"
 
+#include "http_controller.h"
+
 #include <drogon/HttpController.h>
 
 WAVE_NAMESPACE_BEGIN
@@ -16,13 +18,8 @@ public:
     ADD_METHOD_TO(ApiController::apps, "/api/apps", drogon::Get);
     METHOD_LIST_END
 
-    void status(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void apps(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void status(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void apps(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 WEB_NAMESPACE_END

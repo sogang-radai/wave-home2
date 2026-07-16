@@ -33,7 +33,7 @@ namespace v1 {
 namespace
 {
     bool require_devices(
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const HttpResponseCallback& callback,
         IotStore& store)
     {
         if (demoVirtualDevicesEnabled())
@@ -47,8 +47,8 @@ namespace
     }
 
     void respond_demo_json(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback,
         const Json::Value& body,
         const std::string& runtime_id)
     {
@@ -199,9 +199,7 @@ namespace
     };
 }
 
-void IotController::getSummary(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void IotController::getSummary(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (demoVirtualDevicesEnabled())
@@ -228,9 +226,7 @@ void IotController::getSummary(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.getSummary()));
 }
 
-void IotController::listDevices(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void IotController::listDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (demoVirtualDevicesEnabled())
@@ -257,10 +253,7 @@ void IotController::listDevices(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listDevices()));
 }
 
-void IotController::getDeviceState(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::getDeviceState(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     if (demoVirtualDevicesEnabled())
@@ -303,9 +296,7 @@ void IotController::getDeviceState(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::queryDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::queryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string deviceId,
     std::string queryName)
 {
@@ -350,9 +341,7 @@ void IotController::queryDevice(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::invokeDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::invokeDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string deviceId,
     std::string actionName)
 {
@@ -412,9 +401,7 @@ void IotController::invokeDevice(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::reconnectDevice(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::reconnectDevice(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
@@ -437,9 +424,7 @@ void IotController::reconnectDevice(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::listEvents(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void IotController::listEvents(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (demoVirtualDevicesEnabled())
@@ -472,9 +457,7 @@ namespace
     }
 }
 
-void IotController::getCameraStream(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::getCameraStream(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
@@ -490,10 +473,7 @@ void IotController::getCameraStream(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::setCameraStream(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::setCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
@@ -515,9 +495,7 @@ void IotController::setCameraStream(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::exchangeCameraWebRtc(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::exchangeCameraWebRtc(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
@@ -551,10 +529,7 @@ void IotController::exchangeCameraWebRtc(
     }
 }
 
-void IotController::streamMp4(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::streamMp4(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
@@ -605,10 +580,7 @@ void IotController::streamMp4(
     callback(resp);
 }
 
-void IotController::streamMjpeg(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::streamMjpeg(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
@@ -669,9 +641,7 @@ void IotController::streamMjpeg(
     callback(resp);
 }
 
-void IotController::getPtzCapabilities(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::getPtzCapabilities(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
@@ -687,10 +657,7 @@ void IotController::getPtzCapabilities(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::movePtz(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::movePtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
@@ -713,10 +680,7 @@ void IotController::movePtz(
     }
 }
 
-void IotController::stopPtz(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::stopPtz(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
@@ -734,10 +698,7 @@ void IotController::stopPtz(
     }
 }
 
-void IotController::zoomPtz(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::zoomPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
@@ -755,9 +716,7 @@ void IotController::zoomPtz(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::captureSnapshot(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::captureSnapshot(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
@@ -785,10 +744,7 @@ void IotController::captureSnapshot(
     }).detach();
 }
 
-void IotController::sendTts(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::sendTts(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     IotStore store(state.deviceManager);
@@ -841,9 +797,7 @@ void IotController::sendTts(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::streamWaveStationTelemetry(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::streamWaveStationTelemetry(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
@@ -897,9 +851,7 @@ void IotController::streamWaveStationTelemetry(
     callback(resp);
 }
 
-void IotController::listIrCommands(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void IotController::listIrCommands(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.hasIrStore())
@@ -911,9 +863,7 @@ void IotController::listIrCommands(
     callback(drogon::HttpResponse::newHttpJsonResponse(state.irStore().listCommands()));
 }
 
-void IotController::saveIrCommand(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void IotController::saveIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.hasIrStore())
@@ -941,9 +891,7 @@ void IotController::saveIrCommand(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::deleteIrCommand(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::deleteIrCommand(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string commandId)
 {
     auto& state = AppState::get();
@@ -963,9 +911,7 @@ void IotController::deleteIrCommand(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::learnIrCommand(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void IotController::learnIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.hasIrStore())
@@ -1004,9 +950,7 @@ void IotController::learnIrCommand(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::listGestureSets(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void IotController::listGestureSets(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.hasGestureStore())
@@ -1018,9 +962,7 @@ void IotController::listGestureSets(
     callback(drogon::HttpResponse::newHttpJsonResponse(state.gestureStore().listGestureSets()));
 }
 
-void IotController::getGestureSetDefinition(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void IotController::getGestureSetDefinition(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string gestureSetId)
 {
     auto& state = AppState::get();
@@ -1038,10 +980,7 @@ void IotController::getGestureSetDefinition(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::getRadarGestureSet(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::getRadarGestureSet(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     if (demoVirtualDevicesEnabled())
@@ -1087,10 +1026,7 @@ void IotController::getRadarGestureSet(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::setRadarGestureSet(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void IotController::setRadarGestureSet(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     if (!demoVirtualDevicesEnabled() && !state.hasGestureStore())
@@ -1132,9 +1068,7 @@ void IotController::setRadarGestureSet(
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void IotController::listSpeechOverlays(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void IotController::listSpeechOverlays(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     if (!demoVirtualDevicesEnabled())
     {

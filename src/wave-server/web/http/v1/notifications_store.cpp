@@ -4,7 +4,7 @@
 #include <vector>
 
 WAVE_NAMESPACE_BEGIN
-namespace web {
+WEB_NAMESPACE_BEGIN
 namespace v1 {
 
 NotificationsStore::NotificationsStore(db::DbClientPtr client) :
@@ -119,5 +119,5 @@ WHERE user_id = ? AND id = ?
 }
 
 } // namespace v1
-} // namespace web
+WEB_NAMESPACE_END
 WAVE_NAMESPACE_END

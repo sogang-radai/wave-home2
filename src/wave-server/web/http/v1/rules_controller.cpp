@@ -69,7 +69,7 @@ namespace
     }
 
     bool require_rule_store(
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const HttpResponseCallback& callback,
         AppState& state)
     {
         if (!state.hasRuleStore())
@@ -175,9 +175,7 @@ namespace
     }
 }
 
-void RulesController::listRules(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void RulesController::listRules(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     const auto device_filter = req->getParameter("deviceId");
@@ -214,9 +212,7 @@ void RulesController::listRules(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void RulesController::createRule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void RulesController::createRule(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     const auto json = req->getJsonObject();
@@ -281,10 +277,7 @@ void RulesController::createRule(
     }
 }
 
-void RulesController::updateRule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void RulesController::updateRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     auto& state = AppState::get();
     const auto json = req->getJsonObject();
@@ -338,10 +331,7 @@ void RulesController::updateRule(
     }
 }
 
-void RulesController::deleteRule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void RulesController::deleteRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     auto& state = AppState::get();
 
@@ -379,10 +369,7 @@ void RulesController::deleteRule(
     }
 }
 
-void RulesController::setRuleEnabled(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void RulesController::setRuleEnabled(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     auto& state = AppState::get();
     const auto json = req->getJsonObject();
@@ -426,10 +413,7 @@ void RulesController::setRuleEnabled(
     }
 }
 
-void RulesController::executeRule(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string ruleId)
+void RulesController::executeRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     auto& state = AppState::get();
 

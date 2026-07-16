@@ -30,13 +30,9 @@ public:
 
     Json::Value getById(int64_t user_id, int64_t insight_id) const;
 
-    /** dashboard_banner → { headline, body } or null */
     Json::Value dashboardDailyMessage(int64_t user_id) const;
 
-    /** approved=1 로 전환. rule_json_override 가 있으면 rule_json 컬럼도 함께 덮어쓴다(생성된 rule id 기록용). */
     bool markApplied(int64_t user_id, int64_t insight_id, const std::optional<Json::Value>& rule_json_override) const;
-
-    /** approved=0 으로 되돌린다 (apply 취소). */
     bool markCanceled(int64_t user_id, int64_t insight_id) const;
 
 private:

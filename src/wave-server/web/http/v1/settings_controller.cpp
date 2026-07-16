@@ -13,8 +13,8 @@ namespace v1 {
 namespace
 {
     void require_db_and_active_user(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback,
         const std::function<void(int64_t user_id)>& on_ready)
     {
         auto& state = AppState::get();
@@ -37,7 +37,7 @@ namespace
     }
 
     drogon::HttpResponsePtr demo_json_response(
-        const drogon::HttpRequestPtr& req,
+        const HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id)
     {
@@ -47,9 +47,7 @@ namespace
     }
 }
 
-void SettingsController::getGeneral(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::getGeneral(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
@@ -58,9 +56,7 @@ void SettingsController::getGeneral(
     });
 }
 
-void SettingsController::putGeneral(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::putGeneral(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto json = req->getJsonObject();
     if (!json || !json->isObject())
@@ -84,9 +80,7 @@ void SettingsController::putGeneral(
     });
 }
 
-void SettingsController::getSleep(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::getSleep(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
@@ -95,9 +89,7 @@ void SettingsController::getSleep(
     });
 }
 
-void SettingsController::putSleep(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::putSleep(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto json = req->getJsonObject();
     if (!json || !json->isObject())
@@ -122,9 +114,7 @@ void SettingsController::putSleep(
     });
 }
 
-void SettingsController::listSounds(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::listSounds(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -137,9 +127,7 @@ void SettingsController::listSounds(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listSounds()));
 }
 
-void SettingsController::listTtsSpeakers(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::listTtsSpeakers(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -152,9 +140,7 @@ void SettingsController::listTtsSpeakers(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listTtsSpeakers()));
 }
 
-void SettingsController::listAiModels(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::listAiModels(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -167,9 +153,7 @@ void SettingsController::listAiModels(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listAiModels()));
 }
 
-void SettingsController::getAiAgent(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::getAiAgent(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     require_db_and_active_user(req, callback, [&](int64_t user_id)
     {
@@ -188,9 +172,7 @@ void SettingsController::getAiAgent(
     });
 }
 
-void SettingsController::putAiAgent(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SettingsController::putAiAgent(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto json = req->getJsonObject();
     if (!json || !json->isObject())

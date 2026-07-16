@@ -103,8 +103,8 @@ int main(int argc, const char* argv[])
         return 1;
     }
 
-    ws::TaskQueue taskQueue;
-    if (!taskQueue.init(12))
+    auto task_queue = std::make_unique<ws::TaskQueue>();
+    if (!task_queue->init(12))
     {
         LOG_ERROR("Task queue init failed");
         return 1;
@@ -112,20 +112,20 @@ int main(int argc, const char* argv[])
 
     install_shutdown_handlers();
 
-    ws::AppState app;
-    app.init(launch);
-    if (!app.running.load(std::memory_order_acquire))
+    auto app = std::make_unique<ws::AppState>();
+    app->init(launch);
+    if (!app->running.load(std::memory_order_acquire))
     {
         LOG_ERROR("Application failed to start");
         return 1;
     }
 
     LOG_INFO("Main loop started (Ctrl+Z or Ctrl+C to stop)");
-    while (app.running.load(std::memory_order_acquire))
+    while (app->running.load(std::memory_order_acquire))
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     LOG_INFO("Main loop stopped");
-    app.shutdown();
-    taskQueue.shutdown();
+    app->shutdown();
+    task_queue->shutdown();
     return 0;
 }

@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -25,23 +27,13 @@ public:
         drogon::Delete);
     METHOD_LIST_END
 
-    void listTasks(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listTasks(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void createTask(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void createTask(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void updateTask(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string taskId);
+    void updateTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId);
 
-    void deleteTask(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string taskId);
+    void deleteTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId);
 };
 
 } // namespace v1

@@ -41,8 +41,8 @@ namespace
     }
 
     std::optional<int64_t> require_active_user(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback)
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback)
     {
         auto& state = AppState::get();
         if (!state.db())
@@ -78,7 +78,7 @@ namespace
     }
 
     drogon::HttpResponsePtr demo_response(
-        const drogon::HttpRequestPtr& req,
+        const HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id,
         drogon::HttpStatusCode status = drogon::k200OK)
@@ -90,9 +90,7 @@ namespace
     }
 }
 
-void ScheduleTasksController::listTasks(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ScheduleTasksController::listTasks(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = require_active_user(req, callback);
     if (!user_id)
@@ -141,9 +139,7 @@ void ScheduleTasksController::listTasks(
     callback(drogon::HttpResponse::newHttpJsonResponse(without_user_ids(store.list(filter))));
 }
 
-void ScheduleTasksController::createTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ScheduleTasksController::createTask(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     const auto user_id = require_active_user(req, callback);
     if (!user_id)
@@ -205,10 +201,7 @@ void ScheduleTasksController::createTask(
     callback(resp);
 }
 
-void ScheduleTasksController::updateTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string taskId)
+void ScheduleTasksController::updateTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId)
 {
     const auto user_id = require_active_user(req, callback);
     if (!user_id)
@@ -279,10 +272,7 @@ void ScheduleTasksController::updateTask(
     callback(drogon::HttpResponse::newHttpJsonResponse(without_user_id(updated)));
 }
 
-void ScheduleTasksController::deleteTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string taskId)
+void ScheduleTasksController::deleteTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId)
 {
     const auto user_id = require_active_user(req, callback);
     if (!user_id)
