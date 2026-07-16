@@ -1,11 +1,12 @@
 #include "goal_coaching_generator.h"
+#include "../db/database.h"
 
 #include <optional>
 #include <sstream>
 
 #include "../core/json.h"
 #include "../core/logger.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 #include "agent_client.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -47,7 +48,7 @@ namespace
 }
 
 std::optional<Json::Value> readCachedGoalCoaching(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int64_t goal_id,
     const std::string& date)
 {
@@ -81,7 +82,7 @@ FROM goal_recommendation WHERE goal_id = ? AND date = ? ORDER BY id
 }
 
 std::optional<Json::Value> generateGoalCoaching(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& agent_base_url,
     int64_t user_id,
     int64_t goal_id,

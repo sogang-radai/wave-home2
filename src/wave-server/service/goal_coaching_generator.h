@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -29,7 +29,7 @@ SERVICE_NAMESPACE_BEGIN
  * HTTP 응답으로 쓸 수 있게.
  */
 std::optional<Json::Value> generateGoalCoaching(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& agent_base_url,
     int64_t user_id,
     int64_t goal_id,
@@ -41,7 +41,7 @@ std::optional<Json::Value> generateGoalCoaching(
 /** 캐시된(이미 오늘자로 생성된) goal_coaching_report + goal_recommendation 을 읽어서
  * generateGoalCoaching() 과 같은 응답 모양으로 돌려준다. 없으면 nullopt. */
 std::optional<Json::Value> readCachedGoalCoaching(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int64_t goal_id,
     const std::string& date);
 

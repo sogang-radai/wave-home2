@@ -27,8 +27,8 @@ DEVICE_NAMESPACE_BEGIN
 //   - Snapshot   : ONVIF GetSnapshotUri -> HTTP GET      -> IImageProvider
 //   - Live A/V   : ONVIF GetStreamUri (RTSP on 554)      -> IVideoStreamProvider
 //   - Pan/Tilt   : ONVIF ContinuousMove/GotoPreset/Stop  -> IPtzController
-//   - Microphone : audio track of the RTSP stream        -> IAudioSource
-//   - Speaker    : two-way audio backchannel             -> IAudioSink
+//   - Microphone : audio track of the RTSP stream        -> IAudioInput
+//   - Speaker    : two-way audio backchannel             -> IAudioOutput
 class ReolinkE1Pro :
     public Device,
     public Queryable,
@@ -36,8 +36,8 @@ class ReolinkE1Pro :
     public IImageProvider,
     public IVideoStreamProvider,
     public IPtzController,
-    public IAudioSource,
-    public IAudioSink
+    public IAudioInput,
+    public IAudioOutput
 {
 public:
     struct Config
@@ -109,7 +109,7 @@ public:
     std::future<bool> movePtzAsync(const PtzVector& velocity, uint32_t durationMs = 0) override;
     std::future<bool> gotoPtzPresetAsync(uint32_t presetId) override;
 
-    // IAudioSource (microphone)
+    // IAudioInput (microphone)
     AudioFormat getSourceFormat() const override;
     void setAudioQueueSize(size_t size) override;
     size_t getAudioQueueSize() const override;
@@ -117,7 +117,7 @@ public:
     std::future<void> getLatestFrameAsync(AudioFrame& outFrame) override;
     bool popFrame(AudioFrame& outFrame) override;
 
-    // IAudioSink (speaker)
+    // IAudioOutput (speaker)
     AudioFormat getSinkFormat() const override;
     bool playFrame(const AudioFrame& frame) override;
     std::future<bool> playFrameAsync(const AudioFrame& frame) override;

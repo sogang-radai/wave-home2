@@ -1,10 +1,11 @@
 #include "rule_store.h"
+#include "../db/database.h"
 
 #include <sstream>
 
 #include "../core/logger.h"
 #include "../core/task_queue.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
 SERVICE_NAMESPACE_BEGIN
@@ -255,7 +256,7 @@ namespace
     }
 
     void insertAutomationRuleRow(
-        const drogon::orm::DbClientPtr& db,
+        const db::DbClientPtr& db,
         int64_t user_id,
         const Rule& rule,
         const std::string& created_at,
@@ -290,7 +291,7 @@ namespace
     }
 
     void updateAutomationRuleRow(
-        const drogon::orm::DbClientPtr& db,
+        const db::DbClientPtr& db,
         int64_t user_id,
         const Rule& rule,
         const std::string& updated_at)
@@ -327,7 +328,7 @@ namespace
     }
 }
 
-void RuleStore::setDatabaseClient(const drogon::orm::DbClientPtr& client)
+void RuleStore::setDatabaseClient(const db::DbClientPtr& client)
 {
     std::unique_lock lock(m_mutex);
     m_db = client;

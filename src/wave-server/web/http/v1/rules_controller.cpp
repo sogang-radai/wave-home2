@@ -1,4 +1,5 @@
 #include "rules_controller.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
@@ -98,7 +99,7 @@ namespace
         return out;
     }
 
-    std::string demoDeviceName(const drogon::orm::DbClientPtr& client, const std::string& wire_id)
+    std::string demoDeviceName(const db::DbClientPtr& client, const std::string& wire_id)
     {
         if (!client || wire_id.empty())
             return wire_id;
@@ -130,7 +131,7 @@ namespace
         return false;
     }
 
-    Json::Value prepareDemoRuleView(const Json::Value& rule, const drogon::orm::DbClientPtr& client)
+    Json::Value prepareDemoRuleView(const Json::Value& rule, const db::DbClientPtr& client)
     {
         Json::Value out = rule;
         out.removeMember("demoRuntimeId");

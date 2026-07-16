@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -49,7 +49,7 @@ public:
         double rated_w,
         double voltage_v = 235.0);
 
-    Json::Value listPlugs(const std::string& runtime_id, const drogon::orm::DbClientPtr& client);
+    Json::Value listPlugs(const std::string& runtime_id, const db::DbClientPtr& client);
     Json::Value comboTrend(
         const std::string& runtime_id,
         const std::string& device_id,

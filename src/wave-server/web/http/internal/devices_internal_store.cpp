@@ -1,4 +1,5 @@
 #include "devices_internal_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <chrono>
@@ -64,7 +65,7 @@ namespace
     }
 
     std::optional<std::string> manifestIdForDbRow(
-        const drogon::orm::DbClientPtr& client,
+        const db::DbClientPtr& client,
         int64_t db_id)
     {
         if (!client || db_id <= 0)
@@ -152,7 +153,7 @@ namespace
     }
 
     std::optional<DbDeviceRow> lookupDbDeviceRow(
-        const drogon::orm::DbClientPtr& client,
+        const db::DbClientPtr& client,
         const std::string& device_id_param)
     {
         if (!client || device_id_param.empty())
@@ -243,7 +244,7 @@ LIMIT 1
         return item;
     }
 
-    bool devicesReady(const drogon::orm::DbClientPtr& client, std::string& code)
+    bool devicesReady(const db::DbClientPtr& client, std::string& code)
     {
         if (demoDbDevicesEnabled())
         {
@@ -272,7 +273,7 @@ LIMIT 1
     }
 
     std::optional<std::string> resolveManifestDeviceId(
-        const drogon::orm::DbClientPtr& client,
+        const db::DbClientPtr& client,
         const std::string& device_id_param)
     {
         if (device_id_param.empty())
@@ -314,7 +315,7 @@ LIMIT 1
     }
 
     std::optional<Json::Value> lookupDbRoomRef(
-        const drogon::orm::DbClientPtr& client,
+        const db::DbClientPtr& client,
         const std::string& wire_id,
         const std::string& device_name,
         const Json::Value& manifest_room)
@@ -385,7 +386,7 @@ LIMIT 1
 
     void applyDbRoomRef(
         Json::Value& device,
-        const drogon::orm::DbClientPtr& client)
+        const db::DbClientPtr& client)
     {
         if (!device.isObject())
             return;
@@ -399,13 +400,13 @@ LIMIT 1
     }
 }
 
-DevicesInternalStore::DevicesInternalStore(drogon::orm::DbClientPtr client) :
+DevicesInternalStore::DevicesInternalStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
 
 std::optional<std::string> DevicesInternalStore::resolveWireDeviceId(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& device_id_param)
 {
     return resolveManifestDeviceId(client, device_id_param);

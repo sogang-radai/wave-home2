@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 #include <json/json.h>
 
 #include "../app/app_state.h"
@@ -154,7 +154,7 @@ namespace
     void fireScheduleRule(
         const std::string& runtime_id,
         const Json::Value& rule,
-        const drogon::orm::DbClientPtr& client)
+        const db::DbClientPtr& client)
     {
         if (!rule.isObject() || !client)
             return;
@@ -198,7 +198,7 @@ namespace
         }
     }
 
-    void tickAlarms(const std::string& runtime_id, const drogon::orm::DbClientPtr& client)
+    void tickAlarms(const std::string& runtime_id, const db::DbClientPtr& client)
     {
         const auto session_copy = DemoSessionRegistry::instance().get(runtime_id);
         if (!session_copy)
@@ -244,7 +244,7 @@ namespace
         }
     }
 
-    void tickSchedules(const std::string& runtime_id, const drogon::orm::DbClientPtr& client)
+    void tickSchedules(const std::string& runtime_id, const db::DbClientPtr& client)
     {
         const int64_t now = nowMs();
         std::vector<Json::Value> due;

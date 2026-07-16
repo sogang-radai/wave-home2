@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -21,7 +21,7 @@ struct AlarmListFilter
 class AlarmsInternalStore
 {
 public:
-    explicit AlarmsInternalStore(drogon::orm::DbClientPtr client);
+    explicit AlarmsInternalStore(db::DbClientPtr client);
 
     Json::Value listAlarms(const AlarmListFilter& filter) const;
     Json::Value createAlarm(const Json::Value& body, std::string& error, std::string& field) const;
@@ -34,7 +34,7 @@ public:
     Json::Value deleteAlarm(int64_t user_id, int64_t alarm_id, std::string& error) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     Json::Value rowToJson(const drogon::orm::Row& row) const;
     std::optional<int64_t> resolveInternalDeviceId(const std::string& external_id) const;

@@ -1,4 +1,5 @@
 #include "alarms_internal_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <chrono>
@@ -61,7 +62,7 @@ namespace
     }
 }
 
-AlarmsInternalStore::AlarmsInternalStore(drogon::orm::DbClientPtr client) :
+AlarmsInternalStore::AlarmsInternalStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

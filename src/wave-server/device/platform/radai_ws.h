@@ -19,14 +19,14 @@ DEVICE_NAMESPACE_BEGIN
 
 // WaveStation edge device (ESP32) — WSP1 TCP client.
 // ESP32 listens on wsp::kTcpPort; wave-server connects as client.
-//   - Microphone : MicPCM / MicComp (Opus) from device  -> IAudioSource
-//   - Speaker    : SpkPCM / SpkComp to device           -> IAudioSink
+//   - Microphone : MicPCM / MicComp (Opus) from device  -> IAudioInput
+//   - Speaker    : SpkPCM / SpkComp to device           -> IAudioOutput
 class RadaiWs :
     public Device,
     public Queryable,
     public Actionable,
-    public IAudioSource,
-    public IAudioSink,
+    public IAudioInput,
+    public IAudioOutput,
     public IIrReceiver,
     public IIrTransmitter
 {
@@ -133,7 +133,7 @@ public:
     int invoke(std::string_view name, const json& params) override;
     std::future<int> invokeAsync(std::string_view name, const json& params, uint32_t timeout_ms = 1000) override;
 
-    // IAudioSource (microphone from WaveStation)
+    // IAudioInput (microphone from WaveStation)
     AudioFormat getSourceFormat() const override;
     void setAudioQueueSize(size_t size) override;
     size_t getAudioQueueSize() const override;
@@ -141,7 +141,7 @@ public:
     std::future<void> getLatestFrameAsync(AudioFrame& outFrame) override;
     bool popFrame(AudioFrame& outFrame) override;
 
-    // IAudioSink (speaker on WaveStation)
+    // IAudioOutput (speaker on WaveStation)
     AudioFormat getSinkFormat() const override;
     bool playFrame(const AudioFrame& frame) override;
     std::future<bool> playFrameAsync(const AudioFrame& frame) override;
@@ -219,9 +219,9 @@ Actions:
   subscribe     { "target": "mic_opus"|"mic_pcm"|"ir_receive"|"ambient_light"|...,
                   "intervalMs": 0, "compressed": false, "on_change_only": false }
   unsubscribe   { "target": "mic_opus"|"ir_receive"|... }
-  speak         { "text": "..." }  — TTS → IAudioSink / SpkComp (planned)
+  speak         { "text": "..." }  — TTS → IAudioOutput / SpkComp (planned)
 
-Audio (IAudioSource / IAudioSink):
+Audio (IAudioInput / IAudioOutput):
   Source — MicPCM or MicComp (Opus→PCM); lazy subscribe on getLatestFrame/popFrame
            getLatestFrame peeks newest; popFrame consumes oldest (use for recording)
   Sink   — playFrame → SpkComp or SpkPCM; stopPlayback → LastFrame marker

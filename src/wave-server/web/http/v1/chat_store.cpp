@@ -1,8 +1,9 @@
 #include "chat_store.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../../../service/agent_client.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -65,7 +66,7 @@ namespace
     }
 }
 
-ChatStore::ChatStore(drogon::orm::DbClientPtr client) :
+ChatStore::ChatStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

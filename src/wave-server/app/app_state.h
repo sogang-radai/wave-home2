@@ -16,13 +16,13 @@
 #include "app_config.h"
 #include "app_setting.h"
 #include "launch_options.h"
+#include "../db/database.h"
 #include "../service/action_queue.h"
 #include "../service/rule_store.h"
 #include "../service/trigger_manager.h"
 #include "../web/http/v1/gesture_store.h"
 #include "../web/http/v1/ir_store.h"
 
-#include <drogon/orm/DbClient.h>
 
 #ifdef WAVE_BUILD_TTS
 #include "../service/tts_service.h"
@@ -117,7 +117,7 @@ public:
 
     std::filesystem::path resolvePath(const std::string& relative) const;
 
-    drogon::orm::DbClientPtr db() const;
+    db::DbClientPtr db() const;
 
     service::ActionQueue& actionQueue();
     service::RuleStore& ruleStore();
@@ -131,7 +131,7 @@ public:
     bool hasGestureStore() const;
     bool hasIrStore() const;
 
-    void onDatabaseReady(const drogon::orm::DbClientPtr& client);
+    void onDatabaseReady(const db::DbClientPtr& client);
 
     // App
     std::atomic<bool> running{false};
@@ -156,7 +156,7 @@ public:
     IotRuntime iot;
 
 private:
-    bool loadDeviceManifests(const drogon::orm::DbClientPtr& client);
+    bool loadDeviceManifests(const db::DbClientPtr& client);
     void startAutomationServices();
     void stopAutomationServices();
     void startTriggerRuntime();

@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "../../../core/json.h"
@@ -27,7 +27,7 @@ public:
         const std::function<std::filesystem::path(const std::string&)>& resolve_path,
         std::string& out_error);
 
-    void setDatabaseClient(const drogon::orm::DbClientPtr& client);
+    void setDatabaseClient(const db::DbClientPtr& client);
     bool syncFromDatabase(std::string& out_error, bool read_only = false);
 
     Json::Value listGestureSets() const;
@@ -63,7 +63,7 @@ private:
     std::vector<RegistryEntry> m_registry;
     std::unordered_map<std::string, std::string> m_deviceToSetWire;
     std::function<std::filesystem::path(const std::string&)> m_resolvePath;
-    drogon::orm::DbClientPtr m_db;
+    db::DbClientPtr m_db;
 };
 
 } // namespace v1

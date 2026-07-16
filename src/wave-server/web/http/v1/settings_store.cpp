@@ -1,9 +1,10 @@
 #include "settings_store.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
 #include "session_store.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../../../core/logger.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -88,7 +89,7 @@ namespace
     }
 }
 
-SettingsStore::SettingsStore(drogon::orm::DbClientPtr client) :
+SettingsStore::SettingsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

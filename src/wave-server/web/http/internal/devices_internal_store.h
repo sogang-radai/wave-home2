@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -42,7 +42,7 @@ struct ResolvedDevice
 class DevicesInternalStore
 {
 public:
-    explicit DevicesInternalStore(drogon::orm::DbClientPtr client);
+    explicit DevicesInternalStore(db::DbClientPtr client);
 
     Json::Value listDevices(
         const DeviceListFilter& filter,
@@ -82,11 +82,11 @@ public:
         const std::optional<std::string>& demo_runtime_id = std::nullopt) const;
 
     static std::optional<std::string> resolveWireDeviceId(
-        const drogon::orm::DbClientPtr& client,
+        const db::DbClientPtr& client,
         const std::string& device_id_param);
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     bool deviceAllowedForUser(const std::string& external_id, int64_t user_id) const;
     std::optional<Json::Value> findListedDevice(

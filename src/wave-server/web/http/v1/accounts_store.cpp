@@ -1,11 +1,12 @@
 #include "accounts_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <cctype>
 
 #include "session_store.h"
 #include "../../../core/logger.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
@@ -22,7 +23,7 @@ namespace
     }
 }
 
-AccountsStore::AccountsStore(drogon::orm::DbClientPtr client) :
+AccountsStore::AccountsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

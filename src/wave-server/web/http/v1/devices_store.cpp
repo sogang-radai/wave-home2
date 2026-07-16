@@ -1,4 +1,5 @@
 #include "devices_store.h"
+#include "../../../db/database.h"
 
 #include <cstdio>
 #include <sstream>
@@ -106,7 +107,7 @@ namespace
     }
 }
 
-DevicesStore::DevicesStore(drogon::orm::DbClientPtr client) :
+DevicesStore::DevicesStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

@@ -3,25 +3,25 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
 
 WAVE_NAMESPACE_BEGIN
 
-void ensureDemoSessionSeeded(const std::string& runtime_id, const drogon::orm::DbClientPtr& client);
+void ensureDemoSessionSeeded(const std::string& runtime_id, const db::DbClientPtr& client);
 
 Json::Value demoListAlarms(
     const std::string& runtime_id,
     int64_t user_id,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::optional<bool>& enabled_filter = std::nullopt);
 
 Json::Value demoCreateAlarm(
     const std::string& runtime_id,
     const Json::Value& body,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     std::string& error,
     std::string& field);
 
@@ -37,20 +37,20 @@ bool demoDeleteAlarm(const std::string& runtime_id, int64_t alarm_id);
 Json::Value demoListNotifications(
     const std::string& runtime_id,
     int64_t user_id,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int limit = 0,
     int64_t before_id = 0);
 
 Json::Value demoMarkAllNotificationsRead(
     const std::string& runtime_id,
     int64_t user_id,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 
 Json::Value demoMarkNotificationRead(
     const std::string& runtime_id,
     int64_t user_id,
     int64_t notification_id,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 
 Json::Value demoAppendNotification(
     const std::string& runtime_id,
@@ -72,14 +72,14 @@ void demoRefreshSpeechOverlays(const std::string& runtime_id, int64_t now_ms);
 void demoFireAlarm(
     const std::string& runtime_id,
     const Json::Value& alarm,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 
 void demoDisableAlarm(const std::string& runtime_id, int64_t alarm_id);
 
 Json::Value demoListScheduleTasks(
     const std::string& runtime_id,
     int64_t user_id,
-    const drogon::orm::DbClientPtr& client = nullptr);
+    const db::DbClientPtr& client = nullptr);
 
 Json::Value demoCreateScheduleTask(
     const std::string& runtime_id,
@@ -110,42 +110,42 @@ bool demoDeleteRule(const std::string& runtime_id, const std::string& rule_id);
 Json::Value demoListChatSummaries(
     const std::string& runtime_id,
     int64_t user_id,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 std::optional<Json::Value> demoGetChatConversation(
     const std::string& runtime_id,
     int64_t user_id,
     int64_t conversation_id,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 std::optional<Json::Value> demoCreateChatConversation(
     const std::string& runtime_id,
     int64_t user_id,
     const std::string& title,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 std::optional<Json::Value> demoRenameChatConversation(
     const std::string& runtime_id,
     int64_t user_id,
     int64_t conversation_id,
     const std::string& title,
     std::string& error,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 bool demoDeleteChatConversation(
     const std::string& runtime_id,
     int64_t user_id,
     int64_t conversation_id,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 std::optional<Json::Value> demoAppendChatUserMessage(
     const std::string& runtime_id,
     int64_t user_id,
     int64_t conversation_id,
     const std::string& text,
     std::string& error,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 std::optional<Json::Value> demoCreateChatWithUserMessage(
     const std::string& runtime_id,
     int64_t user_id,
     const std::string& text,
     std::string& error,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 bool demoAppendChatAssistantMessage(
     const std::string& runtime_id,
     int64_t user_id,
@@ -159,19 +159,19 @@ int64_t demoNextChatMessageId(const Json::Value& messages);
 Json::Value demoGetAiAgentSettings(
     const std::string& runtime_id,
     int64_t user_id,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 
 Json::Value demoPutAiAgentSettings(
     const std::string& runtime_id,
     int64_t user_id,
     const Json::Value& body,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     std::string& error,
     std::string& field);
 
 std::string demoResolvePersonalPrompt(
     const std::string& runtime_id,
     int64_t user_id,
-    const drogon::orm::DbClientPtr& client);
+    const db::DbClientPtr& client);
 
 WAVE_NAMESPACE_END

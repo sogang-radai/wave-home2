@@ -1,4 +1,5 @@
 #include "rag_internal_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <cmath>
@@ -70,7 +71,7 @@ namespace
     }
 }
 
-RagInternalStore::RagInternalStore(drogon::orm::DbClientPtr client, RagSearchConfig config) :
+RagInternalStore::RagInternalStore(db::DbClientPtr client, RagSearchConfig config) :
     m_client(std::move(client)),
     m_config(std::move(config))
 {

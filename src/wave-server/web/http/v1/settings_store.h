@@ -5,7 +5,7 @@
 #include <string>
 
 #include <drogon/HttpRequest.h>
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -22,7 +22,7 @@ class SessionStore;
 class SettingsStore
 {
 public:
-    explicit SettingsStore(drogon::orm::DbClientPtr client);
+    explicit SettingsStore(db::DbClientPtr client);
 
     std::optional<int64_t> resolveActiveUserId(const SessionStore& sessions, const drogon::HttpRequestPtr& req) const;
 
@@ -43,7 +43,7 @@ public:
     bool putAiAgentSettings(int64_t user_id, const Json::Value& body, Json::Value& out, std::string& error, std::string& field);
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     Json::Value loadJsonColumn(const char* table, const char* column, int64_t user_id) const;
     bool upsertJsonColumn(

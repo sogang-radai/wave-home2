@@ -1,4 +1,5 @@
 #include "sleep_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,7 +7,7 @@
 #include <sstream>
 
 #include "../../../app/app_state.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "insights_store.h"
 #include "settings_store.h"
 
@@ -226,7 +227,7 @@ namespace
     }
 }
 
-SleepStore::SleepStore(drogon::orm::DbClientPtr client) :
+SleepStore::SleepStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

@@ -1,4 +1,5 @@
 #include "app_state.h"
+#include "../db/database.h"
 
 #include <fstream>
 
@@ -10,7 +11,7 @@
 #include "../service/sleep/sleep_manager.h"
 #include "../service/alarm_manager.h"
 #include "../service/go2rtc_service.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 #include "../demo/demo_automation_runtime.h"
 #include "../device/device.h"
 #include "../device/platform/droid_cam.h"
@@ -383,14 +384,14 @@ std::filesystem::path AppState::resolvePath(const std::string& relative) const
     return std::filesystem::weakly_canonical(std::filesystem::current_path() / path);
 }
 
-drogon::orm::DbClientPtr AppState::db() const
+db::DbClientPtr AppState::db() const
 {
     if (test_mode || !m_dbReady.load(std::memory_order_acquire))
         return nullptr;
     return drogon::app().getDbClient();
 }
 
-bool AppState::loadDeviceManifests(const drogon::orm::DbClientPtr& client)
+bool AppState::loadDeviceManifests(const db::DbClientPtr& client)
 {
     const auto devices_path = resolvePath(config.device_list_path);
 
@@ -485,7 +486,7 @@ void AppState::startAutomationServices()
     });
 }
 
-void AppState::onDatabaseReady(const drogon::orm::DbClientPtr& client)
+void AppState::onDatabaseReady(const db::DbClientPtr& client)
 {
     if (!m_ruleStore || !client)
         return;

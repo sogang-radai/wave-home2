@@ -406,7 +406,7 @@ namespace
         return !timings.empty();
     }
 
-    bool recordWav(RadaiWs& ws, IAudioSource& source, const std::string& path, uint32_t seconds)
+    bool recordWav(RadaiWs& ws, IAudioInput& source, const std::string& path, uint32_t seconds)
     {
         ScopedMicSubscription guard(ws);
         const AudioFormat fmt = source.getSourceFormat();
@@ -502,7 +502,7 @@ namespace
         }
     }
 
-    bool playWav(RadaiWs& ws, IAudioSink& sink, const std::string& path, float volume)
+    bool playWav(RadaiWs& ws, IAudioOutput& sink, const std::string& path, float volume)
     {
         WavPcm wav;
         if (!readWavFile(path, wav))
@@ -737,10 +737,10 @@ namespace
             if (seconds == 0)
                 seconds = 5;
 
-            auto* source = dynamic_cast<IAudioSource*>(&ws);
+            auto* source = dynamic_cast<IAudioInput*>(&ws);
             if (!source)
             {
-                std::cout << "  device does not support IAudioSource\n";
+                std::cout << "  device does not support IAudioInput\n";
                 return true;
             }
 
@@ -772,10 +772,10 @@ namespace
                 in.clear();
             }
 
-            auto* sink = dynamic_cast<IAudioSink*>(&ws);
+            auto* sink = dynamic_cast<IAudioOutput*>(&ws);
             if (!sink)
             {
-                std::cout << "  device does not support IAudioSink\n";
+                std::cout << "  device does not support IAudioOutput\n";
                 return true;
             }
 

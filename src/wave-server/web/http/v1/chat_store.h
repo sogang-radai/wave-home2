@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "../../../service/agent_client.h"
@@ -18,7 +18,7 @@ namespace v1 {
 class ChatStore
 {
 public:
-    explicit ChatStore(drogon::orm::DbClientPtr client);
+    explicit ChatStore(db::DbClientPtr client);
 
     static std::string toCreatedAtIso(const std::string& db_time);
     static std::string titleFromText(const std::string& text);
@@ -69,7 +69,7 @@ public:
         const std::string& fallback_db_time = {});
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     int64_t nextConversationId() const;
     Json::Value parseMessagesColumn(const std::string& raw) const;

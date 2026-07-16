@@ -1,14 +1,15 @@
 #include "push_store.h"
+#include "../../db/database.h"
 
 #include "../../core/logger.h"
-#include "../../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
 namespace push {
 
 bool upsertSubscription(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int64_t session_id,
     const Subscription& subscription)
 {
@@ -40,7 +41,7 @@ bool upsertSubscription(
     }
 }
 
-bool deleteSubscriptions(const drogon::orm::DbClientPtr& client, int64_t session_id)
+bool deleteSubscriptions(const db::DbClientPtr& client, int64_t session_id)
 {
     if (!client)
         return false;
@@ -58,7 +59,7 @@ bool deleteSubscriptions(const drogon::orm::DbClientPtr& client, int64_t session
 }
 
 std::vector<Subscription> listSubscriptions(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int64_t session_id)
 {
     std::vector<Subscription> subscriptions;

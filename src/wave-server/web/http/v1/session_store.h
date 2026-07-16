@@ -8,7 +8,7 @@
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -40,7 +40,7 @@ struct SessionView
 class SessionStore
 {
 public:
-    explicit SessionStore(drogon::orm::DbClientPtr client);
+    explicit SessionStore(db::DbClientPtr client);
 
     SessionView resolveSession(const drogon::HttpRequestPtr& req) const;
     Json::Value sessionJson(const SessionView& session) const;
@@ -51,7 +51,7 @@ public:
     std::vector<AccountView> listAccounts() const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
     int64_t resolveSessionId(const drogon::HttpRequestPtr& req) const;
 };
 

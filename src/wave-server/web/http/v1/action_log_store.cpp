@@ -1,12 +1,13 @@
 #include "action_log_store.h"
+#include "../../../db/database.h"
 
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
 namespace v1 {
 
-ActionLogStore::ActionLogStore(drogon::orm::DbClientPtr client) :
+ActionLogStore::ActionLogStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

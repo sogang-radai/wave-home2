@@ -1092,7 +1092,7 @@ std::future<bool> ReolinkE1Pro::gotoPtzPresetAsync(uint32_t presetId)
 }
 
 // ============================================================================
-// IAudioSource (microphone)
+// IAudioInput (microphone)
 // ============================================================================
 
 AudioFormat ReolinkE1Pro::getSourceFormat() const
@@ -1135,7 +1135,7 @@ bool ReolinkE1Pro::popFrame(AudioFrame& outFrame)
 }
 
 // ============================================================================
-// IAudioSink (speaker)
+// IAudioOutput (speaker)
 // ============================================================================
 
 AudioFormat ReolinkE1Pro::getSinkFormat() const

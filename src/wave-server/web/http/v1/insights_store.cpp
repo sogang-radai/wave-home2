@@ -1,4 +1,5 @@
 #include "insights_store.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
@@ -10,7 +11,7 @@ namespace v1 {
 
 namespace
 {
-    bool tableExists(drogon::orm::DbClientPtr client, const char* name)
+    bool tableExists(db::DbClientPtr client, const char* name)
     {
         const auto rows = client->execSqlSync(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
@@ -19,12 +20,12 @@ namespace
     }
 }
 
-InsightsStore::InsightsStore(drogon::orm::DbClientPtr client) :
+InsightsStore::InsightsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
 
-std::string InsightsStore::referenceDate(drogon::orm::DbClientPtr client)
+std::string InsightsStore::referenceDate(db::DbClientPtr client)
 {
     const auto& state = AppState::get();
     if (state.demo_mode && !state.anchor_date.empty())

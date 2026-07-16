@@ -3,10 +3,10 @@
 #include <stdexcept>
 
 #include "../core/logger.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
-namespace db {
+DB_NAMESPACE_BEGIN
 
 namespace
 {
@@ -639,7 +639,7 @@ CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log 
         },
     };
 
-    int currentVersion(const drogon::orm::DbClientPtr& client)
+    int currentVersion(const db::DbClientPtr& client)
     {
         try
         {
@@ -654,10 +654,10 @@ CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log 
         }
     }
 
-    void seedNotificationsIfEmpty(const drogon::orm::DbClientPtr& client);
-    void seedRoomsAndDevicesIfEmpty(const drogon::orm::DbClientPtr& client);
+    void seedNotificationsIfEmpty(const db::DbClientPtr& client);
+    void seedRoomsAndDevicesIfEmpty(const db::DbClientPtr& client);
 
-    void seedInitialData(const drogon::orm::DbClientPtr& client)
+    void seedInitialData(const db::DbClientPtr& client)
     {
         auto rows = client->execSqlSync("SELECT COUNT(*) FROM user");
         if (!rows.empty() && rows[0][0].as<int64_t>() > 0)
@@ -692,7 +692,7 @@ CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log 
         seedRoomsAndDevicesIfEmpty(client);
     }
 
-    void seedNotificationsIfEmpty(const drogon::orm::DbClientPtr& client)
+    void seedNotificationsIfEmpty(const db::DbClientPtr& client)
     {
         try
         {
@@ -714,7 +714,7 @@ INSERT INTO notification (id, user_id, type, message, read, created_at) VALUES
         }
     }
 
-    void seedRoomsAndDevicesIfEmpty(const drogon::orm::DbClientPtr& client)
+    void seedRoomsAndDevicesIfEmpty(const db::DbClientPtr& client)
     {
         try
         {
@@ -775,7 +775,7 @@ INSERT INTO device_room_map (device_id, room_id) VALUES
     }
 }
 
-void configureConnectionSettings(const drogon::orm::DbClientPtr& client)
+void configureConnectionSettings(const db::DbClientPtr& client)
 {
     if (!client)
         return;
@@ -794,7 +794,7 @@ void configureConnectionSettings(const drogon::orm::DbClientPtr& client)
     }
 }
 
-bool runMigrations(const drogon::orm::DbClientPtr& client)
+bool runMigrations(const db::DbClientPtr& client)
 {
     if (!client)
     {
@@ -834,7 +834,7 @@ bool runMigrations(const drogon::orm::DbClientPtr& client)
     return true;
 }
 
-bool validateDatabaseSchema(const drogon::orm::DbClientPtr& client)
+bool validateDatabaseSchema(const db::DbClientPtr& client)
 {
     if (!client)
     {
@@ -861,5 +861,5 @@ bool validateDatabaseSchema(const drogon::orm::DbClientPtr& client)
     }
 }
 
-} // namespace db
+DB_NAMESPACE_END
 WAVE_NAMESPACE_END

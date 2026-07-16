@@ -1,17 +1,18 @@
 #include "insight_generator.h"
+#include "../db/database.h"
 
 #include <optional>
 
 #include "../core/json.h"
 #include "../core/logger.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 #include "agent_client.h"
 
 WAVE_NAMESPACE_BEGIN
 SERVICE_NAMESPACE_BEGIN
 
 bool generateAndPersistInsights(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& agent_base_url,
     int64_t user_id,
     const std::string& surface,

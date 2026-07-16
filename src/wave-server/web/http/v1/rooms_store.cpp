@@ -1,4 +1,5 @@
 #include "rooms_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <cctype>
@@ -22,7 +23,7 @@ namespace
     }
 }
 
-RoomsStore::RoomsStore(drogon::orm::DbClientPtr client) :
+RoomsStore::RoomsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

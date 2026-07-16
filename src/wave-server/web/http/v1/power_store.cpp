@@ -1,4 +1,5 @@
 #include "power_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <chrono>
@@ -11,7 +12,7 @@
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
 #include "../../../core/logger.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../../../service/agent_client.h"
 #include "../../../service/insight_generator.h"
 #include "../../../service/power_manager.h"
@@ -228,7 +229,7 @@ Json::Value PowerStore::comboTrend(const std::string& device_id, const std::stri
 }
 
 Json::Value PowerStore::periodTrend(
-    drogon::orm::DbClientPtr client,
+    db::DbClientPtr client,
     const std::string& device_external_id,
     const std::string& ui_period,
     const std::string& ref_date_hint)
@@ -346,7 +347,7 @@ Json::Value PowerStore::periodTrend(
 }
 
 void PowerStore::storeReportEmbedding(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int64_t report_id,
     const std::vector<float>& embedding)
 {
@@ -407,7 +408,7 @@ ON CONFLICT(report_id) DO UPDATE SET
 }
 
 std::optional<int64_t> PowerStore::generateReport(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& period,
     const std::string& period_start,
     const std::string& window_start,
@@ -530,7 +531,7 @@ ON CONFLICT DO UPDATE SET
     return report_id;
 }
 
-bool PowerStore::ensureDailyReport(const drogon::orm::DbClientPtr& client, const std::string& date)
+bool PowerStore::ensureDailyReport(const db::DbClientPtr& client, const std::string& date)
 {
     const std::string day_start = date + " 00:00:00";
     const auto day_end_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", date);
@@ -561,7 +562,7 @@ bool PowerStore::ensureDailyReport(const drogon::orm::DbClientPtr& client, const
     return true;
 }
 
-bool PowerStore::ensureHourlyReport(const drogon::orm::DbClientPtr& client, const std::string& hour_start)
+bool PowerStore::ensureHourlyReport(const db::DbClientPtr& client, const std::string& hour_start)
 {
     const auto hour_end_rows = client->execSqlSync("SELECT datetime(?, '+1 hour') AS d", hour_start);
     const std::string hour_end = hour_end_rows.empty() ? hour_start : hour_end_rows[0]["d"].as<std::string>();
@@ -570,7 +571,7 @@ bool PowerStore::ensureHourlyReport(const drogon::orm::DbClientPtr& client, cons
 }
 
 Json::Value PowerStore::queryReport(
-    drogon::orm::DbClientPtr client,
+    db::DbClientPtr client,
     const std::string& device_external_id,
     const std::string& ui_period,
     const std::string& period_start_hint)

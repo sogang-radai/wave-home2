@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 
 #include "trigger_types.h"
 
@@ -28,7 +28,7 @@ class RuleStore
 public:
     using ChangedCallback = std::function<void()>;
 
-    void setDatabaseClient(const drogon::orm::DbClientPtr& client);
+    void setDatabaseClient(const db::DbClientPtr& client);
     void setDefaultUserId(int64_t user_id);
     void setOnChanged(ChangedCallback callback);
 
@@ -66,7 +66,7 @@ private:
     std::vector<Rule> m_rules;
     std::unordered_map<std::string, Trigger> m_triggers;
     TriggerIndexSnapshot m_index;
-    drogon::orm::DbClientPtr m_db;
+    db::DbClientPtr m_db;
     int64_t m_defaultUserId = 1;
     ChangedCallback m_onChanged;
 };

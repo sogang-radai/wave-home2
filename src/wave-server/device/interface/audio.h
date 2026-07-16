@@ -24,10 +24,10 @@ struct AudioFrame
 };
 
 // Microphone / audio input.
-class IAudioSource
+class IAudioInput
 {
 public:
-    virtual ~IAudioSource() = default;
+    virtual ~IAudioInput() = default;
 
     virtual AudioFormat getSourceFormat() const = 0;
 
@@ -43,10 +43,10 @@ public:
 };
 
 // Speaker / audio output for playback and two-way talk.
-class IAudioSink
+class IAudioOutput
 {
 public:
-    virtual ~IAudioSink() = default;
+    virtual ~IAudioOutput() = default;
 
     virtual AudioFormat getSinkFormat() const = 0;
 

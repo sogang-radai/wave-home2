@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -27,7 +27,7 @@ struct ScheduleTaskListFilter
 class ScheduleTasksInternalStore
 {
 public:
-    explicit ScheduleTasksInternalStore(drogon::orm::DbClientPtr client);
+    explicit ScheduleTasksInternalStore(db::DbClientPtr client);
 
     Json::Value list(const ScheduleTaskListFilter& filter) const;
     std::optional<Json::Value> getById(int64_t user_id, int64_t task_id) const;
@@ -43,7 +43,7 @@ public:
     void removeBySourceInsight(int64_t user_id, int64_t insight_id) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     Json::Value rowToJson(const drogon::orm::Row& row) const;
     int64_t nextId() const;

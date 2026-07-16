@@ -1,4 +1,5 @@
 #include "demo_device_backend.h"
+#include "../db/database.h"
 
 #include <unordered_set>
 
@@ -65,7 +66,7 @@ std::string resolveDemoRuntimeId(const drogon::HttpRequestPtr& req, const Json::
     return fallbackDemoRuntimeId();
 }
 
-DemoDeviceBackend::DemoDeviceBackend(drogon::orm::DbClientPtr client) :
+DemoDeviceBackend::DemoDeviceBackend(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -16,7 +16,7 @@ namespace v1 {
 class DevicesStore
 {
 public:
-    explicit DevicesStore(drogon::orm::DbClientPtr client);
+    explicit DevicesStore(db::DbClientPtr client);
 
     Json::Value listDevices() const;
     std::optional<Json::Value> findDevice(const std::string& external_id) const;
@@ -29,7 +29,7 @@ public:
     std::optional<Json::Value> unassignRoom(const std::string& external_id, std::string& error);
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     static bool isInputClass(const std::string& device_class);
     std::string makeHexId() const;

@@ -1,4 +1,5 @@
 #include "dashboard_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <chrono>
@@ -134,7 +135,7 @@ namespace
         return base;
     }
 
-    std::string deviceNameForWireId(drogon::orm::DbClientPtr client, const std::string& wire_id)
+    std::string deviceNameForWireId(db::DbClientPtr client, const std::string& wire_id)
     {
         const auto db_id = dev::dbIdForWireId(client, wire_id);
         if (!db_id)
@@ -163,7 +164,7 @@ namespace
     }
 }
 
-DashboardStore::DashboardStore(drogon::orm::DbClientPtr client) :
+DashboardStore::DashboardStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

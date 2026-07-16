@@ -9,7 +9,7 @@
 
 #include "../app/app_state.h"
 #include "../core/logger.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 #include "../device/device.h"
 #include "../device/device_wire_id.hpp"
 #include "../device/platform/tuya_ep2h.h"

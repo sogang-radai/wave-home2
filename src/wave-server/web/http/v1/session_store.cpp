@@ -1,9 +1,10 @@
 #include "session_store.h"
+#include "../../../db/database.h"
 
 #include <string_view>
 
 #include "../../../core/logger.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
@@ -47,7 +48,7 @@ void respondError(
     callback(resp);
 }
 
-SessionStore::SessionStore(drogon::orm::DbClientPtr client) :
+SessionStore::SessionStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

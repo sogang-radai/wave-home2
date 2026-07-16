@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -14,12 +14,12 @@ namespace internal {
 class DbQueryStore
 {
 public:
-    explicit DbQueryStore(drogon::orm::DbClientPtr client);
+    explicit DbQueryStore(db::DbClientPtr client);
 
     Json::Value execute(const Json::Value& request, std::string& error, std::string& field) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     Json::Value executeOne(const Json::Value& query) const;
     Json::Value executeOneUnchecked(const Json::Value& query, const std::string& table) const;

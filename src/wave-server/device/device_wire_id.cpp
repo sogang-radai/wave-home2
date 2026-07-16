@@ -1,4 +1,5 @@
 #include "device_wire_id.hpp"
+#include "../db/database.h"
 
 #include "../app/app_state.h"
 #include "device.h"
@@ -27,7 +28,7 @@ namespace
     }
 
     std::optional<int64_t> dbIdExists(
-        const drogon::orm::DbClientPtr& client,
+        const db::DbClientPtr& client,
         int64_t db_id)
     {
         if (!client || db_id <= 0)
@@ -63,7 +64,7 @@ std::string wireIdForDbRow(int64_t db_id, const std::string& /*db_name*/)
 }
 
 std::optional<int64_t> dbIdForWireId(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& wire_id)
 {
     if (wire_id.empty())

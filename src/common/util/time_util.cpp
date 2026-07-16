@@ -1,10 +1,8 @@
 #include "time_util.h"
 
 #include <ctime>
-#include <sstream>
 #include <iomanip>
-
-WAVE_NAMESPACE_BEGIN
+#include <sstream>
 
 std::string formatTimestamp(std::chrono::system_clock::time_point tp)
 {
@@ -19,5 +17,3 @@ std::string formatTimestamp(std::chrono::system_clock::time_point tp)
     oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
     return oss.str();
 }
-
-WAVE_NAMESPACE_END

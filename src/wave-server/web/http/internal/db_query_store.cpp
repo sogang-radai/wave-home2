@@ -1,4 +1,5 @@
 #include "db_query_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <optional>
@@ -98,7 +99,7 @@ namespace
     }
 }
 
-DbQueryStore::DbQueryStore(drogon::orm::DbClientPtr client) :
+DbQueryStore::DbQueryStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

@@ -1,4 +1,5 @@
 #include "demo_session_writes.h"
+#include "../db/database.h"
 
 #include <algorithm>
 #include <chrono>
@@ -93,7 +94,7 @@ namespace
         return json::parse(Json::writeString(builder, value));
     }
 
-    std::string wireIdForInternalDevice(const drogon::orm::DbClientPtr& client, int64_t internal_id)
+    std::string wireIdForInternalDevice(const db::DbClientPtr& client, int64_t internal_id)
     {
         if (!client || internal_id <= 0)
             return {};
@@ -103,7 +104,7 @@ namespace
         return dev::wireIdForDbRow(internal_id, rows[0]["name"].as<std::string>());
     }
 
-    Json::Value alarmRowToJson(const drogon::orm::DbClientPtr& client, const drogon::orm::Row& row)
+    Json::Value alarmRowToJson(const db::DbClientPtr& client, const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
@@ -318,7 +319,7 @@ namespace
         const std::string& device_id,
         const std::string& action_name,
         const Json::Value& params,
-        const drogon::orm::DbClientPtr& client)
+        const db::DbClientPtr& client)
     {
         if (!client || device_id.empty() || action_name.empty())
             return;
@@ -333,7 +334,7 @@ namespace
     void executeAlarmMethod(
         const std::string& runtime_id,
         const Json::Value& alarm,
-        const drogon::orm::DbClientPtr& client)
+        const db::DbClientPtr& client)
     {
         const auto method = alarm.get("method", Json::Value(Json::objectValue));
         if (!method.isObject())
@@ -415,7 +416,7 @@ namespace
     }
 }
 
-void ensureDemoSessionSeeded(const std::string& runtime_id, const drogon::orm::DbClientPtr& client)
+void ensureDemoSessionSeeded(const std::string& runtime_id, const db::DbClientPtr& client)
 {
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
     auto& session = *locked_session;
@@ -483,7 +484,7 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const drogon::orm::D
 Json::Value demoListAlarms(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::optional<bool>& enabled_filter)
 {
     ensureDemoSessionSeeded(runtime_id, client);
@@ -508,7 +509,7 @@ Json::Value demoListAlarms(
 Json::Value demoCreateAlarm(
     const std::string& runtime_id,
     const Json::Value& body,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     std::string& error,
     std::string& field)
 {
@@ -604,7 +605,7 @@ bool demoDeleteAlarm(const std::string& runtime_id, const int64_t alarm_id)
 Json::Value demoListNotifications(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const int limit,
     const int64_t before_id)
 {
@@ -669,7 +670,7 @@ Json::Value demoListNotifications(
 Json::Value demoMarkAllNotificationsRead(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
@@ -690,7 +691,7 @@ Json::Value demoMarkNotificationRead(
     const std::string& runtime_id,
     const int64_t user_id,
     const int64_t notification_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
@@ -840,7 +841,7 @@ void demoDisableAlarm(const std::string& runtime_id, const int64_t alarm_id)
 void demoFireAlarm(
     const std::string& runtime_id,
     const Json::Value& alarm,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     if (!alarm.isObject())
         return;
@@ -858,7 +859,7 @@ void demoFireAlarm(
 Json::Value demoListScheduleTasks(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     if (client)
         ensureDemoSessionSeeded(runtime_id, client);
@@ -1071,7 +1072,7 @@ bool demoDeleteRule(const std::string& runtime_id, const std::string& rule_id)
 Json::Value demoListChatSummaries(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     Json::Value items(Json::arrayValue);
@@ -1100,7 +1101,7 @@ std::optional<Json::Value> demoGetChatConversation(
     const std::string& runtime_id,
     const int64_t user_id,
     const int64_t conversation_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
@@ -1119,7 +1120,7 @@ std::optional<Json::Value> demoCreateChatConversation(
     const std::string& runtime_id,
     const int64_t user_id,
     const std::string& title,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
@@ -1147,7 +1148,7 @@ std::optional<Json::Value> demoRenameChatConversation(
     const int64_t conversation_id,
     const std::string& title,
     std::string& error,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
@@ -1167,7 +1168,7 @@ bool demoDeleteChatConversation(
     const std::string& runtime_id,
     const int64_t user_id,
     const int64_t conversation_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
@@ -1195,7 +1196,7 @@ std::optional<Json::Value> demoAppendChatUserMessage(
     const int64_t conversation_id,
     const std::string& text,
     std::string& error,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
@@ -1228,7 +1229,7 @@ std::optional<Json::Value> demoCreateChatWithUserMessage(
     const int64_t user_id,
     const std::string& text,
     std::string& error,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     if (text.empty())
     {
@@ -1341,7 +1342,7 @@ namespace
 Json::Value demoGetAiAgentSettings(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     const auto session = DemoSessionRegistry::instance().get(runtime_id);
@@ -1363,7 +1364,7 @@ Json::Value demoPutAiAgentSettings(
     const std::string& runtime_id,
     const int64_t user_id,
     const Json::Value& body,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     std::string& error,
     std::string& field)
 {
@@ -1408,7 +1409,7 @@ Json::Value demoPutAiAgentSettings(
 std::string demoResolvePersonalPrompt(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     const auto settings = demoGetAiAgentSettings(runtime_id, user_id, client);
     if (!settings.isMember("personalPrompt") || !settings["personalPrompt"].isString())

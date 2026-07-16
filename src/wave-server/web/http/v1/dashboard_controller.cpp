@@ -1,4 +1,5 @@
 #include "dashboard_controller.h"
+#include "../../../db/database.h"
 
 #include "../../../app/app_state.h"
 #include "../../../demo/demo_device_backend.h"
@@ -15,7 +16,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, drogon::orm::DbClientPtr client)
+    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
@@ -24,7 +25,7 @@ namespace
 
     bool requireDb(
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
-        drogon::orm::DbClientPtr& client_out)
+        db::DbClientPtr& client_out)
     {
         client_out = AppState::get().db();
         if (!client_out)
@@ -38,7 +39,7 @@ namespace
     std::optional<int64_t> requireActiveUser(
         const drogon::HttpRequestPtr& req,
         const std::function<void(const drogon::HttpResponsePtr&)>& callback,
-        drogon::orm::DbClientPtr client)
+        db::DbClientPtr client)
     {
         const auto user_id = resolveUserId(req, client);
         if (!user_id)
@@ -54,7 +55,7 @@ void DashboardController::dailyMessage(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    drogon::orm::DbClientPtr client;
+    db::DbClientPtr client;
     if (!requireDb(callback, client))
         return;
 
@@ -77,7 +78,7 @@ void DashboardController::currentState(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    drogon::orm::DbClientPtr client;
+    db::DbClientPtr client;
     if (!requireDb(callback, client))
         return;
 
@@ -92,7 +93,7 @@ void DashboardController::upcomingAlarms(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    drogon::orm::DbClientPtr client;
+    db::DbClientPtr client;
     if (!requireDb(callback, client))
         return;
 
@@ -120,7 +121,7 @@ void DashboardController::activeGestureRules(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback)
 {
-    drogon::orm::DbClientPtr client;
+    db::DbClientPtr client;
     if (!requireDb(callback, client))
         return;
 

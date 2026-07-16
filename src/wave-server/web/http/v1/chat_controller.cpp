@@ -15,7 +15,7 @@
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
 #include "../../../core/logger.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../../../service/agent_client.h"
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_runtime_id.h"

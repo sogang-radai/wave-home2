@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -23,12 +23,12 @@ struct RagSearchConfig
 class RagInternalStore
 {
 public:
-    explicit RagInternalStore(drogon::orm::DbClientPtr client, RagSearchConfig config = {});
+    explicit RagInternalStore(db::DbClientPtr client, RagSearchConfig config = {});
 
     Json::Value search(const Json::Value& request, std::string& error, std::string& field) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
     RagSearchConfig m_config;
 
     bool embedQuery(const std::string& query, std::vector<float>& out_embedding, std::string& out_error) const;

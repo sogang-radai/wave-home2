@@ -1,9 +1,10 @@
 #include "schedule_tasks_internal_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <sstream>
 
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../v1/chat_store.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -29,7 +30,7 @@ namespace
     }
 }
 
-ScheduleTasksInternalStore::ScheduleTasksInternalStore(drogon::orm::DbClientPtr client) :
+ScheduleTasksInternalStore::ScheduleTasksInternalStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

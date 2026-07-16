@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -14,7 +14,7 @@ namespace v1 {
 class DashboardStore
 {
 public:
-    explicit DashboardStore(drogon::orm::DbClientPtr client);
+    explicit DashboardStore(db::DbClientPtr client);
 
     Json::Value currentState() const;
     Json::Value upcomingAlarms(int64_t user_id) const;
@@ -22,7 +22,7 @@ public:
     Json::Value activeGestureRules(int64_t user_id) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     static Json::Value parseJsonColumn(const drogon::orm::Field& field);
     static Json::Value parseDaysJson(const std::string& raw);

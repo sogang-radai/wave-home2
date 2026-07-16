@@ -1,4 +1,5 @@
 #include "demo_power_meter.h"
+#include "../db/database.h"
 
 #include <algorithm>
 #include <chrono>
@@ -178,7 +179,7 @@ DemoPowerReading DemoPowerMeter::samplePlug(
 
 Json::Value DemoPowerMeter::listPlugs(
     const std::string& runtime_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     Json::Value body(Json::arrayValue);
     Json::Value aggregate;

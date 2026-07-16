@@ -1,4 +1,5 @@
 #include "sleep_controller.h"
+#include "../../../db/database.h"
 
 #include "../../../app/app_state.h"
 #include "session_store.h"
@@ -11,7 +12,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, drogon::orm::DbClientPtr client)
+    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);

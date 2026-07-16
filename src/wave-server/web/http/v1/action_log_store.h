@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -20,7 +20,7 @@ namespace v1 {
 class ActionLogStore
 {
 public:
-    explicit ActionLogStore(drogon::orm::DbClientPtr client);
+    explicit ActionLogStore(db::DbClientPtr client);
 
     void record(
         int64_t user_id,
@@ -31,7 +31,7 @@ public:
         const std::optional<Json::Value>& metadata = std::nullopt) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     int64_t nextId() const;
 };

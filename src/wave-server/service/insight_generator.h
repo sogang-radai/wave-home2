@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 
 #include "core/coredefs.h"
 
@@ -21,7 +21,7 @@ SERVICE_NAMESPACE_BEGIN
  * 받아도 버려질 뿐이다. RAG 저장을 붙이면 true로 바꾼다.
  */
 bool generateAndPersistInsights(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& agent_base_url,
     int64_t user_id,
     const std::string& surface,

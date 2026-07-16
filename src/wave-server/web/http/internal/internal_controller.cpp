@@ -1,4 +1,5 @@
 #include "internal_controller.h"
+#include "../../../db/database.h"
 
 #include <cstdint>
 #include <optional>
@@ -49,7 +50,7 @@ namespace
         return std::nullopt;
     }
 
-    drogon::orm::DbClientPtr requireDb(
+    db::DbClientPtr requireDb(
         const std::function<void(const drogon::HttpResponsePtr&)>& callback)
     {
         auto& state = AppState::get();
@@ -79,7 +80,7 @@ namespace
     }
 
     std::optional<std::string> resolveDevicePathId(
-        const drogon::orm::DbClientPtr& client,
+        const db::DbClientPtr& client,
         const std::string& device_id)
     {
         return DevicesInternalStore::resolveWireDeviceId(client, device_id);

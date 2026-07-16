@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -16,9 +16,9 @@ namespace v1 {
 class InsightsStore
 {
 public:
-    explicit InsightsStore(drogon::orm::DbClientPtr client);
+    explicit InsightsStore(db::DbClientPtr client);
 
-    static std::string referenceDate(drogon::orm::DbClientPtr client);
+    static std::string referenceDate(db::DbClientPtr client);
 
     Json::Value list(
         int64_t user_id,
@@ -40,7 +40,7 @@ public:
     bool markCanceled(int64_t user_id, int64_t insight_id) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     Json::Value rowToJson(const drogon::orm::Row& row) const;
     static Json::Value parseJsonColumn(const drogon::orm::Field& field);

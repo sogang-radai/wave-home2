@@ -1,4 +1,5 @@
 #include "weekly_plan_store.h"
+#include "../../../db/database.h"
 
 #include "insights_store.h"
 
@@ -8,7 +9,7 @@ namespace v1 {
 
 namespace
 {
-    bool tableExists(drogon::orm::DbClientPtr client, const char* name)
+    bool tableExists(db::DbClientPtr client, const char* name)
     {
         const auto rows = client->execSqlSync(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
@@ -17,7 +18,7 @@ namespace
     }
 }
 
-WeeklyPlanStore::WeeklyPlanStore(drogon::orm::DbClientPtr client) :
+WeeklyPlanStore::WeeklyPlanStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

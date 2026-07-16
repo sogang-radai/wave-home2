@@ -5,7 +5,7 @@ set(_wave_server_sources
     app/app_setting.cpp
     core/logger.cpp
     core/task_queue.cpp
-    core/time_util.cpp
+    
     db/database.cpp
     service/llm_client.cpp
     service/agent_client.cpp
@@ -101,6 +101,7 @@ set(_wave_server_sources
     service/sleep/sleep_manager.cpp
     auxiliary/stb_image.cpp
     "${CMAKE_SOURCE_DIR}/src/common/util/exe_path.cpp"
+    "${CMAKE_SOURCE_DIR}/src/common/util/time_util.cpp"
     "${CMAKE_SOURCE_DIR}/src/common/util/arg_parser.cpp"
     "${CMAKE_SOURCE_DIR}/src/common/network/net_util.cpp"
 )

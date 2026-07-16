@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -15,12 +15,12 @@ namespace v1 {
 class WeeklyPlanStore
 {
 public:
-    explicit WeeklyPlanStore(drogon::orm::DbClientPtr client);
+    explicit WeeklyPlanStore(db::DbClientPtr client);
 
     Json::Value weeklyReport(int64_t user_id, const std::string& period_start) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 };
 
 } // namespace v1

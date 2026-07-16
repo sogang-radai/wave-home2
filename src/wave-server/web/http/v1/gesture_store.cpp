@@ -1,4 +1,5 @@
 #include "gesture_store.h"
+#include "../../../db/database.h"
 
 #include <fstream>
 
@@ -158,7 +159,7 @@ bool GestureStore::load(
     }
 }
 
-void GestureStore::setDatabaseClient(const drogon::orm::DbClientPtr& client)
+void GestureStore::setDatabaseClient(const db::DbClientPtr& client)
 {
     std::lock_guard lock(m_mutex);
     m_db = client;

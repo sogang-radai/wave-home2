@@ -1,4 +1,5 @@
 #include "notifications_store.h"
+#include "../../../db/database.h"
 
 #include <vector>
 
@@ -6,7 +7,7 @@ WAVE_NAMESPACE_BEGIN
 namespace web {
 namespace v1 {
 
-NotificationsStore::NotificationsStore(drogon::orm::DbClientPtr client) :
+NotificationsStore::NotificationsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

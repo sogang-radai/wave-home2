@@ -1,4 +1,5 @@
 #include "sleep_vec_store.h"
+#include "../../db/database.h"
 
 #include <cstring>
 
@@ -19,7 +20,7 @@ namespace
     }
 }
 
-SleepVecStore::SleepVecStore(const drogon::orm::DbClientPtr& client) :
+SleepVecStore::SleepVecStore(const db::DbClientPtr& client) :
     m_client(client)
 {
 }
