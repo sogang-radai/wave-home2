@@ -1,6 +1,7 @@
 #include "alarm_manager.h"
 
 #include <algorithm>
+#include <chrono>
 #include <ctime>
 #include <iomanip>
 #include <sstream>
@@ -21,6 +22,8 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
+    constexpr int k_smart_wake_window_min = 30;
+
     std::string weekday_token(int wday)
     {
         switch (wday)
@@ -70,6 +73,16 @@ namespace
         job.sourceRef = source;
         job.logMessage = "알람 실행: " + action;
         app.actionQueue().enqueue(std::move(job));
+    }
+
+    bool is_wake_friendly_stage(const std::string& stage)
+    {
+        return stage == "light" || stage == "rem" || stage == "awake";
+    }
+
+    int minutes_before_target(int now_minute, int target_minute)
+    {
+        return (target_minute - now_minute + 1440) % 1440;
     }
 }
 
@@ -180,6 +193,7 @@ ORDER BY a.time_minute ASC
             {
                 const int64_t radar_id = row["radar_row_id"].as<int64_t>();
                 const std::string name = row["radar_name"].as<std::string>();
+                alarm.radar_device_id = radar_id;
                 alarm.radar_external_id = dev::wireIdForDbRow(radar_id, name);
             }
 
@@ -220,7 +234,7 @@ std::string AlarmManager::nowStamp() const
     return formatTimestamp();
 }
 
-bool AlarmManager::isDueNow(const AlarmRecord& alarm, const std::string& today) const
+int AlarmManager::localNowMinute() const
 {
     const std::time_t now_t = std::time(nullptr);
     std::tm local_tm {};
@@ -229,17 +243,104 @@ bool AlarmManager::isDueNow(const AlarmRecord& alarm, const std::string& today) 
 #else
     localtime_r(&now_t, &local_tm);
 #endif
+    return local_tm.tm_hour * 60 + local_tm.tm_min;
+}
 
-    const int now_minute = local_tm.tm_hour * 60 + local_tm.tm_min;
-    if (now_minute != alarm.time_minute)
-        return false;
-
+bool AlarmManager::isScheduledToday(const AlarmRecord& alarm) const
+{
     if (alarm.days_of_week.empty())
         return true;
+
+    const std::time_t now_t = std::time(nullptr);
+    std::tm local_tm {};
+#if defined(_WIN32)
+    localtime_s(&local_tm, &now_t);
+#else
+    localtime_r(&now_t, &local_tm);
+#endif
 
     const std::string token = weekday_token(local_tm.tm_wday);
     return std::find(alarm.days_of_week.begin(), alarm.days_of_week.end(), token)
         != alarm.days_of_week.end();
+}
+
+bool AlarmManager::isInFireWindow(const AlarmRecord& alarm) const
+{
+    const int now_minute = localNowMinute();
+    if (!alarm.smart_wake)
+        return now_minute == alarm.time_minute;
+
+    const int before = minutes_before_target(now_minute, alarm.time_minute);
+    return before <= k_smart_wake_window_min;
+}
+
+bool AlarmManager::isLightWakeStage(const AlarmRecord& alarm) const
+{
+    if (alarm.radar_device_id <= 0)
+        return false;
+
+    const auto client = AppState::get().db();
+    if (!client)
+        return false;
+
+    try
+    {
+        const auto cutoff = formatTimestamp(
+            std::chrono::system_clock::now() - std::chrono::minutes(3));
+        const auto rows = client->execSqlSync(
+            R"SQL(
+SELECT s.stage_label, s.toss_mean
+FROM sleep_stat s
+JOIN device_room_map drm ON drm.room_id = s.room_id
+WHERE s.user_id = ?
+  AND s.granularity = '1m'
+  AND drm.device_id = ?
+  AND s.time_start >= ?
+ORDER BY s.time_start DESC
+LIMIT 1
+)SQL",
+            alarm.user_id,
+            alarm.radar_device_id,
+            cutoff);
+
+        if (rows.empty())
+            return false;
+
+        if (!rows[0]["stage_label"].isNull())
+        {
+            const auto stage = rows[0]["stage_label"].as<std::string>();
+            if (is_wake_friendly_stage(stage))
+                return true;
+        }
+
+        if (!rows[0]["toss_mean"].isNull())
+        {
+            const double toss = rows[0]["toss_mean"].as<double>();
+            if (toss >= 0.5)
+                return true;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        WLOG_WARN("AlarmManager smart-wake stage query failed: {}", e.what());
+    }
+
+    return false;
+}
+
+bool AlarmManager::shouldFireNow(const AlarmRecord& alarm) const
+{
+    if (!isScheduledToday(alarm) || !isInFireWindow(alarm))
+        return false;
+
+    if (!alarm.smart_wake)
+        return true;
+
+    const int now_minute = localNowMinute();
+    if (now_minute == alarm.time_minute)
+        return true;
+
+    return isLightWakeStage(alarm);
 }
 
 void AlarmManager::markFired(AlarmRecord& alarm, const std::string& today)
@@ -380,10 +481,16 @@ void AlarmManager::executeMethod(const AlarmRecord& alarm)
     WLOG_WARN("Alarm {} unsupported method type: {}", alarm.id, type);
 }
 
-void AlarmManager::fireAlarm(const AlarmRecord& alarm)
+void AlarmManager::fireAlarm(const AlarmRecord& alarm, bool smart_early)
 {
-    if (alarm.smart_wake && !alarm.radar_external_id.empty())
-        WLOG_INFO("Alarm {} smart wake requested (firing at scheduled time)", alarm.id);
+    if (alarm.smart_wake)
+    {
+        WLOG_INFO(
+            "Alarm {} smart wake {} (radar={})",
+            alarm.id,
+            smart_early ? "early" : "deadline",
+            alarm.radar_external_id.empty() ? "-" : alarm.radar_external_id);
+    }
 
     executeMethod(alarm);
     insertNotification(alarm.user_id, "\"" + alarm.name + "\" 알람이 울렸습니다.");
@@ -404,7 +511,7 @@ void AlarmManager::tick()
         return;
 
     const std::string today = todayDate();
-    std::vector<int64_t> due_ids;
+    std::vector<std::pair<int64_t, bool>> due_ids;
 
     {
         std::lock_guard lock(m_mutex);
@@ -414,7 +521,7 @@ void AlarmManager::tick()
                 continue;
 
             auto& state = m_runtime[id];
-            if (!isDueNow(alarm, today))
+            if (!shouldFireNow(alarm))
                 continue;
 
             if (!alarm.days_of_week.empty() && state.last_fired_date == today)
@@ -422,12 +529,14 @@ void AlarmManager::tick()
             if (alarm.days_of_week.empty() && state.once_fired)
                 continue;
 
-            due_ids.push_back(id);
+            const bool smart_early =
+                alarm.smart_wake && localNowMinute() != alarm.time_minute;
+            due_ids.emplace_back(id, smart_early);
             markFired(alarm, today);
         }
     }
 
-    for (const int64_t id : due_ids)
+    for (const auto& [id, smart_early] : due_ids)
     {
         AlarmRecord alarm;
         bool is_once = false;
@@ -442,7 +551,7 @@ void AlarmManager::tick()
                 m_alarms.erase(it);
         }
 
-        fireAlarm(alarm);
+        fireAlarm(alarm, smart_early);
         if (is_once)
             disableOnceAlarm(id);
     }

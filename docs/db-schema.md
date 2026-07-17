@@ -7,7 +7,7 @@
   - `alarm` 테이블 추가
   - `insight` 재정의 — `surface`, `date`, `rule_json`, `schedule_task_json`, 원탭 적용
   - `posture_report`, `weekly_plan_report`, `posture_stat`(초안) 추가
-  - 인사이트·리포트별 RAG 벡터 테이블 (`vec_insight_*`, `vec_posture_report`, `vec_weekly_plan_report`)
+  - 인사이트·리포트별 RAG 벡터 테이블 (`vec_insight_*`, `vec_posture_report`, `vec_weekly_plan_report`) — 서버 기동 시 `db::ensureVecTables` 로 생성
 - **2026-07-07** — v1 API·프론트 mock 정렬
   - `routine_task.source_insight_id` 추가
   - `insight.label` 추가
@@ -911,5 +911,5 @@ CREATE VIRTUAL TABLE vec_insight_power USING vec0 (
 | `weekly_plan` | 주간 계획 우측 AI 추천 |
 | `sleep_report` | 수면 리포트 내 권장 카드 |
 | `posture_report` | 자세 리포트 내 권장 카드 |
-| `power` | 전력 권장 (추후) |
+| `power` | 전력 권장 |
 

@@ -16,6 +16,7 @@
 #include "../../nn/sleep_pipeline.h"
 
 #include "sleep_aggregator.h"
+#include "sleep_audio.h"
 #include "sleep_session_fsm.h"
 #include "sleep_stage_synth.h"
 #include "sleep_vitals.h"
@@ -54,8 +55,16 @@ struct SleepRuntime
     VitalTargetPicker vitalPicker;
     VitalSignsProcessor vitalProcessor;
     VitalEstimate lastVitals;
+    SnoreAudioAnalyzer snoreAudio;
+    bool micSubscribed = false;
     int32_t asleepMinutesBeforeWindow = 0;
+    int32_t asleepMinutesAtWindowStart = 0;
+    std::vector<StageSynthResult> minuteStagesInWindow;
     std::vector<StageSynthResult> sessionStageWindows;
+    std::vector<StageSynthResult> sessionMinuteStages;
+    double windowSnoreSum = 0.0;
+    double windowNoiseSum = 0.0;
+    int32_t windowAudioMinutes = 0;
 };
 
 enum class SleepJobKind
@@ -109,6 +118,8 @@ private:
     bool initPipeline(SleepRuntime& runtime, std::string& out_error);
     std::vector<SleepRoomConfig> loadRoomConfigs();
     void tickVitals(SleepRuntime& runtime);
+    void tickAudio(SleepRuntime& runtime);
+    void ensureMicSubscription(SleepRuntime& runtime, bool want_subscribed);
     static bool is_sleep_enabled_radar(const std::string& external_id);
     std::optional<double> queryStationEnv(const std::string& external_id, const char* field);
     void storeAgentEmbeddings(SleepJobKind kind, int64_t row_id, const std::vector<float>& embedding);

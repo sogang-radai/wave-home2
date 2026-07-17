@@ -11,6 +11,7 @@
 #include "../../device/device.h"
 #include "../../device/device_wire_id.hpp"
 #include "../../device/device_manager.h"
+#include "../../device/interface/audio.h"
 #include "../../device/interface/radar.h"
 #include "../../device/platform/radai_ws.h"
 #include "../../device/platform/srs_r4sn.h"
@@ -289,6 +290,61 @@ void SleepManager::tickVitals(SleepRuntime& runtime)
     runtime.lastVitals = runtime.vitalProcessor.estimate();
 }
 
+void SleepManager::ensureMicSubscription(SleepRuntime& runtime, bool want_subscribed)
+{
+    if (!runtime.config.stationExternalId)
+        return;
+
+    auto* device = find_device_by_external_id(*runtime.config.stationExternalId);
+    auto* station = dynamic_cast<dev::RadaiWs*>(device);
+    if (!station || device->getState() != dev::DeviceState::Running)
+        return;
+
+    if (want_subscribed && !runtime.micSubscribed)
+    {
+        const int rc = station->invoke(
+            "subscribe",
+            json{{"target", "mic_opus"}, {"intervalMs", 0}});
+        if (rc == 0)
+        {
+            runtime.micSubscribed = true;
+            runtime.snoreAudio.beginMinute();
+        }
+        else
+        {
+            WLOG_WARN("sleep mic subscribe failed: rc={}", rc);
+        }
+    }
+    else if (!want_subscribed && runtime.micSubscribed)
+    {
+        (void)station->invoke("unsubscribe", json{{"target", "mic_opus"}});
+        runtime.micSubscribed = false;
+    }
+}
+
+void SleepManager::tickAudio(SleepRuntime& runtime)
+{
+    const bool sleeping = runtime.sessionFsm.phase() == SessionPhase::Sleeping;
+    ensureMicSubscription(runtime, sleeping && runtime.config.stationExternalId.has_value());
+    if (!sleeping || !runtime.config.stationExternalId)
+        return;
+
+    auto* device = find_device_by_external_id(*runtime.config.stationExternalId);
+    auto* audio = dynamic_cast<dev::IAudioInput*>(device);
+    if (!audio || device->getState() != dev::DeviceState::Running)
+        return;
+
+    const auto fmt = audio->getSourceFormat();
+    const uint32_t sample_rate = fmt.sampleRate > 0 ? fmt.sampleRate : 16000;
+    dev::AudioFrame frame;
+    int pulled = 0;
+    while (pulled < 32 && audio->popFrame(frame))
+    {
+        runtime.snoreAudio.pushFrame(frame, sample_rate);
+        ++pulled;
+    }
+}
+
 std::vector<SleepRoomConfig> SleepManager::loadRoomConfigs()
 {
     std::vector<SleepRoomConfig> configs;
@@ -411,6 +467,7 @@ void SleepManager::tickRuntime(SleepRuntime& runtime)
 {
     consumePointCloud(runtime);
     tickVitals(runtime);
+    tickAudio(runtime);
 
     const std::string now_ts = formatTimestamp();
     flushSecondBoundary(runtime, now_ts);
@@ -576,6 +633,53 @@ void SleepManager::persistMinuteStat(SleepRuntime& runtime, const MinuteStat& st
     if (!client)
         return;
 
+    std::optional<double> env_lux;
+    if (runtime.config.stationExternalId)
+        env_lux = queryStationEnv(*runtime.config.stationExternalId, "lux");
+
+    StageSynthHints hints;
+    hints.envLux = env_lux;
+    if (runtime.lastVitals.brConfidence > 0.0)
+        hints.brStability = runtime.lastVitals.brStability;
+    if (runtime.lastVitals.hrConfidence > 0.0)
+        hints.hrConfidence = runtime.lastVitals.hrConfidence;
+
+    const int32_t asleep_before = runtime.asleepMinutesBeforeWindow;
+    if (runtime.minuteStagesInWindow.empty())
+        runtime.asleepMinutesAtWindowStart = asleep_before;
+
+    const StageSynthResult stage = synthesizeMinuteStage(stat, asleep_before, hints);
+
+    if (stat.statusRatio.is_object() && stat.statusRatio.value("asleep", 0.0) >= 0.5)
+        runtime.asleepMinutesBeforeWindow += 1;
+
+    runtime.minuteStagesInWindow.push_back(stage);
+    if (runtime.sessionFsm.state().onset)
+        runtime.sessionMinuteStages.push_back(stage);
+
+    std::optional<double> snore_ratio;
+    std::optional<double> env_noise;
+    if (runtime.micSubscribed && runtime.snoreAudio.hasData())
+    {
+        const SnoreAudioSample audio = runtime.snoreAudio.flushMinute();
+        snore_ratio = audio.snoreScore;
+        env_noise = audio.noiseDb;
+        runtime.windowSnoreSum += *snore_ratio;
+        runtime.windowNoiseSum += *env_noise;
+        runtime.windowAudioMinutes += 1;
+    }
+
+    std::optional<double> hr_mean;
+    std::optional<double> br_mean;
+    std::optional<double> hr_confidence;
+    if (runtime.lastVitals.hrBpm && runtime.lastVitals.hrConfidence > 0.0)
+    {
+        hr_mean = *runtime.lastVitals.hrBpm;
+        hr_confidence = runtime.lastVitals.hrConfidence;
+    }
+    if (runtime.lastVitals.brRpm && runtime.lastVitals.brConfidence > 0.0)
+        br_mean = *runtime.lastVitals.brRpm;
+
     try
     {
         const auto& session_id = runtime.sessionFsm.state().sessionId;
@@ -585,19 +689,30 @@ void SleepManager::persistMinuteStat(SleepRuntime& runtime, const MinuteStat& st
                 R"SQL(
 INSERT INTO sleep_stat (
     user_id, room_id, session_id, granularity, time_start, time_end, coverage,
-    status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio
-) VALUES (?, ?, ?, '1m', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    stage_label, stage_ratio, stage_confidence,
+    status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio,
+    hr_mean, hr_confidence, br_mean, snore_ratio, env_lux, env_noise
+) VALUES (?, ?, ?, '1m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     room_id = excluded.room_id,
     session_id = excluded.session_id,
     time_end = excluded.time_end,
     coverage = excluded.coverage,
+    stage_label = excluded.stage_label,
+    stage_ratio = excluded.stage_ratio,
+    stage_confidence = excluded.stage_confidence,
     status_ratio = excluded.status_ratio,
     toss_mean = excluded.toss_mean,
     toss_max = excluded.toss_max,
     toss_p90 = excluded.toss_p90,
     toss_events = excluded.toss_events,
-    toss_ratio = excluded.toss_ratio
+    toss_ratio = excluded.toss_ratio,
+    hr_mean = excluded.hr_mean,
+    hr_confidence = excluded.hr_confidence,
+    br_mean = excluded.br_mean,
+    snore_ratio = excluded.snore_ratio,
+    env_lux = excluded.env_lux,
+    env_noise = excluded.env_noise
 )SQL",
                 runtime.config.userId,
                 runtime.config.roomId,
@@ -605,12 +720,21 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
                 stat.timeStart,
                 stat.timeEnd,
                 stat.coverage,
+                stage.stageLabel,
+                stage.stageRatio.dump(),
+                stage.confidence,
                 stat.statusRatio.dump(),
                 stat.tossMean,
                 stat.tossMax,
                 stat.tossP90,
                 stat.tossEvents,
-                stat.tossRatio.dump());
+                stat.tossRatio.dump(),
+                hr_mean,
+                hr_confidence,
+                br_mean,
+                snore_ratio,
+                env_lux,
+                env_noise);
         }
         else
         {
@@ -618,31 +742,51 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
                 R"SQL(
 INSERT INTO sleep_stat (
     user_id, room_id, session_id, granularity, time_start, time_end, coverage,
-    status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio
-) VALUES (?, ?, NULL, '1m', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    stage_label, stage_ratio, stage_confidence,
+    status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio,
+    hr_mean, hr_confidence, br_mean, snore_ratio, env_lux, env_noise
+) VALUES (?, ?, NULL, '1m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     room_id = excluded.room_id,
     session_id = excluded.session_id,
     time_end = excluded.time_end,
     coverage = excluded.coverage,
+    stage_label = excluded.stage_label,
+    stage_ratio = excluded.stage_ratio,
+    stage_confidence = excluded.stage_confidence,
     status_ratio = excluded.status_ratio,
     toss_mean = excluded.toss_mean,
     toss_max = excluded.toss_max,
     toss_p90 = excluded.toss_p90,
     toss_events = excluded.toss_events,
-    toss_ratio = excluded.toss_ratio
+    toss_ratio = excluded.toss_ratio,
+    hr_mean = excluded.hr_mean,
+    hr_confidence = excluded.hr_confidence,
+    br_mean = excluded.br_mean,
+    snore_ratio = excluded.snore_ratio,
+    env_lux = excluded.env_lux,
+    env_noise = excluded.env_noise
 )SQL",
                 runtime.config.userId,
                 runtime.config.roomId,
                 stat.timeStart,
                 stat.timeEnd,
                 stat.coverage,
+                stage.stageLabel,
+                stage.stageRatio.dump(),
+                stage.confidence,
                 stat.statusRatio.dump(),
                 stat.tossMean,
                 stat.tossMax,
                 stat.tossP90,
                 stat.tossEvents,
-                stat.tossRatio.dump());
+                stat.tossRatio.dump(),
+                hr_mean,
+                hr_confidence,
+                br_mean,
+                snore_ratio,
+                env_lux,
+                env_noise);
         }
     }
     catch (const std::exception& e)
@@ -665,16 +809,40 @@ void SleepManager::persistThirtyMinStat(SleepRuntime& runtime, const ThirtyMinSt
         env_lux = queryStationEnv(*runtime.config.stationExternalId, "lux");
     }
 
-    const StageSynthResult stage = synthesizeThirtyMinStage(stat, runtime.asleepMinutesBeforeWindow);
-    if (stat.statusRatio.is_object())
-    {
-        runtime.asleepMinutesBeforeWindow += static_cast<int32_t>(
-            30.0 * stat.statusRatio.value("asleep", 0.0));
-    }
+    StageSynthHints hints;
+    hints.envLux = env_lux;
+    if (runtime.lastVitals.brConfidence > 0.0)
+        hints.brStability = runtime.lastVitals.brStability;
+    if (runtime.lastVitals.hrConfidence > 0.0)
+        hints.hrConfidence = runtime.lastVitals.hrConfidence;
+
+    // Prefer aggregate of 1m stages collected in this window; fall back to 30m heuristic.
+    StageSynthResult stage;
+    if (!runtime.minuteStagesInWindow.empty())
+        stage = aggregateMinuteStages(runtime.minuteStagesInWindow);
+    else
+        stage = synthesizeThirtyMinStage(stat, runtime.asleepMinutesAtWindowStart, hints);
+
+    runtime.minuteStagesInWindow.clear();
+    runtime.asleepMinutesAtWindowStart = runtime.asleepMinutesBeforeWindow;
     if (runtime.sessionFsm.state().onset)
         runtime.sessionStageWindows.push_back(stage);
 
-    const double snore_ratio = estimateSnoreRatio(stat, env_temp);
+    double snore_ratio = 0.0;
+    std::optional<double> env_noise;
+    if (runtime.windowAudioMinutes > 0)
+    {
+        snore_ratio = runtime.windowSnoreSum / static_cast<double>(runtime.windowAudioMinutes);
+        env_noise = runtime.windowNoiseSum / static_cast<double>(runtime.windowAudioMinutes);
+    }
+    else
+    {
+        snore_ratio = estimateSnoreRatio(stat, env_temp);
+    }
+    runtime.windowSnoreSum = 0.0;
+    runtime.windowNoiseSum = 0.0;
+    runtime.windowAudioMinutes = 0;
+
     std::optional<double> hr_mean;
     std::optional<double> br_mean;
     std::optional<double> hr_confidence;
@@ -702,8 +870,8 @@ INSERT INTO sleep_stat (
     stage_label, stage_ratio, stage_confidence,
     status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio,
     hr_mean, hr_confidence, br_mean, snore_ratio,
-    summary_text, env_temp, env_lux
-) VALUES (?, ?, ?, '30m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    summary_text, env_temp, env_lux, env_noise
+) VALUES (?, ?, ?, '30m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     room_id = excluded.room_id,
     session_id = excluded.session_id,
@@ -724,7 +892,8 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     snore_ratio = excluded.snore_ratio,
     summary_text = excluded.summary_text,
     env_temp = excluded.env_temp,
-    env_lux = excluded.env_lux
+    env_lux = excluded.env_lux,
+    env_noise = excluded.env_noise
 )SQL",
                 runtime.config.userId,
                 runtime.config.roomId,
@@ -747,7 +916,8 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
                 snore_ratio,
                 summary_text,
                 env_temp,
-                env_lux);
+                env_lux,
+                env_noise);
         }
         else
         {
@@ -758,8 +928,8 @@ INSERT INTO sleep_stat (
     stage_label, stage_ratio, stage_confidence,
     status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio,
     hr_mean, hr_confidence, br_mean, snore_ratio,
-    summary_text, env_temp, env_lux
-) VALUES (?, ?, NULL, '30m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    summary_text, env_temp, env_lux, env_noise
+) VALUES (?, ?, NULL, '30m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     room_id = excluded.room_id,
     session_id = excluded.session_id,
@@ -780,7 +950,8 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     snore_ratio = excluded.snore_ratio,
     summary_text = excluded.summary_text,
     env_temp = excluded.env_temp,
-    env_lux = excluded.env_lux
+    env_lux = excluded.env_lux,
+    env_noise = excluded.env_noise
 )SQL",
                 runtime.config.userId,
                 runtime.config.roomId,
@@ -802,7 +973,8 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
                 snore_ratio,
                 summary_text,
                 env_temp,
-                env_lux);
+                env_lux,
+                env_noise);
         }
 
         const auto rows = client->execSqlSync(
@@ -937,7 +1109,9 @@ INSERT INTO sleep_session (
         backfillSessionId(runtime.config.userId, close.onset, close.finalWake, session_id);
 
         json stage_totals_sec = json::object();
-        const json stage_totals_min = synthesizeStageTotals(runtime.sessionStageWindows);
+        const json stage_totals_min = !runtime.sessionMinuteStages.empty()
+            ? synthesizeStageTotals(runtime.sessionMinuteStages, 1.0)
+            : synthesizeStageTotals(runtime.sessionStageWindows, 30.0);
         for (auto it = stage_totals_min.begin(); it != stage_totals_min.end(); ++it)
             stage_totals_sec[it.key()] = it.value().get<double>() * 60.0;
 
@@ -994,9 +1168,17 @@ WHERE id = ?
         weekly.periodStart = mondayOfWeek(close.nightDate);
         enqueueJob(std::move(weekly));
 
+        ensureMicSubscription(runtime, false);
         runtime.sessionFsm.reset();
         runtime.sessionStageWindows.clear();
+        runtime.sessionMinuteStages.clear();
+        runtime.minuteStagesInWindow.clear();
         runtime.asleepMinutesBeforeWindow = 0;
+        runtime.asleepMinutesAtWindowStart = 0;
+        runtime.snoreAudio.reset();
+        runtime.windowSnoreSum = 0.0;
+        runtime.windowNoiseSum = 0.0;
+        runtime.windowAudioMinutes = 0;
     }
     catch (const std::exception& e)
     {

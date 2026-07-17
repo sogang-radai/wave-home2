@@ -10,9 +10,11 @@ set(_wave_server_sources
     core/task_queue.cpp
     
     db/database.cpp
+    db/vec_tables.cpp
     service/llm_client.cpp
     service/agent_client.cpp
     service/insight_generator.cpp
+    service/insight_vec_store.cpp
     service/goal_coaching_generator.cpp
     service/go2rtc_service.cpp
     service/power_manager.cpp
@@ -113,6 +115,7 @@ set(_wave_server_sources
     service/sleep/sleep_session_fsm.cpp
     service/sleep/sleep_stage_synth.cpp
     service/sleep/sleep_vitals.cpp
+    service/sleep/sleep_audio.cpp
     service/sleep/sleep_vec_store.cpp
     service/sleep/sleep_manager.cpp
     auxiliary/stb_image.cpp

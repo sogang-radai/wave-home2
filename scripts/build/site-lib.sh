@@ -23,16 +23,48 @@ if ! command -v npm >/dev/null 2>&1; then
     exit 1
 fi
 
+# Cursor/sandbox (and some npm wrappers) inject npm_config_devdir; npm 10+ prints
+# "Unknown env config devdir" on every invocation. Drop it for this script only.
+unset npm_config_devdir NPM_CONFIG_DEVDIR 2>/dev/null || true
+
 cd "$SITE_SOURCE_DIR"
 
+# Quiet install: hide CRA/react-scripts transitive deprecation spam; keep real errors.
+npm_install_quiet() {
+    # --loglevel=error still surfaces failures; audit/fund are noise for site deploy.
+    npm "$@" --no-fund --no-audit --loglevel=error
+}
+
+needs_npm_install() {
+    [[ ! -d node_modules ]] && return 0
+    [[ ! -f package-lock.json ]] && return 0
+    # Reinstall when the lockfile is newer than the install tree.
+    [[ package-lock.json -nt node_modules ]] && return 0
+    return 1
+}
+
 install_deps() {
+    if ! needs_npm_install; then
+        echo "Using existing node_modules"
+        return
+    fi
+
     if [[ -f package-lock.json ]]; then
-        if npm ci >/dev/null 2>&1; then
+        local ci_log
+        ci_log="$(mktemp)"
+        if npm_install_quiet ci >"$ci_log" 2>&1; then
+            rm -f "$ci_log"
             return
         fi
-        echo "warning: package-lock.json is out of sync; falling back to npm install" >&2
+        echo "warning: npm ci failed; falling back to npm install" >&2
+        # Show the real failure reason (last non-deprecation lines).
+        if [[ -s "$ci_log" ]]; then
+            grep -Ev 'deprecated|Unknown env config|allow-scripts|funding|vulnerabilit' "$ci_log" >&2 || true
+            tail -n 5 "$ci_log" >&2 || true
+        fi
+        rm -f "$ci_log"
     fi
-    npm install
+    npm_install_quiet install
 }
 
 install_deps
@@ -59,11 +91,38 @@ echo "Building wave-home-front (REACT_APP_API_MODE=$API_MODE_FLAG REACT_APP_USE_
 # CRA keeps old hashed bundles; a stale index.html can point at the wrong API-mode bundle.
 rm -rf "$SITE_SOURCE_DIR/build" "$SITE_SOURCE_DIR/dist" "$SITE_SOURCE_DIR/out"
 
+# Filter CRA's post-success boilerplate (bundle-size / serve tips). Keep compile
+# errors, eslint output, and the gzip size table.
+filter_cra_noise() {
+    awk '
+        /Unknown env config/ { next }
+        /The bundle size is significantly larger/ { skip = 1; next }
+        skip == 1 {
+            if ($0 ~ /goo\.gl|analyze the project/) next
+            skip = 0
+        }
+        /The project was built assuming it is hosted/ { skip = 2; next }
+        skip == 2 {
+            if ($0 ~ /^[[:space:]]*$/) next
+            if ($0 ~ /homepage field|build folder is ready|You may serve|npm install -g serve|serve -s build|Find out more|cra\.link/) next
+            skip = 0
+        }
+        { print }
+    '
+}
+
+set +e
 REACT_APP_API_MODE="$API_MODE_FLAG" \
 REACT_APP_USE_MOCK="$MOCK_FLAG" \
 REACT_APP_ANCHOR_DATE="${WAVE_SITE_ANCHOR_DATE:-}" \
 GENERATE_SOURCEMAP=false \
-npm run build
+npm run build 2>&1 | filter_cra_noise
+build_status=${PIPESTATUS[0]}
+set -e
+if [[ "$build_status" -ne 0 ]]; then
+    echo "error: npm run build failed (exit $build_status)" >&2
+    exit "$build_status"
+fi
 
 detect_out_dir() {
     if [[ -n "${WAVE_SITE_OUT_DIR:-}" ]]; then

@@ -14,6 +14,7 @@
 #include "../app/app_state.h"
 #include "../db/database.h"
 #include "../db/sqlite_vec_support.h"
+#include "../db/vec_tables.h"
 #include "listener_policy.h"
 #include "util/exe_path.h"
 
@@ -283,6 +284,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
                 const auto rows = client->execSqlSync("SELECT vec_version() AS v");
                 if (!rows.empty())
                     WLOG_INFO("sqlite-vec ready: {}", rows[0]["v"].as<std::string>());
+                db::ensureVecTables(client);
             }
             catch (const std::exception& e)
             {

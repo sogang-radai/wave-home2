@@ -2,14 +2,33 @@
 #include "../db/database.h"
 
 #include <optional>
+#include <vector>
 
 #include "../core/json.h"
 #include "../core/logger.h"
 #include "util/time_util.h"
 #include "agent_client.h"
+#include "insight_vec_store.h"
 
 WAVE_NAMESPACE_BEGIN
 SERVICE_NAMESPACE_BEGIN
+
+namespace
+{
+    std::vector<float> parse_embedding(const json& item)
+    {
+        std::vector<float> out;
+        if (!item.contains("embedding") || !item["embedding"].is_array())
+            return out;
+        out.reserve(item["embedding"].size());
+        for (const auto& value : item["embedding"])
+        {
+            if (value.is_number())
+                out.push_back(value.get<float>());
+        }
+        return out;
+    }
+}
 
 bool generateAndPersistInsights(
     const db::DbClientPtr& client,
@@ -23,7 +42,7 @@ bool generateAndPersistInsights(
     body["userId"] = user_id;
     body["surface"] = surface;
     body["date"] = date;
-    body["embed"] = false;
+    body["embed"] = true;
 
     AgentInsightJobResult result;
     if (runInsightJobSync(agent_base_url, body, result, out_error) != AgentClientResult::success)
@@ -39,6 +58,21 @@ bool generateAndPersistInsights(
 
     try
     {
+        InsightVecStore vec_store(client);
+
+        std::vector<int64_t> previous_ids;
+        {
+            const auto old_rows = client->execSqlSync(
+                "SELECT id FROM insight WHERE user_id = ? AND surface = ? AND date = ?",
+                user_id,
+                surface,
+                date);
+            previous_ids.reserve(old_rows.size());
+            for (const auto& row : old_rows)
+                previous_ids.push_back(row["id"].as<int64_t>());
+        }
+        vec_store.deleteEmbeddings(surface, previous_ids);
+
         // 문서 규칙: 동일 userId+surface+date 기존 행은 삭제 후 insert.
         client->execSqlSync(
             "DELETE FROM insight WHERE user_id = ? AND surface = ? AND date = ?",
@@ -50,6 +84,7 @@ bool generateAndPersistInsights(
         int64_t next_id = (id_rows.empty() ? 0 : id_rows[0]["max_id"].as<int64_t>()) + 1;
 
         const auto now = formatTimestamp();
+        size_t embedded_count = 0;
         for (const auto& item : result.items)
         {
             const std::string kind = item.value("kind", std::string("tip"));
@@ -71,6 +106,7 @@ bool generateAndPersistInsights(
                     ? std::optional<std::string>(item["scheduleTaskJson"].dump())
                     : std::nullopt;
 
+            const int64_t insight_id = next_id;
             client->execSqlSync(
                 R"SQL(
 INSERT INTO insight (
@@ -78,7 +114,7 @@ INSERT INTO insight (
     actionable, action_type, approved, rule_json, schedule_task_json, created_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
 )SQL",
-                next_id,
+                insight_id,
                 user_id,
                 surface,
                 kind,
@@ -91,12 +127,29 @@ INSERT INTO insight (
                 rule_json,
                 schedule_task_json,
                 now);
+
+            const auto embedding = parse_embedding(item);
+            if (!embedding.empty())
+            {
+                vec_store.storeEmbedding(surface, insight_id, embedding);
+                ++embedded_count;
+            }
+            else
+            {
+                WLOG_WARN(
+                    "insight item missing embedding (user {}, surface {}, id {})",
+                    user_id,
+                    surface,
+                    insight_id);
+            }
+
             ++next_id;
         }
 
         WLOG_INFO(
-            "insight generation persisted {} item(s) (user {}, surface {}, date {})",
+            "insight generation persisted {} item(s), {} embedded (user {}, surface {}, date {})",
             result.items.size(),
+            embedded_count,
             user_id,
             surface,
             date);

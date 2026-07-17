@@ -25,6 +25,7 @@ struct AlarmRecord
     int time_minute = 0;
     std::vector<std::string> days_of_week;
     bool smart_wake = false;
+    int64_t radar_device_id = 0;
     std::string device_external_id;
     std::string radar_external_id;
     Json::Value method;
@@ -54,8 +55,11 @@ private:
 
     void runLoop();
     void tick();
-    bool isDueNow(const AlarmRecord& alarm, const std::string& today) const;
-    void fireAlarm(const AlarmRecord& alarm);
+    bool isScheduledToday(const AlarmRecord& alarm) const;
+    bool isInFireWindow(const AlarmRecord& alarm) const;
+    bool shouldFireNow(const AlarmRecord& alarm) const;
+    bool isLightWakeStage(const AlarmRecord& alarm) const;
+    void fireAlarm(const AlarmRecord& alarm, bool smart_early);
     void executeMethod(const AlarmRecord& alarm);
     void markFired(AlarmRecord& alarm, const std::string& today);
     void disableOnceAlarm(int64_t alarm_id);
@@ -63,6 +67,7 @@ private:
     std::vector<AlarmRecord> loadEnabledAlarms();
     std::string todayDate() const;
     std::string nowStamp() const;
+    int localNowMinute() const;
 
     mutable std::mutex m_mutex;
     std::unordered_map<int64_t, AlarmRecord> m_alarms;

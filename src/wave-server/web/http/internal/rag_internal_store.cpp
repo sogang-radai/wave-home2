@@ -15,6 +15,7 @@
 
 #include "../../../app/app_state.h"
 #include "../../../core/logger.h"
+#include "../../../service/insight_vec_store.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
@@ -555,7 +556,8 @@ Json::Value RagInternalStore::searchPowerReport(
 Json::Value RagInternalStore::searchInsightSurface(
     const Json::Value& target,
     const std::string& collection,
-    const std::string& surface) const
+    const std::string& surface,
+    const std::vector<float>* query_embedding) const
 {
     Json::Value entry;
     entry["collection"] = collection;
@@ -569,6 +571,65 @@ Json::Value RagInternalStore::searchInsightSurface(
     }
 
     const int top_k = target_top_k(target);
+    const char* vec_table = service::vecTableForInsightSurface(surface);
+    if (query_embedding && vec_table && tableExists(vec_table))
+    {
+        bool vec_ok = false;
+        const int candidate_k = std::min(std::max(top_k * 5, top_k), 50);
+        auto candidates = searchVecTable(vec_table, "insight_id", *query_embedding, candidate_k, vec_ok);
+        if (vec_ok && !candidates.empty())
+        {
+            for (auto& hit : candidates)
+            {
+                if (!hit.isMember("refId"))
+                    continue;
+                const int64_t ref_id = hit["refId"].asInt64();
+                try
+                {
+                    const auto rows = m_client->execSqlSync(
+                        "SELECT id, user_id, surface, date, title, text FROM insight WHERE id = ? LIMIT 1",
+                        ref_id);
+                    if (rows.empty())
+                        continue;
+                    const auto& row = rows[0];
+                    if (row["user_id"].as<int64_t>() != *user_id)
+                        continue;
+                    if (row["surface"].as<std::string>() != surface)
+                        continue;
+                    if (const auto date = target_string(target, "date"))
+                    {
+                        if (row["date"].as<std::string>() != *date)
+                            continue;
+                    }
+                    if (const auto from = target_string(target, "from"))
+                    {
+                        if (row["date"].as<std::string>() < *from)
+                            continue;
+                    }
+                    if (const auto to = target_string(target, "to"))
+                    {
+                        if (!(row["date"].as<std::string>() < *to))
+                            continue;
+                    }
+                    hit["text"] = join_insight_text(row);
+                    hits.append(hit);
+                    if (static_cast<int>(hits.size()) >= top_k)
+                        break;
+                }
+                catch (const std::exception&)
+                {
+                }
+            }
+
+            if (!hits.empty())
+            {
+                entry["hits"] = hits;
+                return entry;
+            }
+            hits = Json::Value(Json::arrayValue);
+        }
+    }
+
     std::ostringstream sql;
     sql << "SELECT id, title, text FROM insight WHERE user_id = " << *user_id
         << " AND surface = '" << sql_escape(surface) << "'";
@@ -704,7 +765,7 @@ Json::Value RagInternalStore::searchTarget(
 
     const auto insight_it = kInsightSurfaces.find(collection);
     if (insight_it != kInsightSurfaces.end())
-        return searchInsightSurface(target, collection, insight_it->second);
+        return searchInsightSurface(target, collection, insight_it->second, query_embedding);
 
     Json::Value entry;
     entry["collection"] = collection;

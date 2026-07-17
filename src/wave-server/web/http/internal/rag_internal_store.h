@@ -49,7 +49,11 @@ private:
     Json::Value searchSleepStat(const Json::Value& target, const std::vector<float>* query_embedding) const;
     Json::Value searchSleepReport(const Json::Value& target, const std::vector<float>* query_embedding) const;
     Json::Value searchPowerReport(const Json::Value& target, const std::vector<float>* query_embedding) const;
-    Json::Value searchInsightSurface(const Json::Value& target, const std::string& collection, const std::string& surface) const;
+    Json::Value searchInsightSurface(
+        const Json::Value& target,
+        const std::string& collection,
+        const std::string& surface,
+        const std::vector<float>* query_embedding) const;
     Json::Value searchPostureReport(const Json::Value& target) const;
     Json::Value searchWeeklyPlanReport(const Json::Value& target) const;
 

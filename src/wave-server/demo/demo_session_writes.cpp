@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "../core/json.h"
+#include "../core/logger.h"
 #include "../device/device_wire_id.hpp"
 #include "../service/trigger_types.h"
 #include "../web/http/v1/chat_store.h"
@@ -848,6 +849,15 @@ void demoFireAlarm(
 
     const int64_t user_id = alarm.get("userId", Json::Int64(0)).asInt64();
     const std::string name = alarm.get("name", "알람").asString();
+    if (alarm.get("smartWake", false).asBool())
+    {
+        WLOG_INFO(
+            "Demo alarm {} smart wake (radar={})",
+            alarm.get("id", Json::Int64(0)).asInt64(),
+            alarm.isMember("radarDeviceId") && !alarm["radarDeviceId"].isNull()
+                ? alarm["radarDeviceId"].asString()
+                : "-");
+    }
     demoAppendNotification(
         runtime_id,
         user_id,

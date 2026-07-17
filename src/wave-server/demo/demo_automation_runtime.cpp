@@ -10,10 +10,12 @@
 #include <json/json.h>
 
 #include "../app/app_state.h"
+#include "../core/logger.h"
+#include "../device/device_wire_id.hpp"
+#include "util/time_util.h"
 #include "demo_device_backend.h"
 #include "demo_session_registry.h"
 #include "demo_session_writes.h"
-#include "../core/logger.h"
 
 WAVE_NAMESPACE_BEGIN
 
@@ -134,13 +136,107 @@ namespace
         return false;
     }
 
-    bool alarm_is_due(const Json::Value& alarm)
+    constexpr int k_smart_wake_window_min = 30;
+
+    int minutes_before_target(int now_minute, int target_minute)
+    {
+        return (target_minute - now_minute + 1440) % 1440;
+    }
+
+    bool is_wake_friendly_stage(const std::string& stage)
+    {
+        return stage == "light" || stage == "rem" || stage == "awake";
+    }
+
+    bool alarm_in_fire_window(const Json::Value& alarm)
+    {
+        const int now_minute = local_now_minute();
+        const int target = alarm.get("timeMinute", -1).asInt();
+        if (target < 0)
+            return false;
+
+        if (!alarm.get("smartWake", false).asBool())
+            return now_minute == target;
+
+        return minutes_before_target(now_minute, target) <= k_smart_wake_window_min;
+    }
+
+    bool smart_wake_stage_ready(const Json::Value& alarm, const db::DbClientPtr& client)
+    {
+        if (!client)
+            return false;
+
+        if (!alarm.isMember("radarDeviceId") || alarm["radarDeviceId"].isNull())
+            return false;
+
+        const auto radar_wire = alarm["radarDeviceId"].asString();
+        const auto radar_db_id = dev::dbIdForWireId(client, radar_wire);
+        if (!radar_db_id)
+            return false;
+
+        const int64_t user_id = alarm.get("userId", Json::Int64(0)).asInt64();
+        if (user_id <= 0)
+            return false;
+
+        try
+        {
+            const auto cutoff = formatTimestamp(
+                std::chrono::system_clock::now() - std::chrono::minutes(3));
+            const auto rows = client->execSqlSync(
+                R"SQL(
+SELECT s.stage_label, s.toss_mean
+FROM sleep_stat s
+JOIN device_room_map drm ON drm.room_id = s.room_id
+WHERE s.user_id = ?
+  AND s.granularity = '1m'
+  AND drm.device_id = ?
+  AND s.time_start >= ?
+ORDER BY s.time_start DESC
+LIMIT 1
+)SQL",
+                user_id,
+                *radar_db_id,
+                cutoff);
+
+            if (rows.empty())
+                return false;
+
+            if (!rows[0]["stage_label"].isNull())
+            {
+                const auto stage = rows[0]["stage_label"].as<std::string>();
+                if (is_wake_friendly_stage(stage))
+                    return true;
+            }
+
+            if (!rows[0]["toss_mean"].isNull() && rows[0]["toss_mean"].as<double>() >= 0.5)
+                return true;
+        }
+        catch (const std::exception& e)
+        {
+            WLOG_WARN("Demo smart-wake stage query failed: {}", e.what());
+        }
+
+        return false;
+    }
+
+    bool alarm_should_fire(const Json::Value& alarm, const db::DbClientPtr& client)
     {
         if (!alarm.get("enabled", true).asBool())
             return false;
-        if (local_now_minute() != alarm.get("timeMinute", -1).asInt())
+        if (!days_contain_today(alarm.get("daysOfWeek", Json::Value(Json::arrayValue)), true))
             return false;
-        return days_contain_today(alarm.get("daysOfWeek", Json::Value(Json::arrayValue)), true);
+        if (!alarm_in_fire_window(alarm))
+            return false;
+
+        if (!alarm.get("smartWake", false).asBool())
+            return true;
+
+        const int now_minute = local_now_minute();
+        const int target = alarm.get("timeMinute", -1).asInt();
+        if (now_minute == target)
+            return true;
+
+        return smart_wake_stage_ready(alarm, client);
     }
 
     bool alarm_is_once(const Json::Value& alarm)
@@ -212,7 +308,7 @@ namespace
             auto& session = *locked_session;
             for (const auto& alarm : session.alarms)
             {
-                if (!alarm.isObject() || !alarm_is_due(alarm))
+                if (!alarm.isObject() || !alarm_should_fire(alarm, client))
                     continue;
 
                 const int64_t alarm_id = alarm.get("id", Json::Int64(0)).asInt64();
