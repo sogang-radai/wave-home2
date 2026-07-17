@@ -66,6 +66,7 @@ set(_wave_server_sources
     web/http/v1/schedule_tasks_controller.cpp
     web/http/v1/alarms_controller.cpp
     web/http/v1/chat_controller.cpp
+    web/http/v1/chat_stt_controller.cpp
     web/http/v1/chat_store.cpp
     web/http/internal/internal_controller.cpp
     web/http/internal/db_query_store.cpp
@@ -127,7 +128,10 @@ set(_wave_server_sources
 )
 
 if(WAVE_BUILD_TTS)
-    list(APPEND _wave_server_sources service/tts_service.cpp)
+    list(APPEND _wave_server_sources
+        service/tts_service.cpp
+        service/stt_service.cpp
+    )
 endif()
 
 add_executable(wave-server ${_wave_server_sources})

@@ -229,6 +229,7 @@ CREATE TABLE user_ai_agent_settings (
     selected_model_id TEXT        NOT NULL,    -- 카탈로그 id (gemini-flash2.5 등)
     ctrl_enter_send   INTEGER     NOT NULL DEFAULT 0,
     wave_ai_sound     INTEGER     NOT NULL DEFAULT 1,
+    voice_auto_send   INTEGER     NOT NULL DEFAULT 0,  -- 음성 인식 끝나면 바로 전송
     updated_at        VARCHAR(50) NOT NULL,
 
     FOREIGN KEY (user_id) REFERENCES user(id)

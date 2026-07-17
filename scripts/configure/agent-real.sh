@@ -6,8 +6,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 AGENT_DIR="$ROOT/wave-home-agent"
 ENV_FILE="$AGENT_DIR/.env"
-REAL_INTERNAL_URL="${REAL_INTERNAL_URL:-http://127.0.0.1:8501/internal/v1}"
-REAL_CORE_URL="${REAL_CORE_URL:-http://127.0.0.1:8500}"
+REAL_HOST="${REAL_HOST:-127.0.0.1}"
+REAL_CLIENT_PORT="${REAL_CLIENT_PORT:-8500}"
+REAL_AGENT_API_PORT="${REAL_AGENT_API_PORT:-8501}"
+REAL_AGENT_PORT="${REAL_AGENT_PORT:-8502}"
+REAL_INTERNAL_URL="${REAL_INTERNAL_URL:-http://${REAL_HOST}:${REAL_AGENT_API_PORT}/internal/v1}"
+REAL_CORE_URL="${REAL_CORE_URL:-http://${REAL_HOST}:${REAL_CLIENT_PORT}}"
 
 if [[ ! -d "$AGENT_DIR" ]]; then
   echo "ERROR: wave-home-agent not found" >&2
@@ -29,13 +33,21 @@ set_kv() {
   fi
 }
 
+set_kv WAVEHOME_AGENT_HOST "$REAL_HOST"
+set_kv WAVEHOME_AGENT_PORT "$REAL_AGENT_PORT"
+set_kv WAVEHOME_BACKEND_HOST "$REAL_HOST"
+set_kv WAVEHOME_BACKEND_CLIENT_PORT "$REAL_CLIENT_PORT"
+set_kv WAVEHOME_BACKEND_AGENT_API_PORT "$REAL_AGENT_API_PORT"
 set_kv WAVEHOME_CORE_API_BASE_URL "$REAL_CORE_URL"
 set_kv WAVEHOME_AGENT_INTERNAL_BASE_URL "$REAL_INTERNAL_URL"
 set_kv WAVEHOME_CORE_API_MOCK false
 
 echo "Updated agent env for production:"
+echo "  WAVEHOME_AGENT_PORT=$REAL_AGENT_PORT"
+echo "  WAVEHOME_BACKEND_CLIENT_PORT=$REAL_CLIENT_PORT"
+echo "  WAVEHOME_BACKEND_AGENT_API_PORT=$REAL_AGENT_API_PORT"
 echo "  WAVEHOME_CORE_API_BASE_URL=$REAL_CORE_URL"
 echo "  WAVEHOME_AGENT_INTERNAL_BASE_URL=$REAL_INTERNAL_URL"
 echo "  WAVEHOME_CORE_API_MOCK=false"
 echo ""
-echo "Restart the agent (:8502) for changes to take effect."
+echo "Start agent: cd wave-home-agent && source .venv/bin/activate && python -m app --reload"

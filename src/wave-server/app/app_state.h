@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -25,6 +26,7 @@
 
 #ifdef WAVE_BUILD_TTS
 #include "../service/tts_service.h"
+#include "../service/stt_service.h"
 #endif
 
 WAVE_NAMESPACE_BEGIN
@@ -53,6 +55,52 @@ private:
     std::unique_ptr<tts::Service> m_service;
     std::atomic<bool> m_ready{false};
     bool m_taskQueueReady = false;
+#endif
+};
+
+class STTState
+{
+public:
+    explicit STTState(AppState& app);
+
+    bool warmUp(std::string& error);
+    bool isReady() const;
+#ifdef WAVE_BUILD_TTS
+    stt::Service* service(std::string& code);
+
+    bool createSession(const std::string& locale, std::string& session_id, std::string& code);
+    bool pushAudio(
+        const std::string& session_id,
+        const float* samples,
+        size_t sample_count,
+        uint32_t sample_rate,
+        std::string& code);
+    bool endSession(const std::string& session_id, std::string& code);
+    bool abortSession(const std::string& session_id, std::string& code);
+    bool popEvent(
+        const std::string& session_id,
+        Json::Value& out_event,
+        bool& session_closed,
+        std::chrono::milliseconds timeout,
+        std::string& code);
+#endif
+    void shutdown();
+
+private:
+#ifdef WAVE_BUILD_TTS
+    struct Session;
+    void clear_session_locked();
+#endif
+
+    AppState& m_app;
+
+#ifdef WAVE_BUILD_TTS
+    std::mutex m_mutex;
+    std::mutex m_streamMutex;
+    std::unique_ptr<stt::Service> m_service;
+    std::atomic<bool> m_ready{false};
+    bool m_taskQueueReady = false;
+    std::shared_ptr<Session> m_activeSession;
 #endif
 };
 
@@ -157,8 +205,9 @@ public:
     // Devices
     dev::DeviceManager deviceManager;
 
-    // TTS
+    // TTS / STT
     TTSState tts;
+    STTState stt;
 
     // IoT runtime (event log, camera stream sessions, DroidCam MJPEG proxies)
     IotRuntime iot;

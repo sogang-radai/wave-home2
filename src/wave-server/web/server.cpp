@@ -2,9 +2,16 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <thread>
+
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <drogon/drogon.h>
 #include <drogon/orm/DbConfig.h>
@@ -107,6 +114,45 @@ namespace
             "gltf",
             "bin",
         });
+    }
+
+    /** Probe-bind so drogon FATAL/segfault on EADDRINUSE is avoided. */
+    bool can_bind_tcp(const std::string& host, uint16_t port, std::string& error)
+    {
+        const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0)
+        {
+            error = "socket() failed: " + std::string(std::strerror(errno));
+            return false;
+        }
+
+        const int reuse = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+        sockaddr_in addr {};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        if (host.empty() || host == "0.0.0.0")
+        {
+            addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        }
+        else if (::inet_pton(AF_INET, host.c_str(), &addr.sin_addr) != 1)
+        {
+            ::close(fd);
+            error = "invalid bind address: " + host;
+            return false;
+        }
+
+        const int rc = ::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        if (rc != 0)
+        {
+            error = host + ":" + std::to_string(port) + " — " + std::strerror(errno);
+            ::close(fd);
+            return false;
+        }
+
+        ::close(fd);
+        return true;
     }
 }
 
@@ -247,6 +293,23 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         const auto gestures_alias = std::filesystem::weakly_canonical(resolved_gestures_root).string();
         app.addALocation("/gestures", "", gestures_alias);
         WLOG_INFO("Serving gesture assets at /gestures/ from {}", gestures_alias);
+    }
+
+    {
+        std::string bind_error;
+        if (!can_bind_tcp("0.0.0.0", port, bind_error))
+        {
+            WLOG_ERROR("Client API port already in use ({})", bind_error);
+            return false;
+        }
+        if (agent_api_port != 0 && !can_bind_tcp(agent_api_bind, agent_api_port, bind_error))
+        {
+            WLOG_ERROR(
+                "Agent API port already in use ({}). "
+                "Demo agent must listen on :8512; wave-server owns :8511 (see docs/ports.txt).",
+                bind_error);
+            return false;
+        }
     }
 
     app.addListener("0.0.0.0", port);

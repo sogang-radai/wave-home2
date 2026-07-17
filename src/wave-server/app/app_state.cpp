@@ -1,6 +1,11 @@
 #include "app_state.h"
 
+#include <condition_variable>
+#include <deque>
 #include <fstream>
+#include <iomanip>
+#include <random>
+#include <sstream>
 
 #include <drogon/drogon.h>
 
@@ -126,6 +131,397 @@ void TTSState::shutdown()
 #ifdef WAVE_BUILD_TTS
     m_ready.store(false, std::memory_order_release);
     std::lock_guard lock(m_mutex);
+    m_service.reset();
+#endif
+}
+
+#ifdef WAVE_BUILD_TTS
+struct STTState::Session
+{
+    std::string id;
+    std::string locale;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::deque<Json::Value> events;
+    bool closed = false;
+
+    void enqueue(Json::Value event)
+    {
+        {
+            std::lock_guard lock(mutex);
+            if (closed)
+                return;
+            events.push_back(std::move(event));
+        }
+        cv.notify_one();
+    }
+};
+
+namespace
+{
+    std::string make_stt_session_id()
+    {
+        static thread_local std::mt19937 rng{std::random_device{}()};
+        std::uniform_int_distribution<int> dist(0, 255);
+        std::ostringstream stream;
+        for (int i = 0; i < 16; ++i)
+            stream << std::hex << std::setw(2) << std::setfill('0') << dist(rng);
+        return stream.str();
+    }
+}
+#endif
+
+STTState::STTState(AppState& app) :
+    m_app(app)
+{
+}
+
+bool STTState::warmUp(std::string& error)
+{
+#ifdef WAVE_BUILD_TTS
+    std::string code;
+    if (!service(code))
+    {
+        error = code.empty() ? "STT_UNAVAILABLE" : code;
+        return false;
+    }
+    error.clear();
+    return true;
+#else
+    error = "STT_UNAVAILABLE";
+    return false;
+#endif
+}
+
+bool STTState::isReady() const
+{
+#ifdef WAVE_BUILD_TTS
+    return m_ready.load(std::memory_order_acquire);
+#else
+    return false;
+#endif
+}
+
+#ifdef WAVE_BUILD_TTS
+stt::Service* STTState::service(std::string& code)
+{
+    code.clear();
+    if (!m_taskQueueReady)
+    {
+        if (!TaskQueue::get().init())
+        {
+            code = "STT_UNAVAILABLE";
+            WLOG_ERROR("STT: TaskQueue init failed");
+            return nullptr;
+        }
+        m_taskQueueReady = true;
+    }
+
+    std::lock_guard lock(m_mutex);
+    if (!m_service)
+    {
+        m_service = std::make_unique<stt::Service>();
+        const auto config_path = m_app.resolvePath(m_app.config.stt_model_path);
+        const auto base_dir = m_app.config_dir.string();
+        std::ifstream in(config_path);
+        if (!in)
+        {
+            WLOG_ERROR("STT: config not found at {}", config_path.string());
+            code = "STT_UNAVAILABLE";
+            return nullptr;
+        }
+
+        json config_json;
+        try
+        {
+            in >> config_json;
+        }
+        catch (const std::exception& e)
+        {
+            WLOG_ERROR("STT: invalid config {} ({})", config_path.string(), e.what());
+            code = "STT_UNAVAILABLE";
+            return nullptr;
+        }
+
+        const auto init_rc = m_service->init(base_dir, config_json);
+        if (init_rc != stt::SUCCESS)
+        {
+            WLOG_ERROR(
+                "STT: model init failed (rc={}, base_dir={}, config={})",
+                static_cast<int>(init_rc),
+                base_dir,
+                config_path.string());
+            m_service.reset();
+            code = "STT_UNAVAILABLE";
+            return nullptr;
+        }
+        WLOG_INFO("STT: service ready (base_dir={})", base_dir);
+        m_ready.store(true, std::memory_order_release);
+    }
+
+    return m_service.get();
+}
+
+void STTState::clear_session_locked()
+{
+    if (!m_activeSession)
+        return;
+
+    {
+        std::lock_guard session_lock(m_activeSession->mutex);
+        m_activeSession->closed = true;
+        m_activeSession->events.clear();
+    }
+    m_activeSession->cv.notify_all();
+    m_activeSession.reset();
+}
+
+bool STTState::createSession(const std::string& locale, std::string& session_id, std::string& code)
+{
+    code.clear();
+    session_id.clear();
+
+    std::string service_code;
+    auto* stt = service(service_code);
+    if (!stt)
+    {
+        code = service_code.empty() ? "STT_UNAVAILABLE" : service_code;
+        return false;
+    }
+
+    const std::string use_locale = locale.empty() ? "ko-KR" : locale;
+    std::lock_guard stream_lock(m_streamMutex);
+
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_activeSession)
+        {
+            bool closed = false;
+            {
+                std::lock_guard session_lock(m_activeSession->mutex);
+                closed = m_activeSession->closed;
+            }
+            if (!closed)
+            {
+                code = "STT_BUSY";
+                return false;
+            }
+            clear_session_locked();
+        }
+    }
+
+    auto session = std::make_shared<Session>();
+    session->id = make_stt_session_id();
+    session->locale = use_locale;
+
+    const auto begin_rc = stt->beginRecognizeStream(
+        use_locale,
+        [session](const stt::RecognizeResult& result)
+        {
+            Json::Value event(Json::objectValue);
+            event["type"] = "partial";
+            event["text"] = result.text;
+            event["isEndpoint"] = result.isEndpoint;
+            session->enqueue(std::move(event));
+        });
+    if (begin_rc != stt::SUCCESS)
+    {
+        code = begin_rc == stt::ERROR_INVALID_LOCALE ? "INVALID_LOCALE"
+            : begin_rc == stt::ERROR_INVALID_INPUT ? "STT_BUSY"
+            : "STT_UNAVAILABLE";
+        return false;
+    }
+
+    {
+        std::lock_guard lock(m_mutex);
+        m_activeSession = session;
+    }
+    session_id = session->id;
+    return true;
+}
+
+bool STTState::pushAudio(
+    const std::string& session_id,
+    const float* samples,
+    size_t sample_count,
+    uint32_t sample_rate,
+    std::string& code)
+{
+    code.clear();
+    if (!samples || sample_count == 0)
+    {
+        code = "INVALID_AUDIO";
+        return false;
+    }
+
+    std::shared_ptr<Session> session;
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_activeSession || m_activeSession->id != session_id)
+        {
+            code = "NOT_FOUND";
+            return false;
+        }
+        {
+            std::lock_guard session_lock(m_activeSession->mutex);
+            if (m_activeSession->closed)
+            {
+                code = "NOT_FOUND";
+                return false;
+            }
+        }
+        session = m_activeSession;
+    }
+
+    std::string service_code;
+    auto* stt = service(service_code);
+    if (!stt)
+    {
+        code = service_code.empty() ? "STT_UNAVAILABLE" : service_code;
+        return false;
+    }
+
+    stt::AudioInput input;
+    input.samples = samples;
+    input.sampleCount = sample_count;
+    input.sampleRate = sample_rate == 0 ? 16000 : sample_rate;
+
+    std::lock_guard stream_lock(m_streamMutex);
+    const auto push_rc = stt->pushAudio(session->locale, input);
+    if (push_rc != stt::SUCCESS)
+    {
+        code = push_rc == stt::ERROR_INVALID_INPUT ? "INVALID_AUDIO" : "STT_UNAVAILABLE";
+        return false;
+    }
+    return true;
+}
+
+bool STTState::endSession(const std::string& session_id, std::string& code)
+{
+    code.clear();
+    std::shared_ptr<Session> session;
+    std::string locale;
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_activeSession || m_activeSession->id != session_id)
+        {
+            code = "NOT_FOUND";
+            return false;
+        }
+        session = m_activeSession;
+        locale = session->locale;
+    }
+
+    std::string service_code;
+    auto* stt = service(service_code);
+    if (stt)
+    {
+        std::lock_guard stream_lock(m_streamMutex);
+        stt->endRecognizeStream(locale);
+    }
+
+    Json::Value done(Json::objectValue);
+    done["type"] = "done";
+    session->enqueue(std::move(done));
+    {
+        std::lock_guard session_lock(session->mutex);
+        session->closed = true;
+    }
+    session->cv.notify_all();
+    return true;
+}
+
+bool STTState::abortSession(const std::string& session_id, std::string& code)
+{
+    code.clear();
+    std::shared_ptr<Session> session;
+    std::string locale;
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_activeSession || m_activeSession->id != session_id)
+        {
+            code = "NOT_FOUND";
+            return false;
+        }
+        session = m_activeSession;
+        locale = session->locale;
+    }
+
+    std::string service_code;
+    auto* stt = service(service_code);
+    if (stt)
+    {
+        std::lock_guard stream_lock(m_streamMutex);
+        stt->endRecognizeStream(locale);
+    }
+
+    {
+        std::lock_guard session_lock(session->mutex);
+        session->closed = true;
+        session->events.clear();
+    }
+    session->cv.notify_all();
+
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_activeSession && m_activeSession->id == session_id)
+            m_activeSession.reset();
+    }
+    return true;
+}
+
+bool STTState::popEvent(
+    const std::string& session_id,
+    Json::Value& out_event,
+    bool& session_closed,
+    std::chrono::milliseconds timeout,
+    std::string& code)
+{
+    code.clear();
+    session_closed = false;
+    out_event = Json::Value();
+
+    std::shared_ptr<Session> session;
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_activeSession || m_activeSession->id != session_id)
+        {
+            // Ended sessions may already be cleared after abort; treat as closed.
+            session_closed = true;
+            return true;
+        }
+        session = m_activeSession;
+    }
+
+    std::unique_lock session_lock(session->mutex);
+    if (session->events.empty() && !session->closed)
+        session->cv.wait_for(session_lock, timeout);
+
+    if (!session->events.empty())
+    {
+        out_event = std::move(session->events.front());
+        session->events.pop_front();
+        if (out_event.isMember("type") && out_event["type"].asString() == "done")
+            session_closed = true;
+        return true;
+    }
+
+    session_closed = session->closed;
+    return true;
+}
+#endif
+
+void STTState::shutdown()
+{
+#ifdef WAVE_BUILD_TTS
+    {
+        std::lock_guard stream_lock(m_streamMutex);
+        if (m_service && m_activeSession)
+            m_service->endRecognizeStream(m_activeSession->locale);
+    }
+    m_ready.store(false, std::memory_order_release);
+    std::lock_guard lock(m_mutex);
+    clear_session_locked();
     m_service.reset();
 #endif
 }
@@ -308,6 +704,7 @@ AppState& AppState::get()
 
 AppState::AppState() :
     tts(*this),
+    stt(*this),
     iot(*this)
 {
     assert(s_instance == nullptr);
@@ -638,6 +1035,7 @@ void AppState::shutdown()
     deviceManager.shutdown();
 
     iot.shutdown();
+    stt.shutdown();
     tts.shutdown();
     service::Go2RtcService::get().shutdownAll();
 

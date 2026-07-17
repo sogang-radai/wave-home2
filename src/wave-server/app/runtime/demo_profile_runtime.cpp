@@ -36,7 +36,10 @@ void DemoProfileRuntime::startServices(AppState& app)
 
 void DemoProfileRuntime::startPostListen(AppState& app)
 {
-    (void)app;
+    std::string stt_error;
+    if (!app.stt.warmUp(stt_error))
+        WLOG_WARN("STT warmup failed: {}", stt_error);
+
     m_automation.start();
     m_startedDemoAutomation = true;
     WLOG_INFO("DemoAutomationRuntime started (demo profile)");

@@ -104,6 +104,7 @@ namespace
     selected_model_id TEXT        NOT NULL,
     ctrl_enter_send   INTEGER     NOT NULL DEFAULT 0,
     wave_ai_sound     INTEGER     NOT NULL DEFAULT 1,
+    voice_auto_send   INTEGER     NOT NULL DEFAULT 0,
     updated_at        VARCHAR(50) NOT NULL,
     FOREIGN KEY (user_id) REFERENCES user(id)
     )
@@ -634,6 +635,15 @@ namespace
     )SQL",
                 R"SQL(
     CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log (user_id, category, occurred_at)
+    )SQL",
+            },
+        },
+        {
+            8,
+            "add voice_auto_send to user_ai_agent_settings",
+            {
+                R"SQL(
+    ALTER TABLE user_ai_agent_settings ADD COLUMN voice_auto_send INTEGER NOT NULL DEFAULT 0
     )SQL",
             },
         },

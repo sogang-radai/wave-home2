@@ -467,16 +467,36 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const db::DbClientPt
         session.speech_overlays = Json::Value(Json::objectValue);
 
     session.ai_agent_settings = Json::Value(Json::objectValue);
-    for (const auto& row : client->execSqlSync(
-             "SELECT user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound"
-             " FROM user_ai_agent_settings"))
+    try
     {
-        Json::Value item(Json::objectValue);
-        item["personalPrompt"] = row["personal_prompt"].as<std::string>();
-        item["selectedModelId"] = row["selected_model_id"].as<std::string>();
-        item["ctrlEnterSend"] = row["ctrl_enter_send"].as<int>() != 0;
-        item["waveAiSound"] = row["wave_ai_sound"].as<int>() != 0;
-        session.ai_agent_settings[std::to_string(row["user_id"].as<int64_t>())] = item;
+        for (const auto& row : client->execSqlSync(
+                 "SELECT user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, voice_auto_send"
+                 " FROM user_ai_agent_settings"))
+        {
+            Json::Value item(Json::objectValue);
+            item["personalPrompt"] = row["personal_prompt"].as<std::string>();
+            item["selectedModelId"] = row["selected_model_id"].as<std::string>();
+            item["ctrlEnterSend"] = row["ctrl_enter_send"].as<int>() != 0;
+            item["waveAiSound"] = row["wave_ai_sound"].as<int>() != 0;
+            item["voiceAutoSend"] = row["voice_auto_send"].as<int>() != 0;
+            session.ai_agent_settings[std::to_string(row["user_id"].as<int64_t>())] = item;
+        }
+    }
+    catch (const std::exception&)
+    {
+        // Older demo DBs (skip_migrations) may lack voice_auto_send.
+        for (const auto& row : client->execSqlSync(
+                 "SELECT user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound"
+                 " FROM user_ai_agent_settings"))
+        {
+            Json::Value item(Json::objectValue);
+            item["personalPrompt"] = row["personal_prompt"].as<std::string>();
+            item["selectedModelId"] = row["selected_model_id"].as<std::string>();
+            item["ctrlEnterSend"] = row["ctrl_enter_send"].as<int>() != 0;
+            item["waveAiSound"] = row["wave_ai_sound"].as<int>() != 0;
+            item["voiceAutoSend"] = false;
+            session.ai_agent_settings[std::to_string(row["user_id"].as<int64_t>())] = item;
+        }
     }
 
     session.data_seeded = true;
@@ -1309,6 +1329,7 @@ namespace
         value["selectedModelId"] = "gemini-flash2.5";
         value["ctrlEnterSend"] = false;
         value["waveAiSound"] = true;
+        value["voiceAutoSend"] = false;
         return value;
     }
 

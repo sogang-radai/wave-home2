@@ -39,6 +39,10 @@ void ProductionProfileRuntime::startServices(AppState& app)
 
 void ProductionProfileRuntime::startPostListen(AppState& app)
 {
+    std::string stt_error;
+    if (!app.stt.warmUp(stt_error))
+        WLOG_WARN("STT warmup failed: {}", stt_error);
+
     if (app.no_devices)
         return;
 

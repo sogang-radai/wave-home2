@@ -415,9 +415,11 @@ Json::Value SettingsStore::getAiAgentSettings(int64_t user_id) const
     value["selectedModelId"] = "gemini-flash2.5";
     value["ctrlEnterSend"] = false;
     value["waveAiSound"] = true;
+    value["voiceAutoSend"] = false;
 
     auto rows = m_client->execSqlSync(
-        "SELECT personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound FROM user_ai_agent_settings WHERE user_id = ? LIMIT 1",
+        "SELECT personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, voice_auto_send"
+        " FROM user_ai_agent_settings WHERE user_id = ? LIMIT 1",
         user_id);
     if (rows.empty())
         return value;
@@ -426,6 +428,7 @@ Json::Value SettingsStore::getAiAgentSettings(int64_t user_id) const
     value["selectedModelId"] = rows[0]["selected_model_id"].as<std::string>();
     value["ctrlEnterSend"] = rows[0]["ctrl_enter_send"].as<int>() != 0;
     value["waveAiSound"] = rows[0]["wave_ai_sound"].as<int>() != 0;
+    value["voiceAutoSend"] = rows[0]["voice_auto_send"].as<int>() != 0;
     return value;
 }
 
@@ -484,14 +487,15 @@ bool SettingsStore::putAiAgentSettings(
             m_client->execSqlSync(
                 R"SQL(
 INSERT INTO user_ai_agent_settings
-    (user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)
+    (user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, voice_auto_send, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 )SQL",
                 user_id,
                 out["personalPrompt"].asString(),
                 out["selectedModelId"].asString(),
                 out["ctrlEnterSend"].asBool() ? 1 : 0,
                 out["waveAiSound"].asBool() ? 1 : 0,
+                out["voiceAutoSend"].asBool() ? 1 : 0,
                 now);
         }
         else
@@ -499,13 +503,14 @@ VALUES (?, ?, ?, ?, ?, ?)
             m_client->execSqlSync(
                 R"SQL(
 UPDATE user_ai_agent_settings
-SET personal_prompt = ?, selected_model_id = ?, ctrl_enter_send = ?, wave_ai_sound = ?, updated_at = ?
+SET personal_prompt = ?, selected_model_id = ?, ctrl_enter_send = ?, wave_ai_sound = ?, voice_auto_send = ?, updated_at = ?
 WHERE user_id = ?
 )SQL",
                 out["personalPrompt"].asString(),
                 out["selectedModelId"].asString(),
                 out["ctrlEnterSend"].asBool() ? 1 : 0,
                 out["waveAiSound"].asBool() ? 1 : 0,
+                out["voiceAutoSend"].asBool() ? 1 : 0,
                 now,
                 user_id);
         }
