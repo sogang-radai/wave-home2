@@ -2,6 +2,9 @@
 
 ## 변경 내역
 
+- **2026-07-17** — 목표 기반 습관 코칭 (`goal`, `goal_coaching_report`, `goal_recommendation`)
+  - 사용자당 활성 목표 1개. 코칭 리포트·추천은 목표에 종속
+  - 추천 적용 시 `schedule_task` 또는 `automation_rule` 파생 (기존 테이블 재사용)
 - **2026-07-08** — 알람·일정·인사이트·리포트 전면 재설계
   - `routine_task` → `schedule_task` (`schedule_kind`, `event_date`)
   - `alarm` 테이블 추가
@@ -39,6 +42,7 @@
 - 제스처
 - 홈 자동화
 - 루틴/일정 (schedule_task)
+- 목표 코칭 (goal)
 - 알람
 - 알림
 - 에이전트
@@ -727,6 +731,72 @@ CREATE TABLE schedule_task (
 CREATE INDEX idx_schedule_task_user_day ON schedule_task (user_id, day_of_week);
 CREATE INDEX idx_schedule_task_user_event ON schedule_task (user_id, event_date);
 CREATE INDEX idx_schedule_task_insight ON schedule_task (source_insight_id);
+```
+
+---
+
+## 목표 코칭 (goal)
+
+- 주간 계획 "목표 설정"의 단일 소스. 사용자당 `status='active'` 목표는 1개(새로 만들면 기존 active 는 archived).
+- `goal_coaching_report` — 기간(`period_start`)별 요약·전망. `(goal_id, period_start)` UNIQUE.
+- `goal_recommendation` — 그날의 추천/팁. 적용 시 `schedule_task` 또는 `automation_rule` 을 만들고 id 를 `schedule_task_json`/`rule_json` 에 기록(역참조 컬럼 없음).
+- insight 파이프라인과 독립. 데모는 세션 메모리에 동일 API 모양으로 보관한다.
+
+```sql
+CREATE TABLE goal (
+    id          INTEGER      PRIMARY KEY,
+    user_id     INTEGER      NOT NULL,
+    title       VARCHAR(200) NOT NULL,
+    category    VARCHAR(10)  NOT NULL,   -- 'sleep' | 'posture' | 'mental' | 'life' | 'diet'
+    status      VARCHAR(10)  NOT NULL DEFAULT 'active',  -- 'active' | 'archived' | 'completed'
+    created_at  VARCHAR(50)  NOT NULL,
+    updated_at  VARCHAR(50)  NOT NULL,
+
+    CHECK (category IN ('sleep', 'posture', 'mental', 'life', 'diet')),
+    CHECK (status IN ('active', 'archived', 'completed')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_goal_user_status ON goal (user_id, status);
+
+CREATE TABLE goal_coaching_report (
+    id                      INTEGER      PRIMARY KEY,
+    goal_id                 INTEGER      NOT NULL,
+    user_id                 INTEGER      NOT NULL,
+    period_start            VARCHAR(10)  NOT NULL,   -- 'YYYY-MM-DD'
+    past_summary_text       VARCHAR(500) NOT NULL,
+    projection_text         VARCHAR(500) NOT NULL,
+    projected_metrics_json  TEXT,
+    created_at              VARCHAR(50)  NOT NULL,
+    UNIQUE (goal_id, period_start),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE TABLE goal_recommendation (
+    id                 INTEGER      PRIMARY KEY,
+    goal_id            INTEGER      NOT NULL,
+    user_id            INTEGER      NOT NULL,
+    date               VARCHAR(10)  NOT NULL,   -- 'YYYY-MM-DD'
+    kind               VARCHAR(10)  NOT NULL,   -- 'action' | 'goal' | 'tip'
+    title              VARCHAR(100) NOT NULL,
+    text               VARCHAR(500) NOT NULL,
+    actionable         INTEGER      NOT NULL DEFAULT 0,  -- 0 | 1
+    action_type        VARCHAR(20),                 -- 'schedule_task' | 'automation_rule'
+    approved           INTEGER      NOT NULL DEFAULT 0,  -- 0 | 1
+    rule_json          TEXT,
+    schedule_task_json TEXT,
+    created_at         VARCHAR(50)  NOT NULL,
+
+    CHECK (kind IN ('action', 'goal', 'tip')),
+    CHECK (actionable IN (0, 1)),
+    CHECK (approved IN (0, 1)),
+    CHECK (actionable = 0 OR action_type IS NOT NULL),
+    CHECK (action_type != 'automation_rule' OR rule_json IS NOT NULL),
+    CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
+    FOREIGN KEY (goal_id) REFERENCES goal(id),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_goal_recommendation_goal_date ON goal_recommendation (goal_id, date);
 ```
 
 ---

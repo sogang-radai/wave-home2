@@ -38,6 +38,7 @@ set(_wave_server_sources
     demo/demo_device_simulator.cpp
     demo/demo_device_backend.cpp
     demo/demo_session_writes.cpp
+    demo/demo_goals.cpp
     demo/demo_power_meter.cpp
     demo/demo_automation_runtime.cpp
     demo/demo_alarms_facade.cpp

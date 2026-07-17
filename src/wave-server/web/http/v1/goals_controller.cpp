@@ -5,6 +5,9 @@
 
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
+#include "../../../demo/demo_device_backend.h"
+#include "../../../demo/demo_goals.h"
+#include "../../../demo/demo_runtime_id.h"
 #include "../../../service/goal_coaching_generator.h"
 #include "../../../service/rule_store.h"
 #include "../internal/schedule_tasks_internal_store.h"
@@ -34,6 +37,19 @@ namespace
         std::istringstream stream(Json::writeString(builder, value));
         return ws::json::parse(stream);
     }
+
+    drogon::HttpResponsePtr json_response(
+        const HttpRequestPtr& req,
+        const Json::Value& body,
+        const std::string& runtime_id,
+        drogon::HttpStatusCode status = drogon::k200OK)
+    {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        resp->setStatusCode(status);
+        if (!runtime_id.empty())
+            attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        return resp;
+    }
 }
 
 void GoalsController::createGoal(const HttpRequestPtr& req, HttpResponseCallback&& callback)
@@ -57,6 +73,27 @@ void GoalsController::createGoal(const HttpRequestPtr& req, HttpResponseCallback
         || !json->isMember("category") || !(*json)["category"].isString())
     {
         respondError(callback, 400, "INVALID_BODY", "title, category 가 필요합니다.");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
+        std::string error;
+        std::string field;
+        const auto created = demoCreateGoal(
+            runtime_id,
+            *user_id,
+            (*json)["title"].asString(),
+            (*json)["category"].asString(),
+            error,
+            field);
+        if (!created)
+        {
+            respondError(callback, 400, "INVALID_REQUEST", error, field);
+            return;
+        }
+        callback(json_response(req, *created, runtime_id, drogon::k201Created));
         return;
     }
 
@@ -95,6 +132,16 @@ void GoalsController::listGoals(const HttpRequestPtr& req, HttpResponseCallback&
     }
 
     const auto status = req->getParameter("status");
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        callback(json_response(
+            req,
+            demoListGoals(runtime_id, *user_id, status.empty() ? std::nullopt : std::optional<std::string>(status)),
+            runtime_id));
+        return;
+    }
+
     GoalsStore store(client);
     callback(drogon::HttpResponse::newHttpJsonResponse(
         store.list(*user_id, status.empty() ? std::nullopt : std::optional<std::string>(status))));
@@ -120,6 +167,22 @@ void GoalsController::updateGoal(const HttpRequestPtr& req, HttpResponseCallback
     if (!json || !json->isObject() || !json->isMember("status") || !(*json)["status"].isString())
     {
         respondError(callback, 400, "INVALID_BODY", "status 가 필요합니다.", "status");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
+        std::string error;
+        const auto updated =
+            demoUpdateGoalStatus(runtime_id, *user_id, goalId, (*json)["status"].asString(), error);
+        if (!updated)
+        {
+            const int status_code = error.find("찾을") != std::string::npos ? 404 : 400;
+            respondError(callback, status_code, status_code == 404 ? "NOT_FOUND" : "INVALID_REQUEST", error);
+            return;
+        }
+        callback(json_response(req, *updated, runtime_id));
         return;
     }
 
@@ -149,6 +212,20 @@ void GoalsController::getCoaching(const HttpRequestPtr& req, HttpResponseCallbac
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        std::string error;
+        const auto coaching = demoGetGoalCoaching(runtime_id, *user_id, goalId, error);
+        if (!coaching)
+        {
+            respondError(callback, 404, "NOT_FOUND", error);
+            return;
+        }
+        callback(json_response(req, *coaching, runtime_id));
         return;
     }
 
@@ -202,6 +279,39 @@ void GoalsController::applyRecommendation(const HttpRequestPtr& req, HttpRespons
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        std::string error;
+        std::string field;
+        const auto applied =
+            demoApplyGoalRecommendation(runtime_id, *user_id, goalId, recommendationId, error, field);
+        if (!applied)
+        {
+            int status = 400;
+            const char* code = "INVALID_REQUEST";
+            if (error.find("찾을") != std::string::npos)
+            {
+                status = 404;
+                code = "NOT_FOUND";
+            }
+            else if (error.find("적용 가능") != std::string::npos)
+            {
+                status = 409;
+                code = "NOT_ACTIONABLE";
+            }
+            else if (error.find("이미 적용") != std::string::npos)
+            {
+                status = 409;
+                code = "ALREADY_APPLIED";
+            }
+            respondError(callback, status, code, error, field);
+            return;
+        }
+        callback(json_response(req, *applied, runtime_id));
         return;
     }
 
@@ -360,6 +470,21 @@ void GoalsController::updateRecommendation(const HttpRequestPtr& req, HttpRespon
     if (!json || !json->isObject() || !json->isMember("approved") || !(*json)["approved"].isBool())
     {
         respondError(callback, 400, "INVALID_BODY", "approved 값이 필요합니다.", "approved");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
+        std::string error;
+        const auto updated = demoUpdateGoalRecommendation(
+            runtime_id, *user_id, goalId, recommendationId, (*json)["approved"].asBool(), error);
+        if (!updated)
+        {
+            respondError(callback, 404, "NOT_FOUND", error);
+            return;
+        }
+        callback(json_response(req, *updated, runtime_id));
         return;
     }
 

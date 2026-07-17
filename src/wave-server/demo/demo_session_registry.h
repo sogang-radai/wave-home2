@@ -23,6 +23,9 @@ struct DemoSessionData
     Json::Value alarms = Json::Value(Json::arrayValue);
     Json::Value rules = Json::Value(Json::arrayValue);
     Json::Value schedule_tasks = Json::Value(Json::arrayValue);
+    Json::Value goals = Json::Value(Json::arrayValue);
+    // goalId(string) -> coaching payload {periodStart, pastSummary, projection, projectedMetrics, recommendations}
+    Json::Value goal_coachings = Json::Value(Json::objectValue);
     Json::Value chat_histories = Json::Value(Json::arrayValue);
     Json::Value notifications = Json::Value(Json::arrayValue);
     // deviceId -> {voiceLabel, text, expiresAtMs, intervalSec, nextShowAtMs, alarmId, alarmName, ...}
