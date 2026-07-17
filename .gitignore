@@ -34,7 +34,6 @@ gesture-net/dataset/
 gesture-net/samples/
 gesture-net/models/
 gesture-net/training/
-sleep0*.csv
 
 # Plan files (may contain credentials)
 [pP]lan.md
