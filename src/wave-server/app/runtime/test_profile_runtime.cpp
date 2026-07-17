@@ -15,7 +15,7 @@ void TestProfileRuntime::applyConfigDefaults(AppConfig& config) const
 void TestProfileRuntime::startServices(AppState& app)
 {
     (void)app;
-    LOG_INFO("Test profile: skipping settings, devices, and database");
+    WLOG_INFO("Test profile: skipping settings, devices, and database");
 }
 
 void TestProfileRuntime::startPostListen(AppState& app)

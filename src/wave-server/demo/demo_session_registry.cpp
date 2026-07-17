@@ -1,6 +1,9 @@
 #include "demo_session_registry.h"
 
+#include <cassert>
 #include <chrono>
+
+#include "../app/app_state.h"
 
 WAVE_NAMESPACE_BEGIN
 
@@ -14,10 +17,11 @@ namespace
     }
 }
 
-DemoSessionRegistry& DemoSessionRegistry::instance()
+DemoSessionRegistry& demoSessionRegistry()
 {
-    static DemoSessionRegistry registry;
-    return registry;
+    auto* sessions = AppState::get().runtime().demoSessions();
+    assert(sessions != nullptr);
+    return *sessions;
 }
 
 LockedDemoSession DemoSessionRegistry::lockSession(const std::string& runtime_id)

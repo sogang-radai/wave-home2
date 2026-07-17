@@ -3,11 +3,14 @@
 #include "profile_runtime.h"
 
 #include "../../demo/demo_alarms_facade.h"
+#include "../../demo/demo_automation_runtime.h"
 #include "../../demo/demo_chat_session_facade.h"
 #include "../../demo/demo_devices_internal_facade.h"
 #include "../../demo/demo_iot_facade.h"
+#include "../../demo/demo_power_meter.h"
 #include "../../demo/demo_rules_facade.h"
 #include "../../demo/demo_schedule_tasks_facade.h"
+#include "../../demo/demo_session_registry.h"
 
 WAVE_NAMESPACE_BEGIN
 
@@ -31,8 +34,15 @@ public:
     facade::IRulesFacade& rules() override { return m_rules; }
     facade::IChatSessionFacade& chat() override { return m_chat; }
 
+    DemoSessionRegistry* demoSessions() override { return &m_sessions; }
+    DemoPowerMeter* demoPowerMeter() override { return &m_powerMeter; }
+
 private:
     bool m_startedDemoAutomation = false;
+
+    DemoSessionRegistry m_sessions;
+    DemoPowerMeter m_powerMeter;
+    DemoAutomationRuntime m_automation;
 
     DemoIotFacade m_iot;
     DemoDevicesInternalFacade m_devicesInternal;

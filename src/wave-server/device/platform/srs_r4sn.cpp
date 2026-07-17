@@ -381,15 +381,15 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("srs_r4sn: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("srs_r4sn: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("srs_r4sn: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("srs_r4sn: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("srs_r4sn: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("srs_r4sn: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
@@ -614,7 +614,7 @@ private:
             m_socket.cancel(cancelEc);
             m_socket.close(cancelEc);
             m_connecting.store(false);
-            LOG_WARN("srs_r4sn connect timed out after {} ms", kConnectTimeoutMs);
+            WLOG_WARN("srs_r4sn connect timed out after {} ms", kConnectTimeoutMs);
             scheduleReconnect("connect_timeout");
         });
 
@@ -632,7 +632,7 @@ private:
                 if (resolveEc)
                 {
                     m_connecting.store(false);
-                    LOG_ERROR("srs_r4sn resolve failed: {}", resolveEc.message());
+                    WLOG_ERROR("srs_r4sn resolve failed: {}", resolveEc.message());
                     scheduleReconnect("resolve_failed");
                     return;
                 }
@@ -653,7 +653,7 @@ private:
                         if (connectEc)
                         {
                             m_connecting.store(false);
-                            LOG_WARN("srs_r4sn connect failed: {}", connectEc.message());
+                            WLOG_WARN("srs_r4sn connect failed: {}", connectEc.message());
                             scheduleReconnect("connect_failed");
                             return;
                         }
@@ -664,7 +664,7 @@ private:
                         m_connecting.store(false);
                         if (m_reconnectAttempts > 0)
                         {
-                            LOG_INFO(
+                            WLOG_INFO(
                                 "srs_r4sn reconnected to {}:{} (backoff reset)",
                                 endpoint.address().to_string(),
                                 endpoint.port());
@@ -673,7 +673,7 @@ private:
                         m_reconnectAttempts = 0;
                         m_streamBuf.clear();
 
-                        LOG_INFO(
+                        WLOG_INFO(
                             "srs_r4sn connected to {}:{}",
                             endpoint.address().to_string(),
                             endpoint.port());
@@ -702,7 +702,7 @@ private:
         m_reconnectDelayMs = std::min(m_reconnectDelayMs * 2u, kMaxReconnectDelayMs);
         ++m_reconnectAttempts;
 
-        LOG_WARN(
+        WLOG_WARN(
             "srs_r4sn disconnected ({}) — retry #{} in {} ms",
             reason,
             m_reconnectAttempts,
@@ -714,7 +714,7 @@ private:
             if (timerEc || !m_work)
                 return;
 
-            LOG_INFO("srs_r4sn reconnecting (delay was {} ms)", delay);
+            WLOG_INFO("srs_r4sn reconnecting (delay was {} ms)", delay);
             openConnection();
         });
     }
@@ -730,7 +730,7 @@ private:
 
                 if (ec)
                 {
-                    LOG_ERROR("srs_r4sn read failed: {}", ec.message());
+                    WLOG_ERROR("srs_r4sn read failed: {}", ec.message());
                     scheduleReconnect("read_failed");
                     return;
                 }
@@ -762,7 +762,7 @@ private:
                     }
                     else
                     {
-                        LOG_ERROR("srs_r4sn failed to parse point cloud frame");
+                        WLOG_ERROR("srs_r4sn failed to parse point cloud frame");
                     }
                 }
 
@@ -1209,7 +1209,7 @@ std::future<void> SRSR4SN::requestIQAsync(
 
         std::string error;
         if (!m_iqImpl->request(requests, outResponses, error))
-            LOG_ERROR("srs_r4sn IQ request failed: {}", error);
+            WLOG_ERROR("srs_r4sn IQ request failed: {}", error);
     });
 }
 

@@ -36,8 +36,7 @@ namespace
 
 bool demoVirtualDevicesEnabled()
 {
-    const auto& state = AppState::get();
-    return state.demo_mode && state.no_devices;
+    return AppState::get().runtime().kind() == ProfileKind::Demo;
 }
 
 std::string resolveDemoRuntimeId(const drogon::HttpRequestPtr& req, const Json::Value* body)
@@ -117,7 +116,7 @@ Json::Value DemoDeviceBackend::stateForDevice(
     const std::string& device_id,
     const std::string& device_class) const
 {
-    auto& registry = DemoSessionRegistry::instance();
+    auto& registry = demoSessionRegistry();
     auto locked_session = registry.lockSession(runtime_id);
     auto& session = *locked_session;
     const auto it = session.device_state.find(device_id);
@@ -132,7 +131,7 @@ Json::Value DemoDeviceBackend::stateForDevice(
         state["switch"] = switch_on;
         state["ratedPower"] = rated_power;
         state["voltage"] = 235.0;
-        const auto reading = DemoPowerMeter::instance().samplePlug(
+        const auto reading = demoPowerMeter().samplePlug(
             runtime_id, device_id, switch_on, rated_power, 235.0);
         state["power"] = reading.power_w;
         state["current"] = reading.current_ma;
@@ -148,7 +147,7 @@ void DemoDeviceBackend::saveState(
     const std::string& device_id,
     const Json::Value& state) const
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     session.device_state[device_id] = state;
 }
@@ -260,7 +259,7 @@ Json::Value DemoDeviceBackend::getState(
         // session already cached an older ratedPower.
         const double rated_power = DemoPowerMeter::rated_power_for_device(device_id);
         state["ratedPower"] = rated_power;
-        const auto reading = DemoPowerMeter::instance().samplePlug(
+        const auto reading = demoPowerMeter().samplePlug(
             runtime_id,
             device_id,
             state.get("switch", false).asBool(),
@@ -386,8 +385,8 @@ Json::Value DemoDeviceBackend::invokeAction(
         const double rated = DemoPowerMeter::rated_power_for_device(device_id);
         const bool switch_on = next.get("switch", false).asBool();
         const double voltage = next.get("voltage", 235.0).asDouble();
-        DemoPowerMeter::instance().syncPlug(runtime_id, device_id, switch_on, rated, voltage);
-        const auto reading = DemoPowerMeter::instance().samplePlug(
+        demoPowerMeter().syncPlug(runtime_id, device_id, switch_on, rated, voltage);
+        const auto reading = demoPowerMeter().samplePlug(
             runtime_id, device_id, switch_on, rated, voltage);
         next["power"] = reading.power_w;
         next["current"] = reading.current_ma;

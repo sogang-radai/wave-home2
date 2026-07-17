@@ -25,16 +25,16 @@ namespace
         {
             if (g_forceExit.exchange(true, std::memory_order_acq_rel))
             {
-                LOG_WARN("Forced exit (signal {})", signal);
+                WLOG_WARN("Forced exit (signal {})", signal);
                 std::_Exit(128 + signal);
             }
 
             if (signal == SIGTSTP)
-                LOG_INFO("Shutdown requested (Ctrl+Z)");
+                WLOG_INFO("Shutdown requested (Ctrl+Z)");
             else if (signal == SIGINT)
-                LOG_INFO("Shutdown requested (Ctrl+C). Press again to force quit.");
+                WLOG_INFO("Shutdown requested (Ctrl+C). Press again to force quit.");
             else
-                LOG_INFO("Shutdown requested (signal {})", signal);
+                WLOG_INFO("Shutdown requested (signal {})", signal);
 
             ws::AppState::get().running.store(false, std::memory_order_release);
         };
@@ -106,7 +106,7 @@ int main(int argc, const char* argv[])
     auto task_queue = std::make_unique<ws::TaskQueue>();
     if (!task_queue->init(12))
     {
-        LOG_ERROR("Task queue failed to initialize");
+        WLOG_ERROR("Task queue failed to initialize");
         return 1;
     }
 
@@ -116,15 +116,15 @@ int main(int argc, const char* argv[])
     app->init(launch);
     if (!app->running.load(std::memory_order_acquire))
     {
-        LOG_ERROR("Application failed to start");
+        WLOG_ERROR("Application failed to start");
         return 1;
     }
 
-    LOG_INFO("Main loop started (Ctrl+Z or Ctrl+C to stop)");
+    WLOG_INFO("Main loop started (Ctrl+Z or Ctrl+C to stop)");
     while (app->running.load(std::memory_order_acquire))
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    LOG_INFO("Main loop stopped");
+    WLOG_INFO("Main loop stopped");
     app->shutdown();
     task_queue->shutdown();
     

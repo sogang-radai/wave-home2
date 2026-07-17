@@ -145,7 +145,7 @@ Json::Value DbQueryStore::executeOne(const Json::Value& query) const
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("db_query failed for table {}: {}", table, e.what());
+        WLOG_WARN("db_query failed for table {}: {}", table, e.what());
         return make_query_error(table, "INTERNAL_ERROR", "조회 중 오류가 발생했습니다.", "table");
     }
 }

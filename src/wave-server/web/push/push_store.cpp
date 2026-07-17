@@ -36,7 +36,7 @@ bool upsertSubscription(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to save push subscription: {}", e.what());
+        WLOG_ERROR("Failed to save push subscription: {}", e.what());
         return false;
     }
 }
@@ -53,7 +53,7 @@ bool deleteSubscriptions(const db::DbClientPtr& client, int64_t session_id)
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to delete push subscription: {}", e.what());
+        WLOG_ERROR("Failed to delete push subscription: {}", e.what());
         return false;
     }
 }
@@ -83,7 +83,7 @@ std::vector<Subscription> listSubscriptions(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to list push subscriptions: {}", e.what());
+        WLOG_ERROR("Failed to list push subscriptions: {}", e.what());
     }
 
     return subscriptions;

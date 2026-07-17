@@ -357,15 +357,15 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("reolink_e1_pro: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("reolink_e1_pro: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("reolink_e1_pro: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("reolink_e1_pro: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("reolink_e1_pro: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("reolink_e1_pro: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
@@ -497,7 +497,7 @@ struct ReolinkE1Pro::Impl
             "application/soap+xml; charset=utf-8", env, body);
 
         if (code != 200)
-            LOG_WARN("ONVIF {} -> http {}", service_path, code);
+            WLOG_WARN("ONVIF {} -> http {}", service_path, code);
         return body;
     }
 
@@ -605,7 +605,7 @@ int ReolinkE1Pro::init(const json& config)
     }
 
     m_state = DeviceState::Running;
-    LOG_INFO("ReolinkE1Pro initialized: {}", m_config.host);
+    WLOG_INFO("ReolinkE1Pro initialized: {}", m_config.host);
 
     std::thread([impl = m_impl.get()]()
     {
@@ -666,14 +666,14 @@ bool ReolinkE1Pro::ensureGo2rtcStream()
         }
         else if (!service::Go2RtcService::get().acquireStream(m_impl->streamName, m_impl->go2rtcSources))
         {
-            LOG_ERROR("ReolinkE1Pro: go2rtc stream registration failed");
+            WLOG_ERROR("ReolinkE1Pro: go2rtc stream registration failed");
             return false;
         }
         else
         {
             m_impl->go2rtcActive = true;
             video_active = true;
-            LOG_INFO("ReolinkE1Pro: go2rtc stream '{}' active", m_impl->streamName);
+            WLOG_INFO("ReolinkE1Pro: go2rtc stream '{}' active", m_impl->streamName);
         }
     }
 
@@ -705,11 +705,11 @@ bool ReolinkE1Pro::ensureGo2rtcTalkStream()
         return true;
     if (!service::Go2RtcService::get().acquireStream(talk_name, talk_source))
     {
-        LOG_ERROR("ReolinkE1Pro: go2rtc talk stream registration failed");
+        WLOG_ERROR("ReolinkE1Pro: go2rtc talk stream registration failed");
         return false;
     }
     m_impl->go2rtcTalkActive = true;
-    LOG_INFO("ReolinkE1Pro: go2rtc talk stream '{}' active", talk_name);
+    WLOG_INFO("ReolinkE1Pro: go2rtc talk stream '{}' active", talk_name);
     return true;
 }
 
@@ -720,13 +720,13 @@ void ReolinkE1Pro::releaseGo2rtcStream()
     {
         service::Go2RtcService::get().releaseStream(m_impl->talkStreamName);
         m_impl->go2rtcTalkActive = false;
-        LOG_INFO("ReolinkE1Pro: go2rtc talk stream '{}' released", m_impl->talkStreamName);
+        WLOG_INFO("ReolinkE1Pro: go2rtc talk stream '{}' released", m_impl->talkStreamName);
     }
     if (!m_impl->go2rtcActive)
         return;
     service::Go2RtcService::get().releaseStream(m_impl->streamName);
     m_impl->go2rtcActive = false;
-    LOG_INFO("ReolinkE1Pro: go2rtc stream '{}' released", m_impl->streamName);
+    WLOG_INFO("ReolinkE1Pro: go2rtc stream '{}' released", m_impl->streamName);
 }
 
 bool ReolinkE1Pro::isGo2rtcStreamActive() const
@@ -854,7 +854,7 @@ bool ReolinkE1Pro::captureFrame(CameraFrame& outFrame)
 {
     if (!ensureGo2rtcStream())
     {
-        LOG_ERROR("ReolinkE1Pro: captureFrame requires go2rtc to be enabled");
+        WLOG_ERROR("ReolinkE1Pro: captureFrame requires go2rtc to be enabled");
         return false;
     }
 
@@ -1192,10 +1192,10 @@ bool ReolinkE1Pro::recordAudioToFile(const std::string& path, uint32_t seconds)
     const int rc = run_process(args, log);
     if (rc != 0)
     {
-        LOG_ERROR("ReolinkE1Pro: audio record failed (ffmpeg rc={}, see {})", rc, log);
+        WLOG_ERROR("ReolinkE1Pro: audio record failed (ffmpeg rc={}, see {})", rc, log);
         return false;
     }
-    LOG_INFO("ReolinkE1Pro: recorded {}s of audio to {}", seconds, path);
+    WLOG_INFO("ReolinkE1Pro: recorded {}s of audio to {}", seconds, path);
     return true;
 }
 
@@ -1203,7 +1203,7 @@ bool ReolinkE1Pro::playAudioFile(const std::string& path)
 {
     if (!ensureGo2rtcStream())
     {
-        LOG_ERROR("ReolinkE1Pro: playAudioFile requires go2rtc to be enabled");
+        WLOG_ERROR("ReolinkE1Pro: playAudioFile requires go2rtc to be enabled");
         return false;
     }
 
@@ -1217,7 +1217,7 @@ bool ReolinkE1Pro::playAudioFile(const std::string& path)
         abs = std::filesystem::absolute(path, ec).string();
         if (ec || abs.empty())
         {
-            LOG_ERROR("ReolinkE1Pro: bad audio path '{}'", path);
+            WLOG_ERROR("ReolinkE1Pro: bad audio path '{}'", path);
             return false;
         }
         video_stream = m_impl->streamName;
@@ -1227,13 +1227,13 @@ bool ReolinkE1Pro::playAudioFile(const std::string& path)
 
     if (!std::filesystem::exists(abs))
     {
-        LOG_ERROR("ReolinkE1Pro: audio file not found '{}'", abs);
+        WLOG_ERROR("ReolinkE1Pro: audio file not found '{}'", abs);
         return false;
     }
 
     if (use_talk_stream && !ensureGo2rtcTalkStream())
     {
-        LOG_ERROR("ReolinkE1Pro: go2rtc talk stream unavailable");
+        WLOG_ERROR("ReolinkE1Pro: go2rtc talk stream unavailable");
         return false;
     }
 
@@ -1247,14 +1247,14 @@ bool ReolinkE1Pro::playAudioFile(const std::string& path)
     {
         if (go2rtc.streamToCamera(dst, source))
         {
-            LOG_INFO("ReolinkE1Pro: playing TTS audio via go2rtc ({})", abs);
+            WLOG_INFO("ReolinkE1Pro: playing TTS audio via go2rtc ({})", abs);
             return true;
         }
         if (attempt + 1 < k_max_attempts)
             std::this_thread::sleep_for(std::chrono::milliseconds(400));
     }
 
-    LOG_ERROR("ReolinkE1Pro: go2rtc talk failed for '{}'", abs);
+    WLOG_ERROR("ReolinkE1Pro: go2rtc talk failed for '{}'", abs);
     return false;
 }
 

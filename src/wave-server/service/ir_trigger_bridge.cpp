@@ -77,7 +77,7 @@ std::string matchIrCommandId(const std::vector<uint16_t>& received_timings)
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("IR matcher failed: {}", e.what());
+        WLOG_WARN("IR matcher failed: {}", e.what());
     }
 
     return {};
@@ -94,7 +94,7 @@ void notifyIrReceived(const std::string& device_id, const std::vector<uint16_t>&
         return;
 
     app.triggerManager().onIrReceived(device_id, command_id);
-    LOG_INFO("IR trigger: device={} command={}", device_id, command_id);
+    WLOG_INFO("IR trigger: device={} command={}", device_id, command_id);
 }
 
 SERVICE_NAMESPACE_END

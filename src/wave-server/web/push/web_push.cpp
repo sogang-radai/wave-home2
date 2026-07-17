@@ -471,14 +471,14 @@ std::optional<PreparedRequest> prepareRequest(
     const auto private_key_bytes = base64_url_decode(vapid.private_key);
     if (client_public.empty() || auth_secret.empty() || private_key_bytes.empty())
     {
-        LOG_ERROR("Invalid push subscription or VAPID key encoding");
+        WLOG_ERROR("Invalid push subscription or VAPID key encoding");
         return std::nullopt;
     }
 
     EVP_PKEY* private_key = import_private_key_p256(private_key_bytes);
     if (!private_key)
     {
-        LOG_ERROR("Failed to import VAPID private key");
+        WLOG_ERROR("Failed to import VAPID private key");
         return std::nullopt;
     }
 
@@ -493,7 +493,7 @@ std::optional<PreparedRequest> prepareRequest(
     if (body.empty())
     {
         EVP_PKEY_free(private_key);
-        LOG_ERROR("Failed to encrypt web push payload");
+        WLOG_ERROR("Failed to encrypt web push payload");
         return std::nullopt;
     }
 
@@ -502,7 +502,7 @@ std::optional<PreparedRequest> prepareRequest(
     EVP_PKEY_free(private_key);
     if (authorization.empty())
     {
-        LOG_ERROR("Failed to build VAPID authorization header");
+        WLOG_ERROR("Failed to build VAPID authorization header");
         return std::nullopt;
     }
 

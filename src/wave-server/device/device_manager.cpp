@@ -187,7 +187,7 @@ bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
 
     if (rc == -2)
     {
-        LOG_INFO("Device manager: '{}' disabled (id={})", deviceName, external_id);
+        WLOG_INFO("Device manager: '{}' disabled (id={})", deviceName, external_id);
         entry.state = DeviceEntryState::Disabled;
         registerDevice(std::move(device));
         return true;
@@ -197,7 +197,7 @@ bool DeviceManager::tryInitEntry(DeviceManifestEntry& entry, bool manual_retry)
     {
         entry.state = DeviceEntryState::Failed;
         entry.initError = std::string(device->getErrorString(rc));
-        LOG_WARN(
+        WLOG_WARN(
             "Device manager: '{}' init failed with {} ({})",
             deviceName,
             rc,
@@ -283,7 +283,7 @@ void DeviceManager::startRetryLoop()
                 continue;
             }
 
-            LOG_INFO("Device manager: retrying offline devices (interval {}s)", m_retryIntervalSec);
+            WLOG_INFO("Device manager: retrying offline devices (interval {}s)", m_retryIntervalSec);
             retryFailedDevices(false);
 
             if (m_retryIntervalSec < 3600)
@@ -386,7 +386,7 @@ bool DeviceManager::load(const json& room_list, const json& device_list)
         {
             manifest_entry.state = DeviceEntryState::Unsupported;
             manifest_entry.initError = "unsupported device class";
-            LOG_WARN("Device manager: unsupported class '{}' (id={})", className, entry.value("id", "?"));
+            WLOG_WARN("Device manager: unsupported class '{}' (id={})", className, entry.value("id", "?"));
         }
 
         m_manifest.push_back(std::move(manifest_entry));
@@ -422,7 +422,7 @@ void DeviceManager::startDevicesAsync()
         }
 
         m_startupComplete.store(true, std::memory_order_release);
-        LOG_INFO(
+        WLOG_INFO(
             "Device startup complete ({} running / {} manifest entries)",
             online,
             m_manifest.size());
@@ -464,7 +464,7 @@ void DeviceManager::shutdown()
         constexpr auto kJoinTimeout = std::chrono::seconds(5);
         if (join_task.wait_for(kJoinTimeout) != std::future_status::ready)
         {
-            LOG_WARN(
+            WLOG_WARN(
                 "Device startup thread did not finish within {}s; continuing shutdown",
                 kJoinTimeout.count());
             m_startThread.detach();

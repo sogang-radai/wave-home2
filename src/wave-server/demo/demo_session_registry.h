@@ -61,8 +61,6 @@ private:
 class DemoSessionRegistry
 {
 public:
-    static DemoSessionRegistry& instance();
-
     LockedDemoSession lockSession(const std::string& runtime_id);
     std::optional<DemoSessionData> get(const std::string& runtime_id) const;
     std::vector<std::string> listRuntimeIds() const;
@@ -73,5 +71,8 @@ private:
     mutable std::recursive_mutex m_mutex;
     std::unordered_map<std::string, DemoSessionData> m_sessions;
 };
+
+/** Active DemoProfileRuntime session store (asserts demo profile). */
+DemoSessionRegistry& demoSessionRegistry();
 
 WAVE_NAMESPACE_END

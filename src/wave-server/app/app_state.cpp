@@ -64,7 +64,7 @@ tts::Service* TTSState::service(std::string& code)
         if (!TaskQueue::get().init())
         {
             code = "TTS_UNAVAILABLE";
-            LOG_ERROR("TTS: TaskQueue init failed");
+            WLOG_ERROR("TTS: TaskQueue init failed");
             return nullptr;
         }
         m_taskQueueReady = true;
@@ -79,7 +79,7 @@ tts::Service* TTSState::service(std::string& code)
         std::ifstream in(config_path);
         if (!in)
         {
-            LOG_ERROR("TTS: config not found at {}", config_path.string());
+            WLOG_ERROR("TTS: config not found at {}", config_path.string());
             code = "TTS_UNAVAILABLE";
             return nullptr;
         }
@@ -91,7 +91,7 @@ tts::Service* TTSState::service(std::string& code)
         }
         catch (const std::exception& e)
         {
-            LOG_ERROR("TTS: invalid config {} ({})", config_path.string(), e.what());
+            WLOG_ERROR("TTS: invalid config {} ({})", config_path.string(), e.what());
             code = "TTS_UNAVAILABLE";
             return nullptr;
         }
@@ -99,7 +99,7 @@ tts::Service* TTSState::service(std::string& code)
         const auto init_rc = m_service->init(base_dir, config_json);
         if (init_rc != tts::SUCCESS)
         {
-            LOG_ERROR(
+            WLOG_ERROR(
                 "TTS: model init failed (rc={}, base_dir={}, config={})",
                 static_cast<int>(init_rc),
                 base_dir,
@@ -108,7 +108,7 @@ tts::Service* TTSState::service(std::string& code)
             code = "TTS_UNAVAILABLE";
             return nullptr;
         }
-        LOG_INFO("TTS: service ready (base_dir={})", base_dir);
+        WLOG_INFO("TTS: service ready (base_dir={})", base_dir);
         m_ready.store(true, std::memory_order_release);
     }
 
@@ -393,13 +393,13 @@ bool AppState::loadDeviceManifests(const db::DbClientPtr& client)
 
     if (!client)
     {
-        LOG_WARN("Database client unavailable; device manager not loaded");
+        WLOG_WARN("Database client unavailable; device manager not loaded");
         return false;
     }
 
     if (!std::filesystem::exists(devices_path))
     {
-        LOG_WARN("Device list not found ({}); device manager not loaded", devices_path.string());
+        WLOG_WARN("Device list not found ({}); device manager not loaded", devices_path.string());
         return false;
     }
 
@@ -416,7 +416,7 @@ bool AppState::loadDeviceManifests(const db::DbClientPtr& client)
         auto rows = client->execSqlSync("SELECT id, name, description FROM room ORDER BY id");
         if (rows.empty())
         {
-            LOG_WARN("No rooms in database; device manager not loaded");
+            WLOG_WARN("No rooms in database; device manager not loaded");
             return false;
         }
 
@@ -431,11 +431,11 @@ bool AppState::loadDeviceManifests(const db::DbClientPtr& client)
 
         if (!deviceManager.load(rooms_json, devices_json))
         {
-            LOG_WARN("Device manager load returned false");
+            WLOG_WARN("Device manager load returned false");
             return false;
         }
 
-        LOG_INFO(
+        WLOG_INFO(
             "Device manager loaded ({} rooms from DB, {} devices)",
             deviceManager.enumerateRooms().size(),
             deviceManager.enumerateDevices().size());
@@ -443,7 +443,7 @@ bool AppState::loadDeviceManifests(const db::DbClientPtr& client)
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("Device manager load failed: {}", e.what());
+        WLOG_WARN("Device manager load failed: {}", e.what());
         return false;
     }
 }
@@ -456,7 +456,7 @@ void AppState::startAutomationServices()
 
     std::string ir_error;
     if (!m_irStore->load(resolvePath("device/ir_list.json"), ir_error))
-        LOG_WARN("IrStore load failed: {}", ir_error);
+        WLOG_WARN("IrStore load failed: {}", ir_error);
 
     std::string gesture_error;
     if (!m_gestureStore->load(
@@ -464,7 +464,7 @@ void AppState::startAutomationServices()
             [this](const std::string& relative) { return resolvePath(relative); },
             gesture_error))
     {
-        LOG_WARN("GestureStore load failed: {}", gesture_error);
+        WLOG_WARN("GestureStore load failed: {}", gesture_error);
     }
 
     if (no_devices)
@@ -501,16 +501,16 @@ void AppState::bindAutomationDatabase(const db::DbClientPtr& client)
         m_gestureStore->setDatabaseClient(client);
         std::string gesture_db_error;
         if (!m_gestureStore->syncFromDatabase(gesture_db_error, config.db_read_only))
-            LOG_WARN("GestureStore DB sync failed: {}", gesture_db_error);
+            WLOG_WARN("GestureStore DB sync failed: {}", gesture_db_error);
         else if (config.db_read_only)
-            LOG_INFO("GestureStore loaded device mappings (read-only DB)");
+            WLOG_INFO("GestureStore loaded device mappings (read-only DB)");
     }
 
     std::string rules_error;
     if (!m_ruleStore->loadFromDatabase(rules_error))
-        LOG_WARN("RuleStore load failed: {}", rules_error);
+        WLOG_WARN("RuleStore load failed: {}", rules_error);
     else
-        LOG_INFO("RuleStore loaded from automation_rule");
+        WLOG_INFO("RuleStore loaded from automation_rule");
 }
 
 void AppState::markDatabaseReady()
@@ -530,7 +530,7 @@ void AppState::startTriggerRuntime()
         [this](const std::string& relative) { return resolvePath(relative); });
 
     m_triggerRuntimeStarted = true;
-    LOG_INFO("TriggerManager started");
+    WLOG_INFO("TriggerManager started");
 }
 
 void AppState::stopAutomationServices()
@@ -585,7 +585,7 @@ void AppState::init(const LaunchOptions& launch)
 
     if (!AppConfig::load_from_file(resolved_config, launch.profile, config))
     {
-        LOG_ERROR("Failed to load app config: {}", resolved_config.string());
+        WLOG_ERROR("Failed to load app config: {}", resolved_config.string());
         return;
     }
 
@@ -601,7 +601,7 @@ void AppState::init(const LaunchOptions& launch)
 
     if (!server.init(config.server, test_mode, demo_mode))
     {
-        LOG_ERROR("Web server init failed");
+        WLOG_ERROR("Web server init failed");
         return;
     }
 
@@ -612,7 +612,7 @@ void AppState::init(const LaunchOptions& launch)
 
     m_runtime->startPostListen(*this);
 
-    LOG_INFO(
+    WLOG_INFO(
         "App initialized (config: {}, profile: {}, test_mode: {}, demo_mode: {}, no_devices: {}, anchor_date: {})",
         resolved_config.string(),
         m_runtime->name(),
@@ -628,7 +628,7 @@ void AppState::shutdown()
     if (!m_initialized)
         return;
 
-    LOG_INFO("Shutting down app...");
+    WLOG_INFO("Shutting down app...");
     running.store(false, std::memory_order_release);
     m_dbReady.store(false, std::memory_order_release);
 
@@ -644,7 +644,7 @@ void AppState::shutdown()
     server.shutdown();
     m_runtime.reset();
 
-    LOG_INFO("App shutdown complete");
+    WLOG_INFO("App shutdown complete");
     m_initialized = false;
 }
 

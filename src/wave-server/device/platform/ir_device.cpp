@@ -195,7 +195,7 @@ int IRDevice::init(const json& config)
     if (!m_config.commandListPath.empty() && m_commandList)
     {
         if (!m_commandList->loadFromFile(m_config.commandListPath))
-            LOG_WARN("IRDevice failed to load command list: {}", m_config.commandListPath);
+            WLOG_WARN("IRDevice failed to load command list: {}", m_config.commandListPath);
     }
 
     if (!m_config.inputDevice.empty())
@@ -204,7 +204,7 @@ int IRDevice::init(const json& config)
         const ir::Result rxRes = m_receiver->init(m_config.inputDevice);
         if (rxRes != ir::Result::SUCCESS)
         {
-            LOG_ERROR("IRDevice receiver init failed: {}", ir::to_string(rxRes));
+            WLOG_ERROR("IRDevice receiver init failed: {}", ir::to_string(rxRes));
             shutdown();
             return irResultToCode(rxRes);
         }
@@ -216,7 +216,7 @@ int IRDevice::init(const json& config)
         const ir::Result txRes = m_transmitter->init(m_config.outputDevice);
         if (txRes != ir::Result::SUCCESS)
         {
-            LOG_ERROR("IRDevice transmitter init failed: {}", ir::to_string(txRes));
+            WLOG_ERROR("IRDevice transmitter init failed: {}", ir::to_string(txRes));
             shutdown();
             return irResultToCode(txRes);
         }
@@ -224,7 +224,7 @@ int IRDevice::init(const json& config)
 
     registerActionsAndQueries();
     m_state = DeviceState::Running;
-    LOG_INFO("IRDevice ready: class={} input={} output={}", m_className, m_config.inputDevice, m_config.outputDevice);
+    WLOG_INFO("IRDevice ready: class={} input={} output={}", m_className, m_config.inputDevice, m_config.outputDevice);
     return 0;
 }
 

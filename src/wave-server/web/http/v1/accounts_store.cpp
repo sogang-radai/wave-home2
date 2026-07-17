@@ -56,7 +56,7 @@ std::optional<AccountView> AccountsStore::createAccount(const std::string& name,
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to create account: {}", e.what());
+        WLOG_ERROR("Failed to create account: {}", e.what());
         error = "구성원 생성에 실패했습니다.";
         return std::nullopt;
     }
@@ -132,7 +132,7 @@ bool AccountsStore::deleteAccount(int64_t account_id, int64_t session_id, std::s
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to delete account: {}", e.what());
+        WLOG_ERROR("Failed to delete account: {}", e.what());
         error = "구성원 삭제에 실패했습니다.";
         code = "DELETE_FAILED";
         return false;

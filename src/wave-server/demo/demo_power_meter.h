@@ -6,9 +6,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "../db/database.h"
 #include <json/json.h>
 
+#include "../db/database.h"
 #include "core/coredefs.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -29,8 +29,6 @@ struct DemoPowerReading
 class DemoPowerMeter
 {
 public:
-    static DemoPowerMeter& instance();
-
     // Shared demo plug rated-watt table (wire id). Device backend + power API
     // both use this so values cannot drift across the two paths.
     static double rated_power_for_device(const std::string& device_id);
@@ -56,8 +54,6 @@ public:
         const std::string& range);
 
 private:
-    DemoPowerMeter() = default;
-
     struct Sample
     {
         int64_t ts_ms = 0;
@@ -86,5 +82,8 @@ private:
     mutable std::mutex m_mutex;
     std::unordered_map<std::string, SessionSlot> m_sessions;
 };
+
+/** Active DemoProfileRuntime power meter (asserts demo profile). */
+DemoPowerMeter& demoPowerMeter();
 
 WAVE_NAMESPACE_END

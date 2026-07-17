@@ -49,7 +49,7 @@ void ActionQueue::enqueue(ActionJob job)
 {
     if (!m_running.load())
     {
-        LOG_WARN("ActionQueue: enqueue ignored (not running)");
+        WLOG_WARN("ActionQueue: enqueue ignored (not running)");
         return;
     }
 

@@ -433,7 +433,7 @@ Json::Value GestureStore::setRadarGestureSet(
     std::string persist_error;
     if (!persistDeviceMapping(device_id, wire_set_id, persist_error))
     {
-        LOG_WARN("GestureStore: failed to persist device mapping: {}", persist_error);
+        WLOG_WARN("GestureStore: failed to persist device mapping: {}", persist_error);
         code = "PERSIST_FAILED";
         return Json::Value();
     }

@@ -89,15 +89,15 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("tuya_ep2h: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("tuya_ep2h: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("tuya_ep2h: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("tuya_ep2h: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("tuya_ep2h: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("tuya_ep2h: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
@@ -307,7 +307,7 @@ json TuyaEP2H::readStatus(bool force_refresh)
             return make_query_error(-5, ex.what());
         }
 
-        LOG_ERROR("TuyaEP2H readStatus failed: {}", ex.what());
+        WLOG_ERROR("TuyaEP2H readStatus failed: {}", ex.what());
         return make_query_error(-5, ex.what());
     }
 }
@@ -343,7 +343,7 @@ int TuyaEP2H::init(const json& config)
         }
 
         m_state = DeviceState::Running;
-        LOG_INFO("TuyaEP2H connected: {}", m_config.host);
+        WLOG_INFO("TuyaEP2H connected: {}", m_config.host);
         return 0;
     }
     catch (const std::exception& ex)
@@ -434,7 +434,7 @@ json TuyaEP2H::query(std::string_view name, const json& params)
             return make_query_error(-5, ex.what());
         }
 
-        LOG_ERROR("TuyaEP2H query failed: {}", ex.what());
+        WLOG_ERROR("TuyaEP2H query failed: {}", ex.what());
         return make_query_error(-5, ex.what());
     }
 }
@@ -478,7 +478,7 @@ int TuyaEP2H::invoke(std::string_view name, const json& params)
                 return -5;
             }
 
-            LOG_ERROR("TuyaEP2H toggle failed: {}", ex.what());
+            WLOG_ERROR("TuyaEP2H toggle failed: {}", ex.what());
             return -5;
         }
     }
@@ -545,7 +545,7 @@ void TuyaEP2H::markOffline(std::string_view reason)
     if (m_state != DeviceState::Running)
         return;
 
-    LOG_WARN("TuyaEP2H offline ({}): {}", m_config.host, reason);
+    WLOG_WARN("TuyaEP2H offline ({}): {}", m_config.host, reason);
     m_state = DeviceState::Stopped;
     invalidateDatapointCache();
 }
@@ -569,7 +569,7 @@ int TuyaEP2H::setSwitch(bool on)
             return -5;
         }
 
-        LOG_ERROR("TuyaEP2H setSwitch failed: {}", ex.what());
+        WLOG_ERROR("TuyaEP2H setSwitch failed: {}", ex.what());
         return -5;
     }
 }

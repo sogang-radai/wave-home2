@@ -251,7 +251,7 @@ bool SettingsStore::putGeneralSettings(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to save general settings: {}", e.what());
+        WLOG_ERROR("Failed to save general settings: {}", e.what());
         error = "설정 저장에 실패했습니다.";
         return false;
     }
@@ -344,7 +344,7 @@ bool SettingsStore::putSleepConfig(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to save sleep config: {}", e.what());
+        WLOG_ERROR("Failed to save sleep config: {}", e.what());
         error = "설정 저장에 실패했습니다.";
         return false;
     }
@@ -513,7 +513,7 @@ WHERE user_id = ?
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to save AI agent settings: {}", e.what());
+        WLOG_ERROR("Failed to save AI agent settings: {}", e.what());
         error = "설정 저장에 실패했습니다.";
         return false;
     }

@@ -12,17 +12,16 @@ WAVE_NAMESPACE_BEGIN
 class DemoAutomationRuntime
 {
 public:
-    static DemoAutomationRuntime& get();
+    DemoAutomationRuntime() = default;
+    ~DemoAutomationRuntime();
+
+    DemoAutomationRuntime(const DemoAutomationRuntime&) = delete;
+    DemoAutomationRuntime& operator=(const DemoAutomationRuntime&) = delete;
 
     void start();
     void stop();
 
 private:
-    DemoAutomationRuntime() = default;
-    ~DemoAutomationRuntime();
-    DemoAutomationRuntime(const DemoAutomationRuntime&) = delete;
-    DemoAutomationRuntime& operator=(const DemoAutomationRuntime&) = delete;
-
     void runLoop();
     void tick();
     void tickSession(const std::string& runtime_id);

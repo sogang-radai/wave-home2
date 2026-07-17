@@ -32,7 +32,7 @@ void ProductionProfileRuntime::applyConfigDefaults(AppConfig& config) const
 void ProductionProfileRuntime::startServices(AppState& app)
 {
     if (app.no_devices)
-        LOG_INFO("Devices skipped (--no-devices or devices_enabled=false)");
+        WLOG_INFO("Devices skipped (--no-devices or devices_enabled=false)");
 
     app.startAutomationServices();
 }
@@ -47,7 +47,7 @@ void ProductionProfileRuntime::startPostListen(AppState& app)
 
     std::string tts_error;
     if (!app.tts.warmUp(tts_error))
-        LOG_WARN("TTS warmup failed: {}", tts_error);
+        WLOG_WARN("TTS warmup failed: {}", tts_error);
 }
 
 void ProductionProfileRuntime::onDatabaseReady(AppState& app, const db::DbClientPtr& client)
@@ -70,7 +70,7 @@ void ProductionProfileRuntime::onDatabaseReady(AppState& app, const db::DbClient
     if (!app.deviceManager.manifestLoaded())
     {
         if (!app.loadDeviceManifests(client))
-            LOG_WARN("Device manager load failed");
+            WLOG_WARN("Device manager load failed");
         else
             app.deviceManager.startDevicesAsync();
     }
@@ -80,10 +80,10 @@ void ProductionProfileRuntime::onDatabaseReady(AppState& app, const db::DbClient
 
     service::SleepManager::get().reconcile();
     service::SleepManager::get().start();
-    LOG_INFO("SleepManager started");
+    WLOG_INFO("SleepManager started");
 
     service::AlarmManager::get().start();
-    LOG_INFO("AlarmManager started");
+    WLOG_INFO("AlarmManager started");
 
     app.markDatabaseReady();
 }

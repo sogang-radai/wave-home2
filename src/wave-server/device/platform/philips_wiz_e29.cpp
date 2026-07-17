@@ -215,7 +215,7 @@ int PhilipsWizE29::init(const json& config)
 
         if (!m_config.mac.empty() && !mac.empty() && !net::macEquals(m_config.mac, mac))
         {
-            LOG_ERROR("philips_wiz_e29: MAC mismatch for {} (expected {}, got {})",
+            WLOG_ERROR("philips_wiz_e29: MAC mismatch for {} (expected {}, got {})",
                 m_config.host, m_config.mac, mac);
             m_state = DeviceState::Stopped;
             return -7;
@@ -226,7 +226,7 @@ int PhilipsWizE29::init(const json& config)
         registerActionsAndQueries();
 
         m_state = DeviceState::Running;
-        LOG_INFO("philips_wiz_e29 connected: {} (module={}, color={}, tunableWhite={})",
+        WLOG_INFO("philips_wiz_e29 connected: {} (module={}, color={}, tunableWhite={})",
             m_config.host, moduleName, m_capabilities.color, m_capabilities.tunableWhite);
         return 0;
     }
@@ -310,7 +310,7 @@ json PhilipsWizE29::query(std::string_view name, const json& params)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 query failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 query failed: {}", ex.what());
         return makeError(-5, ex.what());
     }
 }
@@ -397,7 +397,7 @@ int PhilipsWizE29::setPower(bool on)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 setPower failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 setPower failed: {}", ex.what());
         return -5;
     }
 }
@@ -413,7 +413,7 @@ int PhilipsWizE29::togglePower()
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 togglePower failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 togglePower failed: {}", ex.what());
         return -5;
     }
 }
@@ -427,7 +427,7 @@ int PhilipsWizE29::setBrightness(uint8_t percent)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 setBrightness failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 setBrightness failed: {}", ex.what());
         return -5;
     }
 }
@@ -441,7 +441,7 @@ int PhilipsWizE29::setColorRGB(uint8_t r, uint8_t g, uint8_t b)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 setColorRGB failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 setColorRGB failed: {}", ex.what());
         return -5;
     }
 }
@@ -455,7 +455,7 @@ int PhilipsWizE29::setColorTemperature(uint16_t kelvin)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 setColorTemperature failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 setColorTemperature failed: {}", ex.what());
         return -5;
     }
 }

@@ -12,7 +12,7 @@ namespace
     {
         if (!root.contains("server") || !root["server"].is_object())
         {
-            LOG_ERROR("Config section is missing \"server\" object");
+            WLOG_ERROR("Config section is missing \"server\" object");
             return false;
         }
 
@@ -76,7 +76,7 @@ bool AppConfig::load_from_file(
     std::ifstream in(path);
     if (!in.is_open())
     {
-        LOG_ERROR("Failed to open config file: {}", path.string());
+        WLOG_ERROR("Failed to open config file: {}", path.string());
         return false;
     }
 
@@ -87,7 +87,7 @@ bool AppConfig::load_from_file(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to parse config file {}: {}", path.string(), e.what());
+        WLOG_ERROR("Failed to parse config file {}: {}", path.string(), e.what());
         return false;
     }
 
@@ -96,11 +96,11 @@ bool AppConfig::load_from_file(
 
     if (root.contains("server") && root["server"].is_object())
     {
-        LOG_INFO("Loading legacy flat config from {}", path.string());
+        WLOG_INFO("Loading legacy flat config from {}", path.string());
         return apply_config_section(root, out);
     }
 
-    LOG_ERROR(
+    WLOG_ERROR(
         "Config file {} has no profile \"{}\" and is not a legacy flat config",
         path.string(),
         profile);

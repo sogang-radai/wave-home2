@@ -371,7 +371,7 @@ VALUES (?, ?, ?, ?, 0, ?, ?, NULL)
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to create device: {}", e.what());
+        WLOG_ERROR("Failed to create device: {}", e.what());
         error = "기기 등록에 실패했습니다.";
         code = "CREATE_FAILED";
         return std::nullopt;
@@ -510,7 +510,7 @@ WHERE id = ?
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to update device: {}", e.what());
+        WLOG_ERROR("Failed to update device: {}", e.what());
         error = "기기 수정에 실패했습니다.";
         code = "UPDATE_FAILED";
         return std::nullopt;
@@ -538,7 +538,7 @@ bool DevicesStore::deleteDevice(const std::string& wire_id, std::string& error)
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to delete device: {}", e.what());
+        WLOG_ERROR("Failed to delete device: {}", e.what());
         error = "기기 삭제에 실패했습니다.";
         return false;
     }

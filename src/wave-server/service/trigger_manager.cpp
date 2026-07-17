@@ -187,7 +187,7 @@ void TriggerManager::ensureGestureRuntime(const GestureIndexKey& key)
     const auto set_path = m_resolvePath(key.gestureSetPath);
     if (!std::filesystem::exists(set_path))
     {
-        LOG_WARN("TriggerManager: gesture set not found: {}", set_path.string());
+        WLOG_WARN("TriggerManager: gesture set not found: {}", set_path.string());
         return;
     }
 
@@ -208,7 +208,7 @@ void TriggerManager::ensureGestureRuntime(const GestureIndexKey& key)
         const auto set_dir = set_path.parent_path();
         if (!runtime.pipeline->init(set_dir.string(), set_config, error))
         {
-            LOG_WARN("TriggerManager: gesture pipeline init failed: {}", error);
+            WLOG_WARN("TriggerManager: gesture pipeline init failed: {}", error);
             return;
         }
 
@@ -220,14 +220,14 @@ void TriggerManager::ensureGestureRuntime(const GestureIndexKey& key)
         }
 
         m_gestureRuntimes.push_back(std::move(runtime));
-        LOG_INFO(
+        WLOG_INFO(
             "TriggerManager: gesture pipeline ready (radar={}, set={})",
             key.radarDeviceId,
             key.gestureSetPath);
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("TriggerManager: failed to load gesture set {}: {}", key.gestureSetPath, e.what());
+        WLOG_WARN("TriggerManager: failed to load gesture set {}: {}", key.gestureSetPath, e.what());
     }
 }
 
@@ -572,7 +572,7 @@ void TriggerManager::tickSchedule()
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("TriggerManager: disable once schedule failed ({}): {}", rule_id, e.what());
+            WLOG_WARN("TriggerManager: disable once schedule failed ({}): {}", rule_id, e.what());
         }
     }
 }

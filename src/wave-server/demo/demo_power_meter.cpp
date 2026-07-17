@@ -1,12 +1,14 @@
 #include "demo_power_meter.h"
-#include "../db/database.h"
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <random>
 
+#include "../app/app_state.h"
+#include "../db/database.h"
 #include "../device/device_wire_id.hpp"
 
 WAVE_NAMESPACE_BEGIN
@@ -37,10 +39,11 @@ namespace
     }
 }
 
-DemoPowerMeter& DemoPowerMeter::instance()
+DemoPowerMeter& demoPowerMeter()
 {
-    static DemoPowerMeter meter;
-    return meter;
+    auto* meter = AppState::get().runtime().demoPowerMeter();
+    assert(meter != nullptr);
+    return *meter;
 }
 
 double DemoPowerMeter::rated_power_for_device(const std::string& device_id)

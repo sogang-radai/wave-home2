@@ -74,15 +74,15 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("droid_cam: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("droid_cam: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("droid_cam: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("droid_cam: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("droid_cam: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("droid_cam: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
@@ -451,7 +451,7 @@ int DroidCam::init(const json& config)
     }
 
     m_state = DeviceState::Running;
-    LOG_INFO("DroidCam initialized: {}:{}", m_interface.host, m_interface.port);
+    WLOG_INFO("DroidCam initialized: {}:{}", m_interface.host, m_interface.port);
 
     m_appAlive.store(probeAppAlive(), std::memory_order_release);
     startHealthMonitor();
@@ -498,7 +498,7 @@ void DroidCam::markPhoneOffline()
     m_streamViewers.store(0, std::memory_order_release);
     const bool was_alive = m_appAlive.exchange(false, std::memory_order_acq_rel);
     if (was_alive)
-        LOG_WARN("DroidCam: phone app offline ({}:{})", m_interface.host, m_interface.port);
+        WLOG_WARN("DroidCam: phone app offline ({}:{})", m_interface.host, m_interface.port);
     AppState::get().iot.resetCameraStreamSession(deviceIDToString(getId()));
     AppState::get().iot.stopDroidMjpegProxy(deviceIDToString(getId()));
 }
@@ -533,7 +533,7 @@ void DroidCam::startHealthMonitor()
                 onAppWentOffline();
             else if (!was_alive && alive)
             {
-                LOG_INFO("DroidCam: phone app online ({}:{})", m_interface.host, m_interface.port);
+                WLOG_INFO("DroidCam: phone app online ({}:{})", m_interface.host, m_interface.port);
             }
         }
     });

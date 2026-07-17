@@ -325,7 +325,7 @@ void Go2RtcService::configure(const Config& config)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_pid > 0)
     {
-        LOG_WARN("Go2RtcService: configure() ignored while process is running");
+        WLOG_WARN("Go2RtcService: configure() ignored while process is running");
         return;
     }
     m_config = config;
@@ -367,7 +367,7 @@ bool Go2RtcService::acquireStream(const std::string& name, const std::vector<std
     }
 
     if (freshStart)
-        LOG_INFO("Go2RtcService: started with {} stream(s)", m_streams.size());
+        WLOG_INFO("Go2RtcService: started with {} stream(s)", m_streams.size());
     return true;
 }
 
@@ -387,7 +387,7 @@ void Go2RtcService::releaseStream(const std::string& name)
     if (m_streams.empty())
     {
         terminateProcess();
-        LOG_INFO("Go2RtcService: last stream released, process stopped");
+        WLOG_INFO("Go2RtcService: last stream released, process stopped");
     }
 }
 
@@ -435,7 +435,7 @@ bool Go2RtcService::fetchSnapshot(const std::string& name, std::vector<uint8_t>&
     const int code = http_request(host, port, "GET", query, &body);
     if (code != 200 || body.empty())
     {
-        LOG_ERROR("Go2RtcService: snapshot '{}' failed (http {}, {} bytes)", name, code, body.size());
+        WLOG_ERROR("Go2RtcService: snapshot '{}' failed (http {}, {} bytes)", name, code, body.size());
         return false;
     }
 
@@ -469,7 +469,7 @@ bool Go2RtcService::exchangeWebRtc(const std::string& name, const std::string& o
         "application/sdp");
     if ((code != 200 && code != 201) || answer_sdp.empty())
     {
-        LOG_ERROR("Go2RtcService: WebRTC exchange for '{}' failed (http {}, {} bytes)", name, code, answer_sdp.size());
+        WLOG_ERROR("Go2RtcService: WebRTC exchange for '{}' failed (http {}, {} bytes)", name, code, answer_sdp.size());
         return false;
     }
     return true;
@@ -510,14 +510,14 @@ bool Go2RtcService::streamToCamera(const std::string& name, const std::string& s
     const int code = http_request(host, port, "POST", query, &respBody);
     if (code != 200)
     {
-        LOG_ERROR("Go2RtcService: streamToCamera '{}' failed (http {}): {}", name, code, respBody);
+        WLOG_ERROR("Go2RtcService: streamToCamera '{}' failed (http {}): {}", name, code, respBody);
         return false;
     }
 
     if (source.empty())
-        LOG_INFO("Go2RtcService: stopped talk playback on '{}'", name);
+        WLOG_INFO("Go2RtcService: stopped talk playback on '{}'", name);
     else
-        LOG_INFO("Go2RtcService: talk '{}' <- {}", name, source);
+        WLOG_INFO("Go2RtcService: talk '{}' <- {}", name, source);
     return true;
 }
 
@@ -528,7 +528,7 @@ bool Go2RtcService::ensureProcess()
 
     if (!std::filesystem::exists(m_config.binaryPath))
     {
-        LOG_ERROR("Go2RtcService: binary not found at {}", m_config.binaryPath);
+        WLOG_ERROR("Go2RtcService: binary not found at {}", m_config.binaryPath);
         return false;
     }
 
@@ -558,7 +558,7 @@ bool Go2RtcService::ensureProcess()
 
     if (rc != 0)
     {
-        LOG_ERROR("Go2RtcService: posix_spawn failed: {}", std::strerror(rc));
+        WLOG_ERROR("Go2RtcService: posix_spawn failed: {}", std::strerror(rc));
         return false;
     }
 
@@ -566,12 +566,12 @@ bool Go2RtcService::ensureProcess()
 
     if (!waitForApi(5000))
     {
-        LOG_ERROR("Go2RtcService: API did not become ready");
+        WLOG_ERROR("Go2RtcService: API did not become ready");
         terminateProcess();
         return false;
     }
 
-    LOG_INFO(
+    WLOG_INFO(
         "Go2RtcService: process started (pid={}, api=http://{}:{})",
         m_pid, m_config.apiHost, m_config.apiPort);
     return true;
@@ -609,7 +609,7 @@ bool Go2RtcService::writeConfigFile()
     std::ofstream file(m_configPath, std::ios::trunc);
     if (!file)
     {
-        LOG_ERROR("Go2RtcService: cannot write config at {}", m_configPath);
+        WLOG_ERROR("Go2RtcService: cannot write config at {}", m_configPath);
         return false;
     }
 
@@ -624,7 +624,7 @@ bool Go2RtcService::writeConfigFile()
     {
         file << "  candidates:\n";
         file << "    - " << lan_ip << "\n";
-        LOG_INFO("Go2RtcService: WebRTC candidate {}", lan_ip);
+        WLOG_INFO("Go2RtcService: WebRTC candidate {}", lan_ip);
     }
     if (!m_config.ffmpegPath.empty())
     {
@@ -660,12 +660,12 @@ bool Go2RtcService::apiPutStream(const std::string& name, const std::vector<std:
     const int code = http_request(m_config.apiHost, m_config.apiPort, "PUT", query);
     if (code != 200)
     {
-        LOG_ERROR("Go2RtcService: failed to add stream '{}' (http {})", name, code);
+        WLOG_ERROR("Go2RtcService: failed to add stream '{}' (http {})", name, code);
         return false;
     }
 
     for (const auto& source : sources)
-        LOG_INFO("Go2RtcService: stream '{}' -> {}", name, source);
+        WLOG_INFO("Go2RtcService: stream '{}' -> {}", name, source);
     return true;
 }
 
@@ -776,7 +776,7 @@ struct Go2RtcService::LiveMp4Stream::Impl
                 case ChunkResult::End:
                     return false;
                 case ChunkResult::Error:
-                    LOG_ERROR("Go2RtcService: invalid chunked stream.mp4 body");
+                    WLOG_ERROR("Go2RtcService: invalid chunked stream.mp4 body");
                     return false;
                 }
                 if (!pending.empty())
@@ -858,7 +858,7 @@ bool Go2RtcService::LiveMp4Stream::open(const std::string& name)
         m_impl->raw.clear();
         if (!parse_http_response(fd, m_impl->raw, status_code))
         {
-            LOG_ERROR(
+            WLOG_ERROR(
                 "Go2RtcService: stream.mp4 for '{}' failed (http {}, attempt {}/{})",
                 name,
                 status_code,

@@ -2,7 +2,7 @@
 
 #include "../../core/json.h"
 #include "../../core/logger.h"
-#include "../../demo/demo_automation_runtime.h"
+#include "../../demo/demo_policy.h"
 #include "../app_config.h"
 #include "../app_state.h"
 
@@ -29,16 +29,17 @@ void DemoProfileRuntime::applyConfigDefaults(AppConfig& config) const
 
 void DemoProfileRuntime::startServices(AppState& app)
 {
-    LOG_INFO("Devices skipped (demo profile)");
+    WLOG_INFO("Devices skipped (demo profile)");
+    web::registerDemoPolicy();
     app.startAutomationServices();
 }
 
 void DemoProfileRuntime::startPostListen(AppState& app)
 {
     (void)app;
-    DemoAutomationRuntime::get().start();
+    m_automation.start();
     m_startedDemoAutomation = true;
-    LOG_INFO("DemoAutomationRuntime started (demo_mode)");
+    WLOG_INFO("DemoAutomationRuntime started (demo profile)");
 }
 
 void DemoProfileRuntime::onDatabaseReady(AppState& app, const db::DbClientPtr& client)
@@ -50,7 +51,7 @@ void DemoProfileRuntime::onDatabaseReady(AppState& app, const db::DbClientPtr& c
 void DemoProfileRuntime::shutdown(AppState& app)
 {
     if (m_startedDemoAutomation)
-        DemoAutomationRuntime::get().stop();
+        m_automation.stop();
 
     app.stopAutomationServices();
 }

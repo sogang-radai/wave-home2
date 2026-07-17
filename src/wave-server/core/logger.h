@@ -92,11 +92,11 @@ public:
         0u, \
         ::ws::detail::formatLog((fmt) __VA_OPT__(,) __VA_ARGS__))
 
-#define LOG_TRACE(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Trace, fmt, __VA_ARGS__)
-#define LOG_DEBUG(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Debug, fmt, __VA_ARGS__)
-#define LOG_INFO(fmt, ...)  WS_LOG_IMPL(::ws::LogLevel::Info,  fmt, __VA_ARGS__)
-#define LOG_WARN(fmt, ...)  WS_LOG_IMPL(::ws::LogLevel::Warn,  fmt, __VA_ARGS__)
-#define LOG_ERROR(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Error, fmt, __VA_ARGS__)
-#define LOG_FATAL(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Fatal, fmt, __VA_ARGS__)
+#define WLOG_TRACE(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Trace, fmt, __VA_ARGS__)
+#define WLOG_DEBUG(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Debug, fmt, __VA_ARGS__)
+#define WLOG_INFO(fmt, ...)  WS_LOG_IMPL(::ws::LogLevel::Info,  fmt, __VA_ARGS__)
+#define WLOG_WARN(fmt, ...)  WS_LOG_IMPL(::ws::LogLevel::Warn,  fmt, __VA_ARGS__)
+#define WLOG_ERROR(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Error, fmt, __VA_ARGS__)
+#define WLOG_FATAL(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Fatal, fmt, __VA_ARGS__)
 
 WAVE_NAMESPACE_END

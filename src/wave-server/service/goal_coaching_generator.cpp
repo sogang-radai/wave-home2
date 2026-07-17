@@ -102,7 +102,7 @@ std::optional<Json::Value> generateGoalCoaching(
     AgentGoalCoachingJobResult agent_result;
     if (runGoalCoachingJobSync(agent_base_url, body, agent_result, out_error) != AgentClientResult::success)
     {
-        LOG_WARN("goal coaching generation failed (goal {}): {}", goal_id, out_error);
+        WLOG_WARN("goal coaching generation failed (goal {}): {}", goal_id, out_error);
         return std::nullopt;
     }
 
@@ -179,12 +179,12 @@ INSERT INTO goal_recommendation (
             ++next_id;
         }
 
-        LOG_INFO("goal coaching persisted (goal {}, {} recommendation(s))", goal_id, items.size());
+        WLOG_INFO("goal coaching persisted (goal {}, {} recommendation(s))", goal_id, items.size());
     }
     catch (const std::exception& e)
     {
         out_error = e.what();
-        LOG_WARN("goal_coaching persist failed (goal {}): {}", goal_id, out_error);
+        WLOG_WARN("goal_coaching persist failed (goal {}): {}", goal_id, out_error);
         return std::nullopt;
     }
 

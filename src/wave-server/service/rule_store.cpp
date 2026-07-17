@@ -370,7 +370,7 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
             Rule rule;
             if (!row_to_rule(row, rule, out_error))
             {
-                LOG_WARN(
+                WLOG_WARN(
                     "Skipping automation_rule {}: {}",
                     row["external_id"].as<std::string>(),
                     out_error);
@@ -383,7 +383,7 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
                 std::string trigger_error;
                 if (!hydrate_triggers_from_rule(rule, m_triggers, trigger_error))
                 {
-                    LOG_WARN("Rule {} has unsupported legacy trigger, trigger ignored: {}", rule.id, trigger_error);
+                    WLOG_WARN("Rule {} has unsupported legacy trigger, trigger ignored: {}", rule.id, trigger_error);
                     rule.triggerJson = json();
                     rule.triggerId.clear();
                 }
@@ -391,7 +391,7 @@ bool RuleStore::loadFromDatabase(std::string& out_error)
 
             if (!rule.schedule && rule.triggerId.empty())
             {
-                LOG_WARN("Skipping automation_rule {}: no valid trigger or schedule", rule.id);
+                WLOG_WARN("Skipping automation_rule {}: no valid trigger or schedule", rule.id);
                 continue;
             }
 

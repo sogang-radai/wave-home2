@@ -99,7 +99,7 @@ std::optional<RoomView> RoomsStore::createRoom(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to create room: {}", e.what());
+        WLOG_ERROR("Failed to create room: {}", e.what());
         error = "방 생성에 실패했습니다.";
         return std::nullopt;
     }
@@ -195,7 +195,7 @@ WHERE drm.room_id = ? AND d.archived = 0
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to delete room: {}", e.what());
+        WLOG_ERROR("Failed to delete room: {}", e.what());
         error = "방 삭제에 실패했습니다.";
         code = "DELETE_FAILED";
         return false;
@@ -254,7 +254,7 @@ std::optional<Json::Value> RoomsStore::updateMembers(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to update room members: {}", e.what());
+        WLOG_ERROR("Failed to update room members: {}", e.what());
         error = "구역 멤버 저장에 실패했습니다.";
         code = "SAVE_FAILED";
         return std::nullopt;

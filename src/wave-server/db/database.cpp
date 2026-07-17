@@ -668,8 +668,8 @@ namespace
         }
 
         const auto now = formatTimestamp();
-        LOG_INFO("Seeding initial user/session data");
-        LOG_INFO("Dev Bearer token (store as wavehome_access_token): wavehome-dev-token");
+        WLOG_INFO("Seeding initial user/session data");
+        WLOG_INFO("Dev Bearer token (store as wavehome_access_token): wavehome-dev-token");
 
         client->execSqlSync(
             "INSERT INTO user (id, name, created_at) VALUES (?, ?, ?), (?, ?, ?)",
@@ -770,7 +770,7 @@ namespace
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("Room/device seed skipped: {}", e.what());
+            WLOG_WARN("Room/device seed skipped: {}", e.what());
         }
     }
     }
@@ -790,7 +790,7 @@ void configureConnectionSettings(const db::DbClientPtr& client)
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("SQLite PRAGMA setup failed: {}", e.what());
+        WLOG_WARN("SQLite PRAGMA setup failed: {}", e.what());
     }
 }
 
@@ -798,7 +798,7 @@ bool runMigrations(const db::DbClientPtr& client)
 {
     if (!client)
     {
-        LOG_ERROR("Database client is null");
+        WLOG_ERROR("Database client is null");
         return false;
     }
 
@@ -811,7 +811,7 @@ bool runMigrations(const db::DbClientPtr& client)
             if (migration.version <= applied)
                 continue;
 
-            LOG_INFO("Applying DB migration v{}: {}", migration.version, migration.description);
+            WLOG_INFO("Applying DB migration v{}: {}", migration.version, migration.description);
             for (const char* sql : migration.statements)
                 client->execSqlSync(sql);
 
@@ -826,11 +826,11 @@ bool runMigrations(const db::DbClientPtr& client)
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Database migration failed: {}", e.what());
+        WLOG_ERROR("Database migration failed: {}", e.what());
         return false;
     }
 
-    LOG_INFO("Database migrations complete (version {})", current_version(client));
+    WLOG_INFO("Database migrations complete (version {})", current_version(client));
     return true;
 }
 
@@ -838,7 +838,7 @@ bool validateDatabaseSchema(const db::DbClientPtr& client)
 {
     if (!client)
     {
-        LOG_ERROR("Database client is null");
+        WLOG_ERROR("Database client is null");
         return false;
     }
 
@@ -847,16 +847,16 @@ bool validateDatabaseSchema(const db::DbClientPtr& client)
         const int version = current_version(client);
         if (version <= 0)
         {
-            LOG_ERROR("Database schema_version is empty or missing");
+            WLOG_ERROR("Database schema_version is empty or missing");
             return false;
         }
 
-        LOG_INFO("Database schema validated (version {}, migrations skipped)", version);
+        WLOG_INFO("Database schema validated (version {}, migrations skipped)", version);
         return true;
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Database schema validation failed: {}", e.what());
+        WLOG_ERROR("Database schema validation failed: {}", e.what());
         return false;
     }
 }

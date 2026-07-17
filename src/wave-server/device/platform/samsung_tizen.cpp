@@ -270,7 +270,7 @@ namespace
             m_fd = tcp_connect(host, port, timeoutMs);
             if (m_fd < 0)
             {
-                LOG_ERROR("samsung_g7: TCP connect failed for {}:{} (errno={})", host, port, errno);
+                WLOG_ERROR("samsung_g7: TCP connect failed for {}:{} (errno={})", host, port, errno);
                 return false;
             }
 
@@ -280,7 +280,7 @@ namespace
             m_sslContext = SSLCreateContext(nullptr, kSSLClientSide, kSSLStreamType);
             if (!m_sslContext)
             {
-                LOG_ERROR("samsung_g7: SSLCreateContext failed");
+                WLOG_ERROR("samsung_g7: SSLCreateContext failed");
                 close();
                 return false;
             }
@@ -300,7 +300,7 @@ namespace
                 status = SSLHandshake(m_sslContext);
             if (status != noErr)
             {
-                LOG_WARN(
+                WLOG_WARN(
                     "samsung_g7: TLS handshake failed for {} (status={}); WebSocket remote-control only — REST may still work",
                     host,
                     static_cast<int>(status));
@@ -331,7 +331,7 @@ namespace
             SSL_set_fd(m_ssl, m_fd);
             if (SSL_connect(m_ssl) != 1)
             {
-                LOG_ERROR("samsung_g7: OpenSSL connect failed for {} (ssl_err={})", host, SSL_get_error(m_ssl, -1));
+                WLOG_ERROR("samsung_g7: OpenSSL connect failed for {} (ssl_err={})", host, SSL_get_error(m_ssl, -1));
                 ERR_print_errors_fp(stderr);
                 close();
                 return false;
@@ -348,7 +348,10 @@ namespace
             {
 #ifdef __APPLE__
                 size_t chunk = len - sent;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 const OSStatus status = SSLWrite(m_sslContext, p + sent, chunk, &chunk);
+#pragma clang diagnostic pop
                 if (status != noErr || chunk == 0)
                     return false;
                 sent += chunk;
@@ -386,7 +389,10 @@ namespace
                 char chunk[8192];
 #ifdef __APPLE__
                 size_t n = sizeof(chunk);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 const OSStatus status = SSLRead(m_sslContext, chunk, sizeof(chunk), &n);
+#pragma clang diagnostic pop
                 if (status == noErr && n > 0)
                 {
                     buffer.append(chunk, n);
@@ -681,12 +687,12 @@ namespace
     {
         if (event == "ms.channel.timeOut")
         {
-            LOG_WARN("samsung_g7: websocket ms.channel.timeOut");
+            WLOG_WARN("samsung_g7: websocket ms.channel.timeOut");
             return false;
         }
         if (event == "ms.error")
         {
-            LOG_WARN("samsung_g7: websocket ms.error");
+            WLOG_WARN("samsung_g7: websocket ms.error");
             return false;
         }
         return true;
@@ -717,7 +723,7 @@ namespace
         if (event.empty())
             return true;
 
-        LOG_DEBUG("samsung_g7: websocket event: {}", event);
+        WLOG_DEBUG("samsung_g7: websocket event: {}", event);
         return handle_ws_channel_event(event);
     }
 
@@ -808,21 +814,21 @@ namespace
 
         if (!tls.write_all(req.data(), req.size()))
         {
-            LOG_ERROR("samsung_g7: REST request write failed for {}", host);
+            WLOG_ERROR("samsung_g7: REST request write failed for {}", host);
             return false;
         }
 
         std::string body;
         if (!tls.read_http_response(body, timeoutMs))
         {
-            LOG_ERROR("samsung_g7: REST response read failed for {}", host);
+            WLOG_ERROR("samsung_g7: REST response read failed for {}", host);
             return false;
         }
 
         out = json::parse(body, nullptr, false);
         if (out.is_discarded())
         {
-            LOG_ERROR("samsung_g7: REST JSON parse failed for {} ({} bytes)", host, body.size());
+            WLOG_ERROR("samsung_g7: REST JSON parse failed for {} ({} bytes)", host, body.size());
             return false;
         }
         return true;
@@ -907,7 +913,7 @@ namespace
             return 0;
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("samsung_g7: MAC mismatch (expected {}, got {})", expected, actual);
+            WLOG_ERROR("samsung_g7: MAC mismatch (expected {}, got {})", expected, actual);
             return -7;
         }
         return 0;
@@ -963,7 +969,7 @@ namespace
                 if (!hasSavedToken
                     && std::chrono::steady_clock::now() - lastProgress > std::chrono::seconds(5))
                 {
-                    LOG_INFO("samsung_g7: still waiting for display approval...");
+                    WLOG_INFO("samsung_g7: still waiting for display approval...");
                     lastProgress = std::chrono::steady_clock::now();
                 }
 
@@ -974,12 +980,12 @@ namespace
                 json msg = json::parse(frame, nullptr, false);
                 if (msg.is_discarded())
                 {
-                    LOG_WARN("samsung_g7: ignored non-JSON websocket payload ({} bytes)", frame.size());
+                    WLOG_WARN("samsung_g7: ignored non-JSON websocket payload ({} bytes)", frame.size());
                     continue;
                 }
 
                 const std::string event = msg.value("event", "");
-                LOG_INFO("samsung_g7: websocket event: {}", event.empty() ? "(none)" : event);
+                WLOG_INFO("samsung_g7: websocket event: {}", event.empty() ? "(none)" : event);
                 if (event == "ms.channel.connect")
                 {
                     m_connected = true;
@@ -1145,7 +1151,7 @@ int SamsungTizenTokenClient::configure(const json& config)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("SamsungTizenTokenClient configure failed: {}", ex.what());
+        WLOG_ERROR("SamsungTizenTokenClient configure failed: {}", ex.what());
         return -9;
     }
 }
@@ -1179,7 +1185,7 @@ SamsungTizenTokenClient::Result SamsungTizenTokenClient::requestToken()
         SamsungTizen::InterfaceConfig iface = m_impl->iface;
         iface.token.clear();
 
-        LOG_INFO("samsung_g7: waiting for pairing approval on {} (select Allow on the display)", iface.host);
+        WLOG_INFO("samsung_g7: waiting for pairing approval on {} (select Allow on the display)", iface.host);
         std::string wsError;
         if (!ws.open(iface, false, m_impl->timeoutMs, &wsError, false))
         {
@@ -1320,7 +1326,7 @@ int SamsungTizen::init(const json& config)
         json info;
         if (!https_get_json(m_interface.host, m_interface.port, "/api/v2/", info, m_session.connectTimeoutMs))
         {
-            LOG_ERROR("samsung_g7: REST probe failed for {}", m_interface.host);
+            WLOG_ERROR("samsung_g7: REST probe failed for {}", m_interface.host);
             m_state = DeviceState::Stopped;
             return -5;
         }
@@ -1338,16 +1344,16 @@ int SamsungTizen::init(const json& config)
         }
 
         if (m_interface.token.empty())
-            LOG_WARN("samsung_g7: no token configured; run test-samsung-tizen --register");
+            WLOG_WARN("samsung_g7: no token configured; run test-samsung-tizen --register");
 
         registerActionsAndQueries();
         m_state = DeviceState::Running;
-        LOG_INFO("samsung_g7 ready: {} ({})", m_interface.host, m_capabilities.modelName);
+        WLOG_INFO("samsung_g7 ready: {} ({})", m_interface.host, m_capabilities.modelName);
         return 0;
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("samsung_g7 init failed: {}", ex.what());
+        WLOG_ERROR("samsung_g7 init failed: {}", ex.what());
         m_state = DeviceState::Stopped;
         return -5;
     }

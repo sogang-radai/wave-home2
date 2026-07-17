@@ -80,7 +80,7 @@ ON CONFLICT(stat_id) DO UPDATE SET
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep stat embedding store failed: {}", e.what());
+        WLOG_WARN("sleep stat embedding store failed: {}", e.what());
     }
 }
 
@@ -121,7 +121,7 @@ ON CONFLICT(report_id) DO UPDATE SET
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep report embedding store failed: {}", e.what());
+        WLOG_WARN("sleep report embedding store failed: {}", e.what());
     }
 }
 

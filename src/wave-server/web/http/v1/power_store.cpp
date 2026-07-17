@@ -403,7 +403,7 @@ ON CONFLICT(report_id) DO UPDATE SET
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("power report embedding store failed: {}", e.what());
+        WLOG_WARN("power report embedding store failed: {}", e.what());
     }
 }
 
@@ -489,7 +489,7 @@ ON CONFLICT DO UPDATE SET
     if (service::runPowerJobSync(AppState::get().config.agent.base_url, body, agent_result, error)
         != service::AgentClientResult::success)
     {
-        LOG_WARN("power report generation failed ({} {}): {}", period, period_start, error);
+        WLOG_WARN("power report generation failed ({} {}): {}", period, period_start, error);
         return std::nullopt;
     }
 
@@ -523,7 +523,7 @@ ON CONFLICT DO UPDATE SET
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("power_report write failed ({} {}): {}", period, period_start, e.what());
+        WLOG_WARN("power_report write failed ({} {}): {}", period, period_start, e.what());
         return std::nullopt;
     }
 
@@ -556,7 +556,7 @@ bool PowerStore::ensure_daily_report(const db::DbClientPtr& client, const std::s
         std::string insight_error;
         if (!service::generateAndPersistInsights(
                 client, AppState::get().config.agent.base_url, user_id, "power", date, insight_error))
-            LOG_WARN("power insight generation failed (user {}): {}", user_id, insight_error);
+            WLOG_WARN("power insight generation failed (user {}): {}", user_id, insight_error);
     }
 
     return true;

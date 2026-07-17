@@ -15,15 +15,15 @@ bool registerSqliteVecExtension()
     // leave Drogon's sqlite3_config() call failing.
     const int cfg = sqlite3_config(SQLITE_CONFIG_MULTITHREAD);
     if (cfg != SQLITE_OK && cfg != SQLITE_MISUSE)
-        LOG_WARN("sqlite3_config(MULTITHREAD) returned {}", cfg);
+        WLOG_WARN("sqlite3_config(MULTITHREAD) returned {}", cfg);
 
     const int rc = sqlite3_auto_extension(reinterpret_cast<void (*)(void)>(sqlite3_vec_init));
     if (rc != SQLITE_OK)
     {
-        LOG_WARN("sqlite-vec auto_extension failed: {}", rc);
+        WLOG_WARN("sqlite-vec auto_extension failed: {}", rc);
         return false;
     }
-    LOG_INFO("sqlite-vec registered (static, {})", SQLITE_VEC_VERSION);
+    WLOG_INFO("sqlite-vec registered (static, {})", SQLITE_VEC_VERSION);
     return true;
 }
 

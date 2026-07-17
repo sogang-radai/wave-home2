@@ -18,7 +18,7 @@ void PowerController::listPlugs(const HttpRequestPtr& req, HttpResponseCallback&
     {
         const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            DemoPowerMeter::instance().listPlugs(runtime_id, AppState::get().db()));
+            demoPowerMeter().listPlugs(runtime_id, AppState::get().db()));
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
         callback(resp);
         return;
@@ -51,7 +51,7 @@ void PowerController::comboTrend(const HttpRequestPtr& req, HttpResponseCallback
     {
         const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            DemoPowerMeter::instance().comboTrend(runtime_id, device_id, range));
+            demoPowerMeter().comboTrend(runtime_id, device_id, range));
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
         callback(resp);
         return;

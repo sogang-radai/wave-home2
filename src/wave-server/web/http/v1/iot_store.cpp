@@ -1529,7 +1529,7 @@ void queueDeviceTts(
         IotStore worker(app.deviceManager);
         std::string code;
         if (!worker.sendDeviceTts(external_id, text, speaker_id, speed, code))
-            LOG_ERROR("Async TTS failed for {}: {}", external_id, code);
+            WLOG_ERROR("Async TTS failed for {}: {}", external_id, code);
     });
 #else
     (void)external_id;

@@ -108,7 +108,7 @@ Json::Value RagInternalStore::search(const Json::Value& request, std::string& er
     std::string embed_error;
     const bool has_embedding = embedQuery(query, query_embedding, embed_error);
     if (!has_embedding)
-        LOG_WARN("RAG query embedding failed (text fallback only): {}", embed_error);
+        WLOG_WARN("RAG query embedding failed (text fallback only): {}", embed_error);
 
     const std::vector<float>* embedding_ptr = has_embedding ? &query_embedding : nullptr;
 
@@ -317,7 +317,7 @@ Json::Value RagInternalStore::searchVecTable(
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("vec search failed for {} (falling back to text): {}", vec_table, e.what());
+        WLOG_WARN("vec search failed for {} (falling back to text): {}", vec_table, e.what());
     }
     return hits;
 }
@@ -390,7 +390,7 @@ Json::Value RagInternalStore::searchSleepStat(
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_stat text search failed: {}", e.what());
+        WLOG_WARN("sleep_stat text search failed: {}", e.what());
     }
 
     entry["hits"] = hits;
@@ -465,7 +465,7 @@ Json::Value RagInternalStore::searchSleepReport(
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_report text search failed: {}", e.what());
+        WLOG_WARN("sleep_report text search failed: {}", e.what());
     }
 
     entry["hits"] = hits;
@@ -545,7 +545,7 @@ Json::Value RagInternalStore::searchPowerReport(
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("power_report text search failed: {}", e.what());
+        WLOG_WARN("power_report text search failed: {}", e.what());
     }
 
     entry["hits"] = hits;
@@ -587,7 +587,7 @@ Json::Value RagInternalStore::searchInsightSurface(
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("insight search failed: {}", e.what());
+        WLOG_WARN("insight search failed: {}", e.what());
     }
 
     entry["hits"] = hits;
@@ -626,7 +626,7 @@ Json::Value RagInternalStore::searchPostureReport(const Json::Value& target) con
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("posture_report text search failed: {}", e.what());
+        WLOG_WARN("posture_report text search failed: {}", e.what());
     }
 
     entry["hits"] = hits;
@@ -663,7 +663,7 @@ Json::Value RagInternalStore::searchWeeklyPlanReport(const Json::Value& target) 
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("weekly_plan_report text search failed: {}", e.what());
+        WLOG_WARN("weekly_plan_report text search failed: {}", e.what());
     }
 
     entry["hits"] = hits;

@@ -65,7 +65,7 @@ Json::Value DemoIotFacade::getRadarGestureSet(
     body["gestureSetId"] = Json::Value();
 
     bool from_session = false;
-    if (const auto session = DemoSessionRegistry::instance().get(runtime_id))
+    if (const auto session = demoSessionRegistry().get(runtime_id))
     {
         const auto it = session->radar_gesture_sets.find(device_id);
         if (it != session->radar_gesture_sets.end())
@@ -94,7 +94,7 @@ bool DemoIotFacade::setRadarGestureSet(
     std::string& code)
 {
     code.clear();
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     locked_session->radar_gesture_sets[device_id] = set_id;
     return true;
 }

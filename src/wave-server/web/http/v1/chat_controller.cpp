@@ -499,7 +499,7 @@ namespace
         if (agent_result != service::AgentClientResult::success &&
             agent_result != service::AgentClientResult::cancelled)
         {
-            LOG_ERROR("Agent stream failed: {}", agent_error);
+            WLOG_ERROR("Agent stream failed: {}", agent_error);
             if (accumulated_text.empty())
                 accumulated_text = "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.";
         }

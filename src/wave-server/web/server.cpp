@@ -9,19 +9,11 @@
 #include <drogon/drogon.h>
 #include <drogon/orm/DbConfig.h>
 
-#undef LOG_TRACE
-#undef LOG_DEBUG
-#undef LOG_INFO
-#undef LOG_WARN
-#undef LOG_ERROR
-#undef LOG_FATAL
-
 #include "../core/coredefs.h"
 #include "../core/logger.h"
 #include "../app/app_state.h"
 #include "../db/database.h"
 #include "../db/sqlite_vec_support.h"
-#include "../demo/demo_policy.h"
 #include "listener_policy.h"
 #include "util/exe_path.h"
 
@@ -54,7 +46,7 @@ namespace
         std::filesystem::create_directories(dir_path, ec);
         if (ec)
         {
-            LOG_ERROR("Failed to create directory {}: {}", dir_path.string(), ec.message());
+            WLOG_ERROR("Failed to create directory {}: {}", dir_path.string(), ec.message());
             return false;
         }
 
@@ -71,7 +63,7 @@ namespace
         std::filesystem::create_directories(parent, ec);
         if (ec)
         {
-            LOG_ERROR("Failed to create directory {}: {}", parent.string(), ec.message());
+            WLOG_ERROR("Failed to create directory {}: {}", parent.string(), ec.message());
             return false;
         }
 
@@ -136,18 +128,18 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
 {
     if (m_impl->running.load(std::memory_order_acquire))
     {
-        LOG_WARN("Web server is already running");
+        WLOG_WARN("Web server is already running");
         return false;
     }
 
     const auto base_dir = getExecutableDir();
     if (base_dir.empty())
-        LOG_WARN("Executable directory is unknown; using relative paths from cwd");
+        WLOG_WARN("Executable directory is unknown; using relative paths from cwd");
 
     const uint16_t port = static_cast<uint16_t>(config.value("port", 0));
     if (port == 0)
     {
-        LOG_ERROR("server.port is required (see docs/ports.txt; profile defaults apply in IProfileRuntime)");
+        WLOG_ERROR("server.port is required (see docs/ports.txt; profile defaults apply in IProfileRuntime)");
         return false;
     }
     const uint16_t agent_api_port = static_cast<uint16_t>(config.value("agent_api_port", 0));
@@ -173,7 +165,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         const auto fallback = std::filesystem::path(WAVE_SOURCE_DIR) / fallback_name;
         if (std::filesystem::exists(fallback))
         {
-            LOG_INFO(
+            WLOG_INFO(
                 "Document root {} not found; using {}",
                 path.string(),
                 fallback.string());
@@ -195,7 +187,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         const auto fallback = std::filesystem::path(WAVE_SOURCE_DIR) / "bin" / "gestures";
         if (std::filesystem::exists(fallback))
         {
-            LOG_INFO(
+            WLOG_INFO(
                 "Gestures directory {} not found; using {}",
                 path.string(),
                 fallback.string());
@@ -208,7 +200,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
 
     if (!std::filesystem::exists(resolved_document_root))
     {
-        LOG_WARN(
+        WLOG_WARN(
             "Document root does not exist: {} (run scripts/build/site.sh, site-test.sh, or site-demo.sh)",
             resolved_document_root.string());
     }
@@ -219,7 +211,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         {
             if (!std::filesystem::exists(resolved_database_path))
             {
-                LOG_ERROR("Read-only database not found: {}", resolved_database_path.string());
+                WLOG_ERROR("Read-only database not found: {}", resolved_database_path.string());
                 return false;
             }
         }
@@ -245,7 +237,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
 
     if (!std::filesystem::exists(resolved_gestures_root))
     {
-        LOG_WARN(
+        WLOG_WARN(
             "Gestures directory does not exist: {} (thumbnail URLs under /gestures/ will 404)",
             resolved_gestures_root.string());
     }
@@ -253,23 +245,20 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     {
         const auto gestures_alias = std::filesystem::weakly_canonical(resolved_gestures_root).string();
         app.addALocation("/gestures", "", gestures_alias);
-        LOG_INFO("Serving gesture assets at /gestures/ from {}", gestures_alias);
+        WLOG_INFO("Serving gesture assets at /gestures/ from {}", gestures_alias);
     }
 
     app.addListener("0.0.0.0", port);
     if (agent_api_port != 0)
     {
         app.addListener(agent_api_bind, agent_api_port);
-        LOG_INFO(
+        WLOG_INFO(
             "Agent API listener: {}:{} (loopback recommended; see docs/ports.txt)",
             agent_api_bind,
             agent_api_port);
     }
 
     registerListenerIsolation(port, agent_api_port);
-
-    if (demo_mode)
-        registerDemoPolicy();
 
     if (!test_mode)
     {
@@ -293,11 +282,11 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
             {
                 const auto rows = client->execSqlSync("SELECT vec_version() AS v");
                 if (!rows.empty())
-                    LOG_INFO("sqlite-vec ready: {}", rows[0]["v"].as<std::string>());
+                    WLOG_INFO("sqlite-vec ready: {}", rows[0]["v"].as<std::string>());
             }
             catch (const std::exception& e)
             {
-                LOG_WARN("sqlite-vec probe failed (RAG will use text fallback): {}", e.what());
+                WLOG_WARN("sqlite-vec probe failed (RAG will use text fallback): {}", e.what());
             }
             if (read_only)
             {
@@ -307,7 +296,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_WARN("PRAGMA query_only failed: {}", e.what());
+                    WLOG_WARN("PRAGMA query_only failed: {}", e.what());
                 }
             }
             else
@@ -319,7 +308,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
                 : db::runMigrations(client);
             if (!ok)
             {
-                LOG_ERROR("Database preparation failed; stopping server");
+                WLOG_ERROR("Database preparation failed; stopping server");
                 drogon::app().quit();
                 return;
             }
@@ -329,13 +318,13 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     }
     else
     {
-        LOG_INFO("Test mode: static hosting only (no database, no API DB routes)");
+        WLOG_INFO("Test mode: static hosting only (no database, no API DB routes)");
     }
 
     m_impl->port = port;
     m_impl->documentRoot = resolved_document_root.string();
 
-    LOG_INFO(
+    WLOG_INFO(
         "Web server configured: port={}, agent_api_port={}, threads={}, document_root={}, database={}, uploads={}, test_mode={}, demo_mode={}, read_only={}, skip_migrations={}",
         port,
         agent_api_port == 0 ? std::string("(none)") : std::to_string(agent_api_port),
@@ -355,15 +344,15 @@ void Server::run()
 {
     if (m_impl->running.exchange(true, std::memory_order_acq_rel))
     {
-        LOG_WARN("Web server thread is already running");
+        WLOG_WARN("Web server thread is already running");
         return;
     }
 
     m_impl->thread = std::thread([port = m_impl->port, document_root = m_impl->documentRoot]()
     {
-        LOG_INFO("Web server starting on 0.0.0.0:{} (static: {})", port, document_root);
+        WLOG_INFO("Web server starting on 0.0.0.0:{} (static: {})", port, document_root);
         drogon::app().run();
-        LOG_INFO("Web server event loop exited");
+        WLOG_INFO("Web server event loop exited");
     });
 }
 
@@ -372,13 +361,13 @@ void Server::shutdown()
     if (!m_impl->running.exchange(false, std::memory_order_acq_rel))
         return;
 
-    LOG_INFO("Shutting down web server...");
+    WLOG_INFO("Shutting down web server...");
     drogon::app().quit();
 
     if (m_impl->thread.joinable())
         m_impl->thread.join();
 
-    LOG_INFO("Web server shutdown complete");
+    WLOG_INFO("Web server shutdown complete");
 }
 
 WEB_NAMESPACE_END

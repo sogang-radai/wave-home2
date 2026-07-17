@@ -233,15 +233,15 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("RadaiWs: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("RadaiWs: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("RadaiWs: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("RadaiWs: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("RadaiWs: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("RadaiWs: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
@@ -299,7 +299,7 @@ namespace
                 0);
             if (decoded < 0)
             {
-                LOG_WARN("RadaiWs: opus_decode failed ({})", decoded);
+                WLOG_WARN("RadaiWs: opus_decode failed ({})", decoded);
                 return false;
             }
 
@@ -324,7 +324,7 @@ namespace
                 static_cast<int>(outEncoded.size()));
             if (encoded < 0)
             {
-                LOG_WARN("RadaiWs: opus_encode failed ({})", encoded);
+                WLOG_WARN("RadaiWs: opus_encode failed ({})", encoded);
                 return false;
             }
 
@@ -359,7 +359,7 @@ namespace
         std::memcpy(&payloadSize, streamBuf.data() + 8, sizeof(payloadSize));
         if (payloadSize > wsp::kMaxPayload)
         {
-            LOG_ERROR("RadaiWs: invalid payloadSize {} — resyncing", payloadSize);
+            WLOG_ERROR("RadaiWs: invalid payloadSize {} — resyncing", payloadSize);
             streamBuf.erase(streamBuf.begin());
             return false;
         }
@@ -418,7 +418,7 @@ struct RadaiWs::Impl
         }
         catch (const std::exception& ex)
         {
-            LOG_WARN("RadaiWs: Opus init failed ({}); compressed audio disabled", ex.what());
+            WLOG_WARN("RadaiWs: Opus init failed ({}); compressed audio disabled", ex.what());
             m_opus.reset();
         }
 #endif
@@ -576,7 +576,7 @@ struct RadaiWs::Impl
         const bool waitForAck = waitAck && !onIoThread();
         if (waitAck && !waitForAck)
         {
-            LOG_WARN(
+            WLOG_WARN(
                 "RadaiWs: sending type=0x{:04X} without Ack wait (called from IO thread)",
                 static_cast<unsigned>(static_cast<uint16_t>(type)));
         }
@@ -717,7 +717,7 @@ struct RadaiWs::Impl
         std::ifstream in(m_irListPath);
         if (!in)
         {
-            LOG_ERROR("RadaiWs: cannot open IR list {}", m_irListPath);
+            WLOG_ERROR("RadaiWs: cannot open IR list {}", m_irListPath);
             return false;
         }
 
@@ -725,7 +725,7 @@ struct RadaiWs::Impl
         in >> root;
         if (!root.contains("commands") || !root["commands"].is_array())
         {
-            LOG_ERROR("RadaiWs: IR list missing commands array ({})", m_irListPath);
+            WLOG_ERROR("RadaiWs: IR list missing commands array ({})", m_irListPath);
             return false;
         }
 
@@ -745,7 +745,7 @@ struct RadaiWs::Impl
             return !outRawUs.empty();
         }
 
-        LOG_ERROR("RadaiWs: IR command '{}' not found in {}", commandId, m_irListPath);
+        WLOG_ERROR("RadaiWs: IR command '{}' not found in {}", commandId, m_irListPath);
         return false;
     }
 
@@ -899,7 +899,7 @@ struct RadaiWs::Impl
             if (msgLen > 0)
                 message.assign(reinterpret_cast<const char*>(payload + sizeof(body)), msgLen);
 
-            LOG_WARN("RadaiWs: device error requestId={} code={} msg={}", body.requestId, body.code, message);
+            WLOG_WARN("RadaiWs: device error requestId={} code={} msg={}", body.requestId, body.code, message);
 
             std::shared_ptr<std::promise<int>> prom;
             {
@@ -988,7 +988,7 @@ struct RadaiWs::Impl
             }
             else
             {
-                LOG_WARN(
+                WLOG_WARN(
                     "RadaiWs: sensor type=0x{:04X} payload too small (bodySize={}, need {})",
                     rawType,
                     bodySize,
@@ -1074,7 +1074,7 @@ struct RadaiWs::Impl
             m_socket.cancel(cancelEc);
             m_socket.close(cancelEc);
             m_connecting.store(false);
-            LOG_WARN("RadaiWs connect timed out after {} ms", m_session.connectTimeoutMs);
+            WLOG_WARN("RadaiWs connect timed out after {} ms", m_session.connectTimeoutMs);
             if (!failInitialConnectIfPending())
                 scheduleReconnect("connect_timeout");
         });
@@ -1093,7 +1093,7 @@ struct RadaiWs::Impl
                 if (resolveEc)
                 {
                     m_connecting.store(false);
-                    LOG_ERROR("RadaiWs resolve failed: {}", resolveEc.message());
+                    WLOG_ERROR("RadaiWs resolve failed: {}", resolveEc.message());
                     if (!failInitialConnectIfPending())
                         scheduleReconnect("resolve_failed");
                     return;
@@ -1126,7 +1126,7 @@ struct RadaiWs::Impl
                         m_connecting.store(false);
                         if (m_reconnectAttempts > 0)
                         {
-                            LOG_INFO(
+                            WLOG_INFO(
                                 "RadaiWs reconnected to {}:{} (backoff reset)",
                                 endpoint.address().to_string(),
                                 endpoint.port());
@@ -1135,7 +1135,7 @@ struct RadaiWs::Impl
                         m_reconnectAttempts = 0;
                         m_streamBuf.clear();
 
-                        LOG_INFO(
+                        WLOG_INFO(
                             "RadaiWs connected to {}:{}",
                             endpoint.address().to_string(),
                             endpoint.port());
@@ -1167,7 +1167,7 @@ struct RadaiWs::Impl
         m_reconnectDelayMs = std::min(m_reconnectDelayMs * 2u, m_session.reconnectMaxMs);
         ++m_reconnectAttempts;
 
-        LOG_WARN("RadaiWs disconnected ({}) — retry #{} in {} ms", reason, m_reconnectAttempts, delay);
+        WLOG_WARN("RadaiWs disconnected ({}) — retry #{} in {} ms", reason, m_reconnectAttempts, delay);
 
         m_reconnectTimer.expires_after(std::chrono::milliseconds(delay));
         m_reconnectTimer.async_wait([this, delay](const std::error_code& timerEc)
@@ -1175,7 +1175,7 @@ struct RadaiWs::Impl
             if (timerEc || !m_work || !io_loop_should_run(m_owner))
                 return;
 
-            LOG_INFO("RadaiWs reconnecting (delay was {} ms)", delay);
+            WLOG_INFO("RadaiWs reconnecting (delay was {} ms)", delay);
             openConnection();
         });
     }
@@ -1191,7 +1191,7 @@ struct RadaiWs::Impl
 
                 if (ec)
                 {
-                    LOG_ERROR("RadaiWs read failed: {}", ec.message());
+                    WLOG_ERROR("RadaiWs read failed: {}", ec.message());
                     scheduleReconnect("read_failed");
                     return;
                 }
@@ -1333,7 +1333,7 @@ int RadaiWs::init(const json& config)
     }
 
     m_state = DeviceState::Running;
-    LOG_INFO("RadaiWs initialized for {}:{}", m_interface.host, m_interface.port);
+    WLOG_INFO("RadaiWs initialized for {}:{}", m_interface.host, m_interface.port);
     return 0;
 }
 
@@ -1511,7 +1511,7 @@ int RadaiWs::invoke(std::string_view name, const json& params)
 
     if (name == "speak")
     {
-        LOG_WARN("RadaiWs: speak action not implemented yet");
+        WLOG_WARN("RadaiWs: speak action not implemented yet");
         return -1;
     }
 
@@ -1940,7 +1940,7 @@ void RadaiWs::onMicComp(
     (void)encodedData;
     (void)timestampUs;
     (void)keyFrame;
-    LOG_WARN("RadaiWs: received MicComp but Opus support is not compiled in");
+    WLOG_WARN("RadaiWs: received MicComp but Opus support is not compiled in");
 #endif
 }
 
@@ -2001,7 +2001,7 @@ void RadaiWs::onSensor(wsp::Type type, const wsp::SensorBody& sensor)
 
     if (sensor.quality == 0)
     {
-        LOG_WARN(
+        WLOG_WARN(
             "RadaiWs: sensor {} discarded (quality=0, unit={}, value={})",
             name,
             static_cast<unsigned>(sensor.unit),
@@ -2053,11 +2053,11 @@ void RadaiWs::onIrReceived(const wsp::IrReceiveBody& body, const std::vector<uin
     }
 
     if (!snapshot.matchedCommandId.empty())
-        LOG_INFO("RadaiWs: IR received matched command '{}'", snapshot.matchedCommandId);
+        WLOG_INFO("RadaiWs: IR received matched command '{}'", snapshot.matchedCommandId);
     else if (snapshot.overflow)
-        LOG_WARN("RadaiWs: IR received with overflow ({} pulses)", snapshot.timingsUs.size());
+        WLOG_WARN("RadaiWs: IR received with overflow ({} pulses)", snapshot.timingsUs.size());
     else
-        LOG_INFO("RadaiWs: IR received ({} pulses, no ir_list match)", snapshot.timingsUs.size());
+        WLOG_INFO("RadaiWs: IR received ({} pulses, no ir_list match)", snapshot.timingsUs.size());
 
 #ifndef WAVE_STANDALONE_DEVICE_TEST
     service::notifyIrReceived(dev::deviceIDToString(getId()), timings);

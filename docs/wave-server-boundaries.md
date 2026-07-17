@@ -100,7 +100,8 @@
 | DB | `bin/data/demo.db`, `read_only` + `skip_migrations` |
 | 앵커 | `2026-06-30` |
 | 세션 | `demoRuntimeId` / `X-Wave-Demo-Runtime-Id` — 메모리 쓰기, DB RO |
-| 정책 | `web/demo_policy.cpp` → 미허용 mutation은 403 `DEMO_READ_ONLY` |
+| 정책 | `demo/demo_policy.cpp` — DemoProfileRuntime::startServices에서 등록; 미허용 mutation은 403 `DEMO_READ_ONLY` |
+| 세션·전력·자동화 | `DemoProfileRuntime` 멤버 (`demoSessions` / `demoPowerMeter` / `m_automation`); 싱글톤 아님 |
 
 ---
 
@@ -124,6 +125,6 @@
 | 1 | ProfileRuntime / 기동 정리 |
 | 2 | `/internal` 경로를 agent-api listener로 격리 (`listener_policy`) |
 | 3 | Controllers thin + demo/prod Facade (`facade/`, `demo/*_facade`) |
-| 4 | DemoProfileRuntime 소유권 |
+| 4 | DemoProfileRuntime 소유권 (세션·전력·자동화·demo policy) |
 
 스크립트 레이아웃: `scripts/build/` · `scripts/download/` · `scripts/configure/` · `scripts/run/`.

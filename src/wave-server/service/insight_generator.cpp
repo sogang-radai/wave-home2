@@ -28,7 +28,7 @@ bool generateAndPersistInsights(
     AgentInsightJobResult result;
     if (runInsightJobSync(agent_base_url, body, result, out_error) != AgentClientResult::success)
     {
-        LOG_WARN(
+        WLOG_WARN(
             "insight generation job failed (user {}, surface {}, date {}): {}",
             user_id,
             surface,
@@ -94,7 +94,7 @@ INSERT INTO insight (
             ++next_id;
         }
 
-        LOG_INFO(
+        WLOG_INFO(
             "insight generation persisted {} item(s) (user {}, surface {}, date {})",
             result.items.size(),
             user_id,
@@ -104,7 +104,7 @@ INSERT INTO insight (
     catch (const std::exception& e)
     {
         out_error = e.what();
-        LOG_WARN(
+        WLOG_WARN(
             "insight persist failed (user {}, surface {}, date {}): {}",
             user_id,
             surface,

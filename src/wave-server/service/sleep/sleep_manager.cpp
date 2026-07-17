@@ -207,11 +207,11 @@ void SleepManager::reconcile()
             std::string error;
             if (!initPipeline(runtime, error))
             {
-                LOG_WARN("Sleep pipeline init failed for room {}: {}", config.roomId, error);
+                WLOG_WARN("Sleep pipeline init failed for room {}: {}", config.roomId, error);
                 continue;
             }
             m_runtimes.emplace(config.roomId, std::move(runtime));
-            LOG_INFO(
+            WLOG_INFO(
                 "Sleep runtime added (room={}, user={}, radar={})",
                 config.roomId,
                 config.userId,
@@ -355,7 +355,7 @@ ORDER BY r.id, ru.user_id, d.id
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("Sleep room config load failed: {}", e.what());
+        WLOG_WARN("Sleep room config load failed: {}", e.what());
     }
 
     return configs;
@@ -647,7 +647,7 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_stat 1m write failed: {}", e.what());
+        WLOG_WARN("sleep_stat 1m write failed: {}", e.what());
     }
 }
 
@@ -846,7 +846,7 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_stat 30m write failed: {}", e.what());
+        WLOG_WARN("sleep_stat 30m write failed: {}", e.what());
     }
 }
 
@@ -1000,7 +1000,7 @@ WHERE id = ?
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_session write failed: {}", e.what());
+        WLOG_WARN("sleep_session write failed: {}", e.what());
     }
 }
 
@@ -1031,7 +1031,7 @@ WHERE user_id = ?
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_stat session backfill failed: {}", e.what());
+        WLOG_WARN("sleep_stat session backfill failed: {}", e.what());
     }
 }
 
@@ -1063,7 +1063,7 @@ void SleepManager::processJob(const SleepJob& job)
         if (runSleepJobSync(app.config.agent.base_url, "/sleep/v1/summaries", body, agent_result, error)
             != AgentClientResult::success)
         {
-            LOG_WARN("sleep summary job failed (stat {}): {}", job.statId, error);
+            WLOG_WARN("sleep summary job failed (stat {}): {}", job.statId, error);
             try
             {
                 const std::string fallback = job.payload.value("summaryText", std::string("수면 구간 요약"));
@@ -1074,7 +1074,7 @@ void SleepManager::processJob(const SleepJob& job)
             }
             catch (const std::exception& e)
             {
-                LOG_WARN("sleep summary fallback write failed: {}", e.what());
+                WLOG_WARN("sleep summary fallback write failed: {}", e.what());
             }
             return;
         }
@@ -1089,7 +1089,7 @@ void SleepManager::processJob(const SleepJob& job)
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("sleep summary write failed: {}", e.what());
+            WLOG_WARN("sleep summary write failed: {}", e.what());
         }
         return;
     }
@@ -1137,7 +1137,7 @@ void SleepManager::processJob(const SleepJob& job)
         if (runSleepJobSync(app.config.agent.base_url, "/sleep/v1/reports", body, agent_result, error)
             != AgentClientResult::success)
         {
-            LOG_WARN("sleep daily report job failed ({}): {}", job.periodStart, error);
+            WLOG_WARN("sleep daily report job failed ({}): {}", job.periodStart, error);
             return;
         }
 
@@ -1167,7 +1167,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("sleep_report daily write failed: {}", e.what());
+            WLOG_WARN("sleep_report daily write failed: {}", e.what());
         }
 
         {
@@ -1175,7 +1175,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
             if (!generateAndPersistInsights(
                     client, app.config.agent.base_url, job.userId, "sleep_report", job.periodStart, insight_error))
             {
-                LOG_WARN("insight generation (sleep_report daily) failed: {}", insight_error);
+                WLOG_WARN("insight generation (sleep_report daily) failed: {}", insight_error);
             }
         }
         return;
@@ -1259,7 +1259,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         if (runSleepJobSync(app.config.agent.base_url, "/sleep/v1/reports", body, agent_result, error)
             != AgentClientResult::success)
         {
-            LOG_WARN("sleep weekly report job failed ({}): {}", job.periodStart, error);
+            WLOG_WARN("sleep weekly report job failed ({}): {}", job.periodStart, error);
             return;
         }
 
@@ -1287,7 +1287,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("sleep_report weekly write failed: {}", e.what());
+            WLOG_WARN("sleep_report weekly write failed: {}", e.what());
         }
 
         {
@@ -1295,7 +1295,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
             if (!generateAndPersistInsights(
                     client, app.config.agent.base_url, job.userId, "sleep_report", job.periodStart, insight_error))
             {
-                LOG_WARN("insight generation (sleep_report weekly) failed: {}", insight_error);
+                WLOG_WARN("insight generation (sleep_report weekly) failed: {}", insight_error);
             }
         }
     }

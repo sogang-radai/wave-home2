@@ -352,7 +352,7 @@ std::optional<int64_t> PowerManager::resolveDbDeviceId(const std::string& extern
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("PowerManager: device lookup failed for {}: {}", external_id, e.what());
+        WLOG_WARN("PowerManager: device lookup failed for {}: {}", external_id, e.what());
         return std::nullopt;
     }
 }
@@ -412,7 +412,7 @@ ON CONFLICT DO UPDATE SET
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("PowerManager: power_energy write failed: {}", e.what());
+        WLOG_WARN("PowerManager: power_energy write failed: {}", e.what());
     }
 }
 

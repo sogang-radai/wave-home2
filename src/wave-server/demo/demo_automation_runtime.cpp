@@ -200,7 +200,7 @@ namespace
 
     void tick_alarms(const std::string& runtime_id, const db::DbClientPtr& client)
     {
-        const auto session_copy = DemoSessionRegistry::instance().get(runtime_id);
+        const auto session_copy = demoSessionRegistry().get(runtime_id);
         if (!session_copy)
             return;
 
@@ -208,7 +208,7 @@ namespace
         std::vector<Json::Value> due;
 
         {
-            auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+            auto locked_session = demoSessionRegistry().lockSession(runtime_id);
             auto& session = *locked_session;
             for (const auto& alarm : session.alarms)
             {
@@ -251,7 +251,7 @@ namespace
         std::vector<std::string> once_to_disable;
 
         {
-            auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+            auto locked_session = demoSessionRegistry().lockSession(runtime_id);
             auto& session = *locked_session;
 
             for (Json::ArrayIndex i = 0; i < session.rules.size(); ++i)
@@ -346,12 +346,6 @@ namespace
     }
 }
 
-DemoAutomationRuntime& DemoAutomationRuntime::get()
-{
-    static DemoAutomationRuntime instance;
-    return instance;
-}
-
 DemoAutomationRuntime::~DemoAutomationRuntime()
 {
     stop();
@@ -363,7 +357,7 @@ void DemoAutomationRuntime::start()
         return;
 
     m_worker = std::thread([this]() { runLoop(); });
-    LOG_INFO("DemoAutomationRuntime started");
+    WLOG_INFO("DemoAutomationRuntime started");
 }
 
 void DemoAutomationRuntime::stop()
@@ -374,7 +368,7 @@ void DemoAutomationRuntime::stop()
     m_stopCv.notify_all();
     if (m_worker.joinable())
         m_worker.join();
-    LOG_INFO("DemoAutomationRuntime stopped");
+    WLOG_INFO("DemoAutomationRuntime stopped");
 }
 
 void DemoAutomationRuntime::tickSession(const std::string& runtime_id)
@@ -395,7 +389,7 @@ void DemoAutomationRuntime::tick()
     if (!demoVirtualDevicesEnabled())
         return;
 
-    const auto ids = DemoSessionRegistry::instance().listRuntimeIds();
+    const auto ids = demoSessionRegistry().listRuntimeIds();
     for (const auto& runtime_id : ids)
         tickSession(runtime_id);
 }

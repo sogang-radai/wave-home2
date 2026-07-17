@@ -418,7 +418,7 @@ namespace
 
 void ensureDemoSessionSeeded(const std::string& runtime_id, const db::DbClientPtr& client)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     if (session.data_seeded || !client)
         return;
@@ -489,7 +489,7 @@ Json::Value demoListAlarms(
 {
     ensureDemoSessionSeeded(runtime_id, client);
     Json::Value items(Json::arrayValue);
-    const auto session = DemoSessionRegistry::instance().get(runtime_id);
+    const auto session = demoSessionRegistry().get(runtime_id);
     if (!session)
         return items;
 
@@ -527,7 +527,7 @@ Json::Value demoCreateAlarm(
     }
 
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value alarm;
     alarm["id"] = static_cast<Json::Int64>(next_numeric_id(session.alarms));
@@ -558,7 +558,7 @@ Json::Value demoUpdateAlarm(
     std::string& error,
     std::string& /*field*/)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.alarms.size(); ++i)
     {
@@ -585,7 +585,7 @@ Json::Value demoUpdateAlarm(
 
 bool demoDeleteAlarm(const std::string& runtime_id, const int64_t alarm_id)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value kept(Json::arrayValue);
     bool removed = false;
@@ -615,7 +615,7 @@ Json::Value demoListNotifications(
     body["unreadCount"] = 0;
     body["hasMore"] = false;
 
-    const auto session = DemoSessionRegistry::instance().get(runtime_id);
+    const auto session = demoSessionRegistry().get(runtime_id);
     if (!session)
         return body;
 
@@ -673,7 +673,7 @@ Json::Value demoMarkAllNotificationsRead(
     const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.notifications.size(); ++i)
     {
@@ -694,7 +694,7 @@ Json::Value demoMarkNotificationRead(
     const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.notifications.size(); ++i)
     {
@@ -717,7 +717,7 @@ Json::Value demoAppendNotification(
     const std::string& type,
     const std::string& message)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     if (!session.notifications.isArray())
         session.notifications = Json::Value(Json::arrayValue);
@@ -740,7 +740,7 @@ Json::Value demoAppendNotification(
 
 Json::Value demoListSpeechOverlays(const std::string& runtime_id)
 {
-    const auto session = DemoSessionRegistry::instance().get(runtime_id);
+    const auto session = demoSessionRegistry().get(runtime_id);
     if (!session || !session->speech_overlays.isObject())
         return Json::Value(Json::objectValue);
     return session->speech_overlays;
@@ -753,7 +753,7 @@ void demoSetSpeechOverlay(
 {
     if (device_id.empty() || !overlay.isObject())
         return;
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     if (!session.speech_overlays.isObject())
         session.speech_overlays = Json::Value(Json::objectValue);
@@ -762,7 +762,7 @@ void demoSetSpeechOverlay(
 
 void demoClearSpeechOverlay(const std::string& runtime_id, const std::string& device_id)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     if (!session.speech_overlays.isObject())
         return;
@@ -771,7 +771,7 @@ void demoClearSpeechOverlay(const std::string& runtime_id, const std::string& de
 
 void demoRefreshSpeechOverlays(const std::string& runtime_id, const int64_t now_ms)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     if (!session.speech_overlays.isObject())
         return;
@@ -825,7 +825,7 @@ void demoRefreshSpeechOverlays(const std::string& runtime_id, const int64_t now_
 
 void demoDisableAlarm(const std::string& runtime_id, const int64_t alarm_id)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.alarms.size(); ++i)
     {
@@ -865,7 +865,7 @@ Json::Value demoListScheduleTasks(
         ensureDemoSessionSeeded(runtime_id, client);
 
     Json::Value items(Json::arrayValue);
-    if (const auto session = DemoSessionRegistry::instance().get(runtime_id))
+    if (const auto session = demoSessionRegistry().get(runtime_id))
     {
         for (const auto& item : session->schedule_tasks)
         {
@@ -897,7 +897,7 @@ Json::Value demoCreateScheduleTask(
         return Json::Value();
     }
 
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value task;
     task["id"] = static_cast<Json::Int64>(next_numeric_id(session.schedule_tasks));
@@ -925,7 +925,7 @@ Json::Value demoUpdateScheduleTask(
     std::string& error,
     std::string& /*field*/)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.schedule_tasks.size(); ++i)
     {
@@ -946,7 +946,7 @@ Json::Value demoUpdateScheduleTask(
 
 bool demoDeleteScheduleTask(const std::string& runtime_id, const int64_t task_id)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value kept(Json::arrayValue);
     bool removed = false;
@@ -970,7 +970,7 @@ Json::Value demoCreateRule(const std::string& runtime_id, const Json::Value& bod
         code = "INVALID_REQUEST";
         return Json::Value();
     }
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value rule = body;
     if (!rule.isMember("id") || !rule["id"].isString() || rule["id"].asString().empty())
@@ -984,7 +984,7 @@ Json::Value demoCreateRule(const std::string& runtime_id, const Json::Value& bod
 Json::Value demoListRules(const std::string& runtime_id, const int64_t user_id)
 {
     Json::Value items(Json::arrayValue);
-    if (const auto session = DemoSessionRegistry::instance().get(runtime_id))
+    if (const auto session = demoSessionRegistry().get(runtime_id))
     {
         for (const auto& item : session->rules)
         {
@@ -1031,7 +1031,7 @@ Json::Value demoUpdateRule(
     const Json::Value& body,
     std::string& code)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.rules.size(); ++i)
     {
@@ -1052,7 +1052,7 @@ Json::Value demoUpdateRule(
 
 bool demoDeleteRule(const std::string& runtime_id, const std::string& rule_id)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value kept(Json::arrayValue);
     bool removed = false;
@@ -1076,7 +1076,7 @@ Json::Value demoListChatSummaries(
 {
     ensureDemoSessionSeeded(runtime_id, client);
     Json::Value items(Json::arrayValue);
-    const auto session = DemoSessionRegistry::instance().get(runtime_id);
+    const auto session = demoSessionRegistry().get(runtime_id);
     if (!session)
         return items;
 
@@ -1104,7 +1104,7 @@ std::optional<Json::Value> demoGetChatConversation(
     const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     if (const auto* found = find_chat_conversation(session, user_id, conversation_id))
     {
@@ -1123,7 +1123,7 @@ std::optional<Json::Value> demoCreateChatConversation(
     const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     const auto stamp = nowStamp();
     Json::Value conversation;
@@ -1151,7 +1151,7 @@ std::optional<Json::Value> demoRenameChatConversation(
     const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
@@ -1171,7 +1171,7 @@ bool demoDeleteChatConversation(
     const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     Json::Value kept(Json::arrayValue);
     bool removed = false;
@@ -1199,7 +1199,7 @@ std::optional<Json::Value> demoAppendChatUserMessage(
     const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
@@ -1252,7 +1252,7 @@ bool demoAppendChatAssistantMessage(
     const Json::Value& tool_events,
     const std::string& reasoning)
 {
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
@@ -1345,7 +1345,7 @@ Json::Value demoGetAiAgentSettings(
     const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    const auto session = DemoSessionRegistry::instance().get(runtime_id);
+    const auto session = demoSessionRegistry().get(runtime_id);
     Json::Value value = default_ai_agent_settings();
     if (!session || !session->ai_agent_settings.isObject())
         return value;
@@ -1369,7 +1369,7 @@ Json::Value demoPutAiAgentSettings(
     std::string& field)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto locked_session = DemoSessionRegistry::instance().lockSession(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
     auto& session = *locked_session;
     if (!session.ai_agent_settings.isObject())
         session.ai_agent_settings = Json::Value(Json::objectValue);

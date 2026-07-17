@@ -91,7 +91,7 @@ void AlarmManager::start()
 
     reconcile();
     m_worker = std::thread([this]() { runLoop(); });
-    LOG_INFO("AlarmManager started");
+    WLOG_INFO("AlarmManager started");
 }
 
 void AlarmManager::stop()
@@ -195,7 +195,7 @@ ORDER BY a.time_minute ASC
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("AlarmManager load failed: {}", e.what());
+        WLOG_WARN("AlarmManager load failed: {}", e.what());
     }
 
     return out;
@@ -265,7 +265,7 @@ void AlarmManager::disableOnceAlarm(int64_t alarm_id)
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("AlarmManager disable once alarm failed: {}", e.what());
+        WLOG_WARN("AlarmManager disable once alarm failed: {}", e.what());
     }
 }
 
@@ -288,7 +288,7 @@ void AlarmManager::insertNotification(int64_t user_id, const std::string& messag
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("AlarmManager notification insert failed: {}", e.what());
+        WLOG_WARN("AlarmManager notification insert failed: {}", e.what());
     }
 }
 
@@ -296,7 +296,7 @@ void AlarmManager::executeMethod(const AlarmRecord& alarm)
 {
     if (alarm.device_external_id.empty() || !alarm.method.isObject())
     {
-        LOG_WARN("Alarm {} has no device or method", alarm.id);
+        WLOG_WARN("Alarm {} has no device or method", alarm.id);
         return;
     }
 
@@ -377,13 +377,13 @@ void AlarmManager::executeMethod(const AlarmRecord& alarm)
         return;
     }
 
-    LOG_WARN("Alarm {} unsupported method type: {}", alarm.id, type);
+    WLOG_WARN("Alarm {} unsupported method type: {}", alarm.id, type);
 }
 
 void AlarmManager::fireAlarm(const AlarmRecord& alarm)
 {
     if (alarm.smart_wake && !alarm.radar_external_id.empty())
-        LOG_INFO("Alarm {} smart wake requested (firing at scheduled time)", alarm.id);
+        WLOG_INFO("Alarm {} smart wake requested (firing at scheduled time)", alarm.id);
 
     executeMethod(alarm);
     insertNotification(alarm.user_id, "\"" + alarm.name + "\" 알람이 울렸습니다.");
@@ -395,7 +395,7 @@ void AlarmManager::fireAlarm(const AlarmRecord& alarm)
         "알람 실행",
         "alarm:" + std::to_string(alarm.id));
 
-    LOG_INFO("Alarm fired: id={} name={}", alarm.id, alarm.name);
+    WLOG_INFO("Alarm fired: id={} name={}", alarm.id, alarm.name);
 }
 
 void AlarmManager::tick()

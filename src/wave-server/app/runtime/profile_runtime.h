@@ -18,6 +18,8 @@ class IChatSessionFacade;
 
 class AppState;
 struct AppConfig;
+class DemoSessionRegistry;
+class DemoPowerMeter;
 
 enum class ProfileKind
 {
@@ -56,6 +58,10 @@ public:
     virtual facade::IScheduleTasksFacade& scheduleTasks() = 0;
     virtual facade::IRulesFacade& rules() = 0;
     virtual facade::IChatSessionFacade& chat() = 0;
+
+    /** Demo-only state; nullptr outside DemoProfileRuntime. */
+    virtual DemoSessionRegistry* demoSessions() { return nullptr; }
+    virtual DemoPowerMeter* demoPowerMeter() { return nullptr; }
 };
 
 std::unique_ptr<IProfileRuntime> createProfileRuntime(ProfileKind kind);
