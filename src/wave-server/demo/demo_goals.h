@@ -35,10 +35,12 @@ std::optional<Json::Value> demoUpdateGoalStatus(
     const std::string& status,
     std::string& error);
 
+/** Cached session coaching, else agent job (no DB persist), else category fallback. */
 std::optional<Json::Value> demoGetGoalCoaching(
     const std::string& runtime_id,
     int64_t user_id,
     int64_t goal_id,
+    const std::string& agent_base_url,
     std::string& error);
 
 std::optional<Json::Value> demoApplyGoalRecommendation(

@@ -4,7 +4,11 @@
 #include <chrono>
 #include <ctime>
 #include <cstdio>
+#include <sstream>
 
+#include "../core/json.h"
+#include "../core/logger.h"
+#include "../service/agent_client.h"
 #include "demo_session_registry.h"
 #include "demo_session_writes.h"
 
@@ -89,136 +93,59 @@ namespace
         return false;
     }
 
-    struct CategoryPreset
+    Json::Value json_cpp_from_nlohmann(const json& value)
     {
-        const char* past_summary;
-        const char* projection;
-        double completion_rate;
-        const char* trend;
-        const char* rec_title;
-        const char* rec_text;
-        const char* day_of_week;
-        const char* tip_title;
-        const char* tip_text;
-    };
-
-    const CategoryPreset& preset_for(const std::string& category)
-    {
-        static const CategoryPreset kSleep = {
-            "최근 30일간 취침 관련 습관을 약 68% 완료했어요. 최근 며칠은 흐름이 흔들리는 추세예요.",
-            "지금 흐름이 이어지면 다음 달 완료율은 조금 더 낮아질 수 있어요. 취침 준비 알림을 다시 켜보는 걸 추천해요.",
-            0.68,
-            "declining",
-            "22:30 취침 준비 알림 추가",
-            "취침 30분 전 알림을 추가해 습관을 다시 잡아보세요.",
-            "mon",
-            "스마트폰은 침실 밖에 두기",
-            "자기 전 스마트폰 사용을 줄이면 취침 시간을 지키기 더 쉬워져요.",
-        };
-        static const CategoryPreset kPosture = {
-            "최근 30일간 자세 관련 습관을 약 74% 완료했어요. 꾸준한 편이에요.",
-            "이 페이스를 유지하면 다음 달에도 비슷한 완료율을 기대할 수 있어요.",
-            0.74,
-            "steady",
-            "오후 4시 목 스트레칭 알림",
-            "오래 앉아있는 시간대에 스트레칭 알림을 추가해보세요.",
-            "wed",
-            "모니터 높이 맞추기",
-            "눈높이에 모니터 상단을 맞추면 목·어깨 부담이 줄어요.",
-        };
-        static const CategoryPreset kMental = {
-            "최근 30일간 멘탈 관리 습관을 약 61% 완료했어요.",
-            "조금만 더 신경 쓰면 다음 달 완료율을 눈에 띄게 올릴 수 있어요.",
-            0.61,
-            "improving",
-            "저녁 10분 명상 알림",
-            "하루를 마무리하며 짧은 명상 시간을 가져보세요.",
-            "tue",
-            "취침 전 걱정 노트 작성해보기",
-            "자기 전 걱정거리를 적어두면 마음이 한결 가벼워져요.",
-        };
-        static const CategoryPreset kLife = {
-            "최근 30일간 생활 습관 목표를 약 70% 완료했어요.",
-            "지금 페이스라면 다음 달에도 무난히 목표를 이어갈 수 있어요.",
-            0.70,
-            "steady",
-            "아침 물 한 잔 마시기 알림",
-            "기상 직후 물 한 잔으로 하루를 시작해보세요.",
-            "thu",
-            "주간 회고 5분",
-            "주말에 한 주를 짧게 돌아보면 다음 주 계획이 쉬워져요.",
-        };
-        static const CategoryPreset kDiet = {
-            "최근 30일간 식습관 목표를 약 58% 완료했어요. 최근 개선되는 흐름이에요.",
-            "이 흐름을 이어가면 다음 달엔 완료율이 더 올라갈 수 있어요.",
-            0.58,
-            "improving",
-            "점심 채소 위주 식단 알림",
-            "점심시간 전 알림으로 식단 선택을 도와드려요.",
-            "fri",
-            "식사 전 물 한 잔 마시기",
-            "식사 전 물을 마시면 과식을 줄이는 데 도움이 돼요.",
-        };
-
-        if (category == "sleep")
-            return kSleep;
-        if (category == "posture")
-            return kPosture;
-        if (category == "mental")
-            return kMental;
-        if (category == "diet")
-            return kDiet;
-        return kLife;
+        Json::CharReaderBuilder reader;
+        Json::Value out;
+        std::string errors;
+        const auto text = value.dump();
+        std::istringstream stream(text);
+        if (!Json::parseFromStream(reader, stream, &out, &errors))
+            return Json::nullValue;
+        return out;
     }
 
-    Json::Value build_coaching(DemoSessionData& session, const Json::Value& goal)
+    Json::Value coaching_from_agent(
+        DemoSessionData& session,
+        const Json::Value& goal,
+        const json& content)
     {
-        const auto& preset = preset_for(goal["category"].asString());
         const int64_t goal_id = goal["id"].asInt64();
         int64_t rec_id = next_recommendation_id(session);
 
-        Json::Value action;
-        action["id"] = static_cast<Json::Int64>(rec_id++);
-        action["goalId"] = static_cast<Json::Int64>(goal_id);
-        action["kind"] = "action";
-        action["title"] = preset.rec_title;
-        action["text"] = preset.rec_text;
-        action["actionable"] = true;
-        action["actionType"] = "schedule_task";
-        action["approved"] = false;
-        action["ruleJson"] = Json::nullValue;
-        Json::Value schedule;
-        schedule["title"] = preset.rec_title;
-        schedule["dayOfWeek"] = preset.day_of_week;
-        schedule["scheduleKind"] = "weekly";
-        schedule["category"] = goal["category"].asString();
-        action["scheduleTaskJson"] = schedule;
-
-        Json::Value tip;
-        tip["id"] = static_cast<Json::Int64>(rec_id++);
-        tip["goalId"] = static_cast<Json::Int64>(goal_id);
-        tip["kind"] = "tip";
-        tip["title"] = preset.tip_title;
-        tip["text"] = preset.tip_text;
-        tip["actionable"] = false;
-        tip["actionType"] = Json::nullValue;
-        tip["approved"] = false;
-        tip["ruleJson"] = Json::nullValue;
-        tip["scheduleTaskJson"] = Json::nullValue;
-
-        Json::Value metrics;
-        metrics["completionRate"] = preset.completion_rate;
-        metrics["trend"] = preset.trend;
-        metrics["streakDays"] = 2;
-
         Json::Value coaching;
-        coaching["periodStart"] = today_date();
-        coaching["pastSummary"] = preset.past_summary;
-        coaching["projection"] = preset.projection;
-        coaching["projectedMetrics"] = metrics;
+        coaching["periodStart"] = content.value("periodStart", today_date());
+        coaching["pastSummary"] = content.value("pastSummary", std::string());
+        coaching["projection"] = content.value("projection", std::string());
+        coaching["projectedMetrics"] = json_cpp_from_nlohmann(content.value("projectedMetrics", json::object()));
+        coaching["source"] = "agent";
+
         Json::Value recommendations(Json::arrayValue);
-        recommendations.append(action);
-        recommendations.append(tip);
+        const json items = content.value("items", json::array());
+        for (const auto& item : items)
+        {
+            Json::Value rec;
+            rec["id"] = static_cast<Json::Int64>(rec_id++);
+            rec["goalId"] = static_cast<Json::Int64>(goal_id);
+            rec["kind"] = item.value("kind", std::string("tip"));
+            rec["title"] = item.value("title", std::string());
+            rec["text"] = item.value("text", std::string());
+            rec["actionable"] = item.value("actionable", false);
+            if (item.contains("actionType") && item["actionType"].is_string())
+                rec["actionType"] = item["actionType"].get<std::string>();
+            else
+                rec["actionType"] = Json::nullValue;
+            rec["approved"] = false;
+            if (item.contains("ruleJson") && !item["ruleJson"].is_null())
+                rec["ruleJson"] = json_cpp_from_nlohmann(item["ruleJson"]);
+            else
+                rec["ruleJson"] = Json::nullValue;
+            if (item.contains("scheduleTaskJson") && !item["scheduleTaskJson"].is_null())
+                rec["scheduleTaskJson"] = json_cpp_from_nlohmann(item["scheduleTaskJson"]);
+            else
+                rec["scheduleTaskJson"] = Json::nullValue;
+            recommendations.append(rec);
+        }
         coaching["recommendations"] = recommendations;
         return coaching;
     }
@@ -343,9 +270,9 @@ std::optional<Json::Value> demoCreateGoal(
     goal["updatedAt"] = now;
     session.goals.append(goal);
 
+    // Coaching is generated on first GET /coaching (agent first, then fallback).
     if (!session.goal_coachings.isObject())
         session.goal_coachings = Json::Value(Json::objectValue);
-    session.goal_coachings[coaching_key(goal["id"].asInt64())] = build_coaching(session, goal);
 
     Json::Value view = goal;
     view.removeMember("userId");
@@ -384,26 +311,60 @@ std::optional<Json::Value> demoGetGoalCoaching(
     const std::string& runtime_id,
     const int64_t user_id,
     const int64_t goal_id,
+    const std::string& agent_base_url,
     std::string& error)
 {
-    auto locked = demoSessionRegistry().lockSession(runtime_id);
-    auto& session = *locked;
-    if (!find_goal(session, user_id, goal_id))
+    Json::Value goal_copy;
     {
-        error = "목표를 찾을 수 없습니다.";
+        auto locked = demoSessionRegistry().lockSession(runtime_id);
+        auto& session = *locked;
+        const auto* goal = find_goal(session, user_id, goal_id);
+        if (!goal)
+        {
+            error = "목표를 찾을 수 없습니다.";
+            return std::nullopt;
+        }
+        goal_copy = *goal;
+
+        if (!session.goal_coachings.isObject())
+            session.goal_coachings = Json::Value(Json::objectValue);
+
+        const auto key = coaching_key(goal_id);
+        if (session.goal_coachings.isMember(key) && session.goal_coachings[key].isObject())
+            return session.goal_coachings[key];
+    }
+
+    if (agent_base_url.empty())
+    {
+        error = "AGENT_UNAVAILABLE: 목표 코칭 에이전트가 구성되지 않았습니다.";
         return std::nullopt;
     }
 
-    if (!session.goal_coachings.isObject())
-        session.goal_coachings = Json::Value(Json::objectValue);
+    json body;
+    body["userId"] = user_id;
+    body["goalId"] = goal_id;
+    body["goalTitle"] = goal_copy["title"].asString();
+    body["category"] = goal_copy["category"].asString();
+    body["periodStart"] = today_date();
+    body["embed"] = false;
 
-    const auto key = coaching_key(goal_id);
-    if (!session.goal_coachings.isMember(key) || !session.goal_coachings[key].isObject())
+    service::AgentGoalCoachingJobResult agent_result;
+    std::string agent_error;
+    if (service::runGoalCoachingJobSync(agent_base_url, body, agent_result, agent_error)
+        == service::AgentClientResult::success)
     {
-        error = "목표 코칭을 찾을 수 없습니다.";
-        return std::nullopt;
+        auto locked = demoSessionRegistry().lockSession(runtime_id);
+        const Json::Value coaching = coaching_from_agent(*locked, goal_copy, agent_result.content);
+        locked->goal_coachings[coaching_key(goal_id)] = coaching;
+        WLOG_INFO("demo goal coaching from agent (goal {})", goal_id);
+        return coaching;
     }
-    return session.goal_coachings[key];
+
+    // 의미 없는 목표·생성 실패 시 카테고리 프리셋 fallback 을 쓰지 않는다.
+    // (fallback 은 실제 코칭처럼 보여 사용자를 오해시킨다.)
+    WLOG_WARN("demo goal coaching agent unavailable (goal {}): {}", goal_id, agent_error);
+    error = agent_error.empty() ? "AGENT_UNAVAILABLE: 목표 코칭 생성에 실패했습니다." : agent_error;
+    return std::nullopt;
 }
 
 std::optional<Json::Value> demoApplyGoalRecommendation(

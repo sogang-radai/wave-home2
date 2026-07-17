@@ -50,6 +50,72 @@ namespace
             attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
         return resp;
     }
+
+    bool starts_with(const std::string& raw, const char* prefix)
+    {
+        const size_t n = std::char_traits<char>::length(prefix);
+        return raw.size() >= n && raw.compare(0, n, prefix) == 0;
+    }
+
+    /**
+     * agent_client 오류는 두 형태다.
+     * 1) 알려진 코드 접두: "INVALID_GOAL: …", "GENERATION_FAILED: …"
+     * 2) 자유 텍스트: "Failed to connect to agent at 127.0.0.1:8512"
+     *    → 콜론으로 무조건 자르면 포트(8512)만 message 로 남는다.
+     */
+    void split_agent_error(const std::string& raw, std::string& code, std::string& message)
+    {
+        static const char* kKnownCodes[] = {
+            "INVALID_GOAL",
+            "GENERATION_FAILED",
+            "AGENT_UNAVAILABLE",
+            "NOT_FOUND",
+            "JOB_ALREADY_RUNNING",
+        };
+        for (const char* known : kKnownCodes)
+        {
+            const std::string prefix = std::string(known) + ":";
+            if (!starts_with(raw, prefix.c_str()))
+                continue;
+            code = known;
+            message = raw.substr(prefix.size());
+            while (!message.empty() && (message[0] == ' ' || message[0] == '\t'))
+                message.erase(message.begin());
+            if (message.empty())
+                message = "목표 코칭 생성에 실패했습니다.";
+            return;
+        }
+
+        if (raw.find("Failed to connect to agent") != std::string::npos
+            || raw.find("DNS resolve failed") != std::string::npos
+            || raw.find("Agent HTTP error") != std::string::npos)
+        {
+            code = "AGENT_UNAVAILABLE";
+            message = "목표 코칭 에이전트에 연결하지 못했어요. 데모 에이전트(8512)가 실행 중인지 확인해 주세요.";
+            return;
+        }
+
+        code = "AGENT_UNAVAILABLE";
+        message = raw.empty() ? "목표 코칭 생성에 실패했습니다." : raw;
+    }
+
+    void respond_coaching_error(const HttpResponseCallback& callback, const std::string& raw_error)
+    {
+        std::string code;
+        std::string message;
+        split_agent_error(raw_error, code, message);
+        if (code == "INVALID_GOAL")
+        {
+            respondError(callback, 422, "INVALID_GOAL", message);
+            return;
+        }
+        if (code == "NOT_FOUND" || raw_error.find("찾을") != std::string::npos)
+        {
+            respondError(callback, 404, "NOT_FOUND", message.empty() ? raw_error : message);
+            return;
+        }
+        respondError(callback, 502, code.empty() ? "AGENT_UNAVAILABLE" : code, message);
+    }
 }
 
 void GoalsController::createGoal(const HttpRequestPtr& req, HttpResponseCallback&& callback)
@@ -219,10 +285,15 @@ void GoalsController::getCoaching(const HttpRequestPtr& req, HttpResponseCallbac
     {
         const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
         std::string error;
-        const auto coaching = demoGetGoalCoaching(runtime_id, *user_id, goalId, error);
+        const auto coaching = demoGetGoalCoaching(
+            runtime_id,
+            *user_id,
+            goalId,
+            AppState::get().config.agent.base_url,
+            error);
         if (!coaching)
         {
-            respondError(callback, 404, "NOT_FOUND", error);
+            respond_coaching_error(callback, error);
             return;
         }
         callback(json_response(req, *coaching, runtime_id));
@@ -257,7 +328,7 @@ void GoalsController::getCoaching(const HttpRequestPtr& req, HttpResponseCallbac
         error);
     if (!generated)
     {
-        respondError(callback, 502, "AGENT_UNAVAILABLE", "목표 코칭 생성에 실패했습니다: " + error);
+        respond_coaching_error(callback, error);
         return;
     }
 

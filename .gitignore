@@ -23,6 +23,9 @@ mock/ai_manual/
 # Runtime logs
 logs/
 
+# Local Ollama thinking toggle state
+scripts/ollama/.think
+
 # SleepNet / GestureNet — large local artifacts
 sleep-net/dataset/
 sleep-net/samples/
