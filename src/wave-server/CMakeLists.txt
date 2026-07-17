@@ -23,7 +23,14 @@ set(_wave_server_sources
     service/trigger_manager.cpp
     service/ir_trigger_bridge.cpp
     web/server.cpp
-    web/demo_policy.cpp
+    demo/demo_policy.cpp
+    web/listener_policy.cpp
+    facade/real_alarms_facade.cpp
+    facade/real_schedule_tasks_facade.cpp
+    facade/real_rules_facade.cpp
+    facade/real_iot_facade.cpp
+    facade/real_devices_internal_facade.cpp
+    facade/real_chat_session_facade.cpp
     demo/demo_runtime_id.cpp
     demo/demo_session_registry.cpp
     demo/demo_device_simulator.cpp
@@ -31,6 +38,12 @@ set(_wave_server_sources
     demo/demo_session_writes.cpp
     demo/demo_power_meter.cpp
     demo/demo_automation_runtime.cpp
+    demo/demo_alarms_facade.cpp
+    demo/demo_schedule_tasks_facade.cpp
+    demo/demo_rules_facade.cpp
+    demo/demo_iot_facade.cpp
+    demo/demo_devices_internal_facade.cpp
+    demo/demo_chat_session_facade.cpp
     db/sqlite_vec_support.cpp
     web/http/api_controller.cpp
     web/http/v1/health_controller.cpp

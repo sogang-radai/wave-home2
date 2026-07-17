@@ -7,6 +7,15 @@
 
 WAVE_NAMESPACE_BEGIN
 
+namespace facade {
+class IIotFacade;
+class IDevicesInternalFacade;
+class IAlarmsFacade;
+class IScheduleTasksFacade;
+class IRulesFacade;
+class IChatSessionFacade;
+}
+
 class AppState;
 struct AppConfig;
 
@@ -40,6 +49,13 @@ public:
 
     /** Tear down only what this profile started. */
     virtual void shutdown(AppState& app) = 0;
+
+    virtual facade::IIotFacade& iot() = 0;
+    virtual facade::IDevicesInternalFacade& devicesInternal() = 0;
+    virtual facade::IAlarmsFacade& alarms() = 0;
+    virtual facade::IScheduleTasksFacade& scheduleTasks() = 0;
+    virtual facade::IRulesFacade& rules() = 0;
+    virtual facade::IChatSessionFacade& chat() = 0;
 };
 
 std::unique_ptr<IProfileRuntime> createProfileRuntime(ProfileKind kind);

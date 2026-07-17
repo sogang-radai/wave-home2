@@ -11,6 +11,8 @@
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_session_writes.h"
 #include "../../../demo/demo_runtime_id.h"
+#include "../../../facade/alarms_facade.h"
+#include "../../../facade/schedule_tasks_facade.h"
 #include "../../../service/alarm_manager.h"
 #include "../v1/iot_store.h"
 #include "../v1/session_store.h"
@@ -1107,20 +1109,15 @@ void InternalController::listAlarms(const HttpRequestPtr& req, HttpResponseCallb
     if (const auto enabled = parse_bool_param(req->getParameter("enabled")))
         filter.enabled = *enabled;
 
-    AlarmsInternalStore store(client);
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        std::optional<bool> enabled_filter;
-        if (const auto enabled = parse_bool_param(req->getParameter("enabled")))
-            enabled_filter = *enabled;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            demoListAlarms(runtime_id, *user_id, client, enabled_filter));
+    std::optional<bool> enabled_filter = filter.enabled;
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(
+        AppState::get().runtime().alarms().list(*user_id, enabled_filter, runtime_id, client));
+    if (!runtime_id.empty())
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-    callback(drogon::HttpResponse::newHttpJsonResponse(store.listAlarms(filter)));
+    callback(resp);
 }
 
 void InternalController::createAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback)
@@ -1136,35 +1133,23 @@ void InternalController::createAlarm(const HttpRequestPtr& req, HttpResponseCall
         return;
     }
 
-    AlarmsInternalStore store(client);
     std::string error;
     std::string field;
+    Json::Value body = *json;
     if (demoVirtualDevicesEnabled())
-    {
-        Json::Value body = *json;
         enrich_demo_runtime_body(req, body);
-        const auto runtime_id = body["demoRuntimeId"].asString();
-        const auto created = demoCreateAlarm(runtime_id, body, client, error, field);
-        if (created.isNull())
-            v1::respondError(callback, 400, "VALIDATION_ERROR", error, field);
-        else
-        {
-            auto resp = drogon::HttpResponse::newHttpJsonResponse(created);
-            resp->setStatusCode(drogon::k201Created);
-            attach_demo_runtime_cookie(req, resp, body);
-            callback(resp);
-        }
-        return;
-    }
-
-    const auto created = store.createAlarm(*json, error, field);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? body.get("demoRuntimeId", "").asString()
+        : std::string();
+    const auto created = AppState::get().runtime().alarms().create(body, runtime_id, client, error, field);
     if (created.isNull())
         v1::respondError(callback, 400, "VALIDATION_ERROR", error, field);
     else
     {
-        service::AlarmManager::get().reconcile();
         auto resp = drogon::HttpResponse::newHttpJsonResponse(created);
         resp->setStatusCode(drogon::k201Created);
+        if (!runtime_id.empty())
+            attach_demo_runtime_cookie(req, resp, body);
         callback(resp);
     }
 }
@@ -1197,34 +1182,21 @@ void InternalController::updateAlarm(const HttpRequestPtr& req, HttpResponseCall
 
     std::string error;
     std::string field;
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
-        const auto updated = demoUpdateAlarm(runtime_id, *alarm_id, *json, error, field);
-        if (updated.isNull())
-        {
-            const int status = error.find("찾을") != std::string::npos ? 404 : 400;
-            v1::respondError(callback, status, status == 404 ? "NOT_FOUND" : "VALIDATION_ERROR", error, field);
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(updated);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    AlarmsInternalStore store(client);
-    const auto updated = store.updateAlarm(*user_id, *alarm_id, *json, error, field);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, json.get())
+        : std::string();
+    const auto updated = AppState::get().runtime().alarms().update(
+        *user_id, *alarm_id, *json, runtime_id, client, error, field);
     if (updated.isNull())
     {
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
         v1::respondError(callback, status, status == 404 ? "NOT_FOUND" : "VALIDATION_ERROR", error, field);
+        return;
     }
-    else
-    {
-        service::AlarmManager::get().reconcile();
-        callback(drogon::HttpResponse::newHttpJsonResponse(updated));
-    }
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(updated);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
 void InternalController::deleteAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string id)
@@ -1246,32 +1218,21 @@ void InternalController::deleteAlarm(const HttpRequestPtr& req, HttpResponseCall
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
+    std::string error;
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    const auto removed = AppState::get().runtime().alarms().remove(
+        *user_id, *alarm_id, runtime_id, client, error);
+    if (removed.isNull())
     {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        if (!demoDeleteAlarm(runtime_id, *alarm_id))
-        {
-            v1::respondError(callback, 404, "NOT_FOUND", "세션 알람을 찾을 수 없습니다.");
-            return;
-        }
-        Json::Value removed;
-        removed["id"] = static_cast<Json::Int64>(*alarm_id);
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(removed);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
+        v1::respondError(callback, 404, "NOT_FOUND", error);
         return;
     }
-
-    AlarmsInternalStore store(client);
-    std::string error;
-    const auto removed = store.deleteAlarm(*user_id, *alarm_id, error);
-    if (removed.isNull())
-        v1::respondError(callback, 404, "NOT_FOUND", error);
-    else
-    {
-        service::AlarmManager::get().reconcile();
-        callback(drogon::HttpResponse::newHttpJsonResponse(removed));
-    }
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(removed);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
 void InternalController::listScheduleTasks(const HttpRequestPtr& req, HttpResponseCallback&& callback)
@@ -1302,18 +1263,14 @@ void InternalController::listScheduleTasks(const HttpRequestPtr& req, HttpRespon
     if (const auto done = parse_bool_param(req->getParameter("done")))
         filter.done = *done;
 
-    ScheduleTasksInternalStore store(client);
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        ensureDemoSessionSeeded(runtime_id, client);
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            demoListScheduleTasks(runtime_id, *user_id, client));
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(
+        AppState::get().runtime().scheduleTasks().list(filter, runtime_id, client));
+    if (!runtime_id.empty())
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-    callback(drogon::HttpResponse::newHttpJsonResponse(store.list(filter)));
+    callback(resp);
 }
 
 void InternalController::createScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback)
@@ -1329,37 +1286,25 @@ void InternalController::createScheduleTask(const HttpRequestPtr& req, HttpRespo
         return;
     }
 
-    ScheduleTasksInternalStore store(client);
     std::string error;
     std::string field;
+    Json::Value body = *json;
     if (demoVirtualDevicesEnabled())
-    {
-        Json::Value body = *json;
         enrich_demo_runtime_body(req, body);
-        const auto runtime_id = body["demoRuntimeId"].asString();
-        ensureDemoSessionSeeded(runtime_id, client);
-        const auto created = demoCreateScheduleTask(runtime_id, body, error, field);
-        if (created.isNull())
-        {
-            v1::respondError(callback, 400, "INVALID_REQUEST", error, field);
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(created);
-        resp->setStatusCode(drogon::k201Created);
-        attach_demo_runtime_cookie(req, resp, body);
-        callback(resp);
-        return;
-    }
-
-    const auto created = store.create(*json, error, field);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? body.get("demoRuntimeId", "").asString()
+        : std::string();
+    const auto created = AppState::get().runtime().scheduleTasks().create(
+        body, runtime_id, client, error, field);
     if (!created)
     {
         v1::respondError(callback, 400, "INVALID_REQUEST", error, field);
         return;
     }
-
     auto resp = drogon::HttpResponse::newHttpJsonResponse(*created);
     resp->setStatusCode(drogon::k201Created);
+    if (!runtime_id.empty())
+        attach_demo_runtime_cookie(req, resp, body);
     callback(resp);
 }
 
@@ -1392,24 +1337,11 @@ void InternalController::updateScheduleTask(const HttpRequestPtr& req, HttpRespo
 
     std::string error;
     std::string field;
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
-        const auto updated = demoUpdateScheduleTask(runtime_id, *id, *json, error, field);
-        if (updated.isNull())
-        {
-            const int status = error.find("찾을") != std::string::npos ? 404 : 400;
-            v1::respondError(callback, status, status == 404 ? "NOT_FOUND" : "INVALID_REQUEST", error, field);
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(updated);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    ScheduleTasksInternalStore store(client);
-    const auto updated = store.update(*user_id, *id, *json, error, field);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, json.get())
+        : std::string();
+    const auto updated = AppState::get().runtime().scheduleTasks().update(
+        *user_id, *id, *json, runtime_id, client, error, field);
     if (!updated)
     {
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
@@ -1417,8 +1349,10 @@ void InternalController::updateScheduleTask(const HttpRequestPtr& req, HttpRespo
         v1::respondError(callback, status, code, error, field);
         return;
     }
-
-    callback(drogon::HttpResponse::newHttpJsonResponse(*updated));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(*updated);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
 void InternalController::deleteScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback,
@@ -1441,32 +1375,21 @@ void InternalController::deleteScheduleTask(const HttpRequestPtr& req, HttpRespo
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        if (!demoDeleteScheduleTask(runtime_id, *id))
-        {
-            v1::respondError(callback, 404, "NOT_FOUND", "세션 일정을 찾을 수 없습니다.");
-            return;
-        }
-        Json::Value removed;
-        removed["id"] = static_cast<Json::Int64>(*id);
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(removed);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    ScheduleTasksInternalStore store(client);
     std::string error;
-    const auto removed = store.remove(*user_id, *id, error);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    const auto removed = AppState::get().runtime().scheduleTasks().remove(
+        *user_id, *id, runtime_id, client, error);
     if (!removed)
     {
         v1::respondError(callback, 404, "NOT_FOUND", error);
         return;
     }
-
-    callback(drogon::HttpResponse::newHttpJsonResponse(*removed));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(*removed);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
 } // namespace internal

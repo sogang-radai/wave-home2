@@ -21,7 +21,8 @@
 #include "../app/app_state.h"
 #include "../db/database.h"
 #include "../db/sqlite_vec_support.h"
-#include "demo_policy.h"
+#include "../demo/demo_policy.h"
+#include "listener_policy.h"
 #include "util/exe_path.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -264,6 +265,8 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
             agent_api_bind,
             agent_api_port);
     }
+
+    registerListenerIsolation(port, agent_api_port);
 
     if (demo_mode)
         registerDemoPolicy();

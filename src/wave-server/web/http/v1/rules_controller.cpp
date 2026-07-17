@@ -8,6 +8,7 @@
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_runtime_id.h"
 #include "../../../demo/demo_session_writes.h"
+#include "../../../facade/rules_facade.h"
 #include "../../../device/device_manager.h"
 #include "../../../device/device_wire_id.hpp"
 #include "../../../service/rule_store.h"
@@ -179,37 +180,40 @@ void RulesController::listRules(const HttpRequestPtr& req, HttpResponseCallback&
 {
     auto& state = AppState::get();
     const auto device_filter = req->getParameter("deviceId");
+    const bool demo = demoVirtualDevicesEnabled();
+    const auto runtime_id = demo ? resolveDemoRuntimeId(req, nullptr) : std::string();
 
-    if (demoVirtualDevicesEnabled())
+    if (!demo && !require_rule_store(callback, state))
+        return;
+
+    facade::RuleListFilter filter;
+    if (!device_filter.empty())
+        filter.device_id = device_filter;
+
+    std::string code;
+    const auto listed = state.runtime().rules().list(filter, runtime_id, 0, code);
+    if (!code.empty())
     {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        const auto client = state.db();
-        ensureDemoSessionSeeded(runtime_id, client);
-        Json::Value body(Json::arrayValue);
-        for (const auto& item : demoListRules(runtime_id, 0))
-        {
-            if (!item.isObject() || !demo_rule_matches_device(item, device_filter))
-                continue;
-            body.append(prepare_demo_rule_view(item, client));
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
+        respondError(callback, 503, code, "룰 목록을 조회할 수 없습니다.");
         return;
     }
 
-    if (!require_rule_store(callback, state))
-        return;
-
-    const auto views = device_filter.empty()
-        ? state.ruleStore().list()
-        : state.ruleStore().listForDevice(device_filter);
-
     Json::Value body(Json::arrayValue);
-    for (const auto& view : views)
-        body.append(rule_view_to_json(enrich_view(state.deviceManager, view)));
+    const auto& items = listed.isMember("items") ? listed["items"] : listed;
+    for (const auto& item : items)
+    {
+        if (!item.isObject())
+            continue;
+        if (demo)
+            body.append(prepare_demo_rule_view(item, state.db()));
+        else
+            body.append(item);
+    }
 
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
 void RulesController::createRule(const HttpRequestPtr& req, HttpResponseCallback&& callback)
@@ -222,59 +226,27 @@ void RulesController::createRule(const HttpRequestPtr& req, HttpResponseCallback
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        Json::Value body = *json;
-        const auto runtime_id = resolveDemoRuntimeId(req, &body);
+    Json::Value body = *json;
+    const bool demo = demoVirtualDevicesEnabled();
+    const auto runtime_id = demo ? resolveDemoRuntimeId(req, &body) : std::string();
+    if (demo)
         body["demoRuntimeId"] = runtime_id;
-        ensureDemoSessionSeeded(runtime_id, state.db());
-        std::string code;
-        const auto created = demoCreateRule(runtime_id, body, code);
-        if (created.isNull())
-        {
-            respondError(callback, 400, code.empty() ? "INVALID_RULE" : code, "룰을 생성할 수 없습니다.");
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(prepare_demo_rule_view(created, state.db()));
-        resp->setStatusCode(drogon::k201Created);
+    else if (!require_rule_store(callback, state))
+        return;
+
+    std::string code;
+    const auto created = state.runtime().rules().create(body, runtime_id, code);
+    if (created.isNull() || !code.empty())
+    {
+        respondError(callback, 400, code.empty() ? "INVALID_RULE" : code, "룰을 생성할 수 없습니다.");
+        return;
+    }
+    Json::Value view = demo ? prepare_demo_rule_view(created, state.db()) : created;
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(view);
+    resp->setStatusCode(drogon::k201Created);
+    if (!runtime_id.empty())
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    if (!require_rule_store(callback, state))
-        return;
-
-    ws::json payload;
-    try
-    {
-        payload = json_from_request(*json);
-    }
-    catch (...)
-    {
-        respondError(callback, 400, "INVALID_RULE", "룰 데이터가 올바르지 않습니다.");
-        return;
-    }
-
-    std::string error;
-    if (!service::RuleStore::validate_payload(payload, error))
-    {
-        respondError(callback, 400, "INVALID_RULE", error);
-        return;
-    }
-
-    auto future = state.ruleStore().createAsync(payload);
-    try
-    {
-        const auto view = enrich_view(state.deviceManager, future.get());
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(rule_view_to_json(view));
-        resp->setStatusCode(drogon::k201Created);
-        callback(resp);
-    }
-    catch (const std::exception& e)
-    {
-        respondError(callback, 400, "INVALID_RULE", e.what());
-    }
+    callback(resp);
 }
 
 void RulesController::updateRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
@@ -287,86 +259,45 @@ void RulesController::updateRule(const HttpRequestPtr& req, HttpResponseCallback
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
+    Json::Value body = *json;
+    const bool demo = demoVirtualDevicesEnabled();
+    const auto runtime_id = demo ? resolveDemoRuntimeId(req, &body) : std::string();
+    if (!demo && !require_rule_store(callback, state))
+        return;
+
+    std::string code;
+    const auto updated = state.runtime().rules().update(ruleId, body, runtime_id, code);
+    if (updated.isNull() || !code.empty())
     {
-        Json::Value body = *json;
-        const auto runtime_id = resolveDemoRuntimeId(req, &body);
-        ensureDemoSessionSeeded(runtime_id, state.db());
-        std::string code;
-        const auto updated = demoUpdateRule(runtime_id, ruleId, body, code);
-        if (!code.empty())
-        {
-            respondError(callback, 404, "NOT_FOUND", "룰을 찾을 수 없습니다.");
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(prepare_demo_rule_view(updated, state.db()));
+        respondError(callback, 404, "NOT_FOUND", "룰을 찾을 수 없습니다.");
+        return;
+    }
+    Json::Value view = demo ? prepare_demo_rule_view(updated, state.db()) : updated;
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(view);
+    if (!runtime_id.empty())
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    if (!require_rule_store(callback, state))
-        return;
-
-    ws::json patch;
-    try
-    {
-        patch = json_from_request(*json);
-    }
-    catch (...)
-    {
-        respondError(callback, 400, "INVALID_RULE", "룰 데이터가 올바르지 않습니다.");
-        return;
-    }
-
-    auto future = state.ruleStore().updateAsync(ruleId, patch);
-    try
-    {
-        const auto view = enrich_view(state.deviceManager, future.get());
-        callback(drogon::HttpResponse::newHttpJsonResponse(rule_view_to_json(view)));
-    }
-    catch (const std::exception& e)
-    {
-        respondError(callback, 404, "NOT_FOUND", e.what());
-    }
+    callback(resp);
 }
 
 void RulesController::deleteRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     auto& state = AppState::get();
-
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        ensureDemoSessionSeeded(runtime_id, state.db());
-        if (!demoDeleteRule(runtime_id, ruleId))
-        {
-            respondError(callback, 404, "NOT_FOUND", "룰을 찾을 수 없습니다.");
-            return;
-        }
-        Json::Value body;
-        body["id"] = ruleId;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    if (!require_rule_store(callback, state))
+    const bool demo = demoVirtualDevicesEnabled();
+    const auto runtime_id = demo ? resolveDemoRuntimeId(req, nullptr) : std::string();
+    if (!demo && !require_rule_store(callback, state))
         return;
 
-    auto future = state.ruleStore().deleteAsync(ruleId);
-    try
-    {
-        (void)future.get();
-        Json::Value body;
-        body["id"] = ruleId;
-        callback(drogon::HttpResponse::newHttpJsonResponse(body));
-    }
-    catch (const std::exception&)
+    std::string code;
+    const auto removed = state.runtime().rules().remove(ruleId, runtime_id, code);
+    if (removed.isNull() || !code.empty())
     {
         respondError(callback, 404, "NOT_FOUND", "룰을 찾을 수 없습니다.");
+        return;
     }
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(removed);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
 void RulesController::setRuleEnabled(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
@@ -379,140 +310,51 @@ void RulesController::setRuleEnabled(const HttpRequestPtr& req, HttpResponseCall
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        Json::Value body;
-        body["enabled"] = (*json)["enabled"].asBool();
-        const auto runtime_id = resolveDemoRuntimeId(req, &body);
-        ensureDemoSessionSeeded(runtime_id, state.db());
-        std::string code;
-        const auto updated = demoUpdateRule(runtime_id, ruleId, body, code);
-        if (!code.empty())
-        {
-            respondError(callback, 404, "NOT_FOUND", "룰을 찾을 수 없습니다.");
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(prepare_demo_rule_view(updated, state.db()));
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    if (!require_rule_store(callback, state))
+    const bool demo = demoVirtualDevicesEnabled();
+    const auto runtime_id = demo ? resolveDemoRuntimeId(req, json.get()) : std::string();
+    if (!demo && !require_rule_store(callback, state))
         return;
 
-    auto future = state.ruleStore().setEnabledAsync(ruleId, (*json)["enabled"].asBool());
-    try
-    {
-        const auto view = enrich_view(state.deviceManager, future.get());
-        callback(drogon::HttpResponse::newHttpJsonResponse(rule_view_to_json(view)));
-    }
-    catch (const std::exception&)
+    std::string code;
+    const auto updated = state.runtime().rules().setEnabled(
+        ruleId, (*json)["enabled"].asBool(), runtime_id, code);
+    if (updated.isNull() || !code.empty())
     {
         respondError(callback, 404, "NOT_FOUND", "룰을 찾을 수 없습니다.");
+        return;
     }
+    Json::Value view = demo ? prepare_demo_rule_view(updated, state.db()) : updated;
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(view);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
 void RulesController::executeRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId)
 {
     auto& state = AppState::get();
+    const bool demo = demoVirtualDevicesEnabled();
+    const auto runtime_id = demo ? resolveDemoRuntimeId(req, nullptr) : std::string();
+    if (!demo && !require_rule_store(callback, state))
+        return;
 
-    if (demoVirtualDevicesEnabled())
+    std::string code;
+    const auto body = state.runtime().rules().execute(ruleId, runtime_id, code);
+    if (code == "NOT_FOUND")
+        respondError(callback, 404, code, "룰을 찾을 수 없습니다.");
+    else if (code == "RULE_DISABLED")
+        respondError(callback, 409, code, "비활성화된 룰입니다.");
+    else if (code == "INVALID_RULE")
+        respondError(callback, 400, code, "룰 액션이 없습니다.");
+    else if (!code.empty())
+        respondError(callback, 500, code, "룰 실행에 실패했습니다.");
+    else
     {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        ensureDemoSessionSeeded(runtime_id, state.db());
-        Json::Value rule;
-        for (const auto& item : demoListRules(runtime_id, 0))
-        {
-            if (item.isObject() && item.get("id", "").asString() == ruleId)
-            {
-                rule = item;
-                break;
-            }
-        }
-        if (rule.isNull() || !rule.isObject())
-        {
-            respondError(callback, 404, "NOT_FOUND", "룰을 찾을 수 없습니다.");
-            return;
-        }
-        if (!rule.get("enabled", true).asBool())
-        {
-            respondError(callback, 409, "RULE_DISABLED", "비활성화된 룰입니다.");
-            return;
-        }
-        if (!rule.isMember("action") || !rule["action"].isObject())
-        {
-            respondError(callback, 400, "INVALID_RULE", "룰 액션이 없습니다.");
-            return;
-        }
-
-        const auto device_id = rule["action"].get("deviceId", "").asString();
-        const auto action_name = rule["action"].get("name", "").asString();
-        Json::Value invoke_body(Json::objectValue);
-        invoke_body["demoRuntimeId"] = runtime_id;
-        if (rule["action"].isMember("params") && rule["action"]["params"].isObject())
-            invoke_body["params"] = rule["action"]["params"];
-
-        DemoDeviceBackend backend(state.db());
-        std::string code;
-        backend.invokeAction(runtime_id, device_id, action_name, invoke_body, code);
-        if (!code.empty())
-        {
-            respondError(callback, 500, code, "룰 실행에 실패했습니다.");
-            return;
-        }
-
-        Json::Value body;
-        body["skipped"] = false;
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        if (!runtime_id.empty())
+            attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
         callback(resp);
-        return;
     }
-
-    if (!require_rule_store(callback, state))
-        return;
-
-    if (!state.automationReady())
-    {
-        respondError(callback, 503, "AUTOMATION_UNAVAILABLE", "액션 큐를 사용할 수 없습니다.");
-        return;
-    }
-
-    const auto rule = state.ruleStore().get(ruleId);
-    if (!rule)
-    {
-        respondError(callback, 404, "NOT_FOUND", "룰을 찾을 수 없습니다.");
-        return;
-    }
-
-    if (!rule->rule.enabled)
-    {
-        respondError(callback, 409, "RULE_DISABLED", "비활성화된 룰입니다.");
-        return;
-    }
-
-    service::ActionJob job;
-    job.targetDeviceId = rule->rule.action.deviceId;
-    job.actionName = rule->rule.action.name;
-    job.params = rule->rule.action.params;
-    job.execMode = rule->rule.execMode;
-    job.repeatIntervalMs = rule->rule.repeatIntervalMs;
-    job.ruleId = rule->rule.id;
-    job.sourceRef = rule->rule.schedule ? "schedule:" + rule->rule.id : "rule:" + rule->rule.id;
-    job.logMessage = "수동 룰 실행: " + rule->rule.name;
-
-    auto future = state.actionQueue().enqueueAndWait(job, 5000);
-    const auto result = future.get();
-    if (!result.code.empty())
-    {
-        respondError(callback, 500, result.code, "룰 실행에 실패했습니다.");
-        return;
-    }
-
-    Json::Value body;
-    body["skipped"] = false;
-    callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
 } // namespace v1

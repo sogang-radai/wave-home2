@@ -106,7 +106,7 @@ int main(int argc, const char* argv[])
     auto task_queue = std::make_unique<ws::TaskQueue>();
     if (!task_queue->init(12))
     {
-        LOG_ERROR("Task queue init failed");
+        LOG_ERROR("Task queue failed to initialize");
         return 1;
     }
 
@@ -127,5 +127,6 @@ int main(int argc, const char* argv[])
     LOG_INFO("Main loop stopped");
     app->shutdown();
     task_queue->shutdown();
+    
     return 0;
 }

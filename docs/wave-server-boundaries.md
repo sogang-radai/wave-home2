@@ -65,7 +65,9 @@
 | 소유 | `src/wave-server/web/http/internal/*` |
 | env | `WAVEHOME_AGENT_INTERNAL_BASE_URL` |
 
-> 현재 Drogon은 두 listener에 동일 라우트를 올린다. agent-api는 루프백 바인딩으로 외부 노출을 줄인다. 공개 포트에서 `/internal` 거부는 후속 강화 가능.
+> Drogon은 두 listener에 동일 라우트를 올리지만, `web/listener_policy.cpp` SyncAdvice가
+> client-api에서 `/internal/*`를, agent-api에서 그 외 경로를 **403**으로 거절한다.
+> agent-api는 기본 `127.0.0.1` 바인딩이다.
 
 ### 2.3 에이전트 outbound — 백엔드 → 에이전트
 
@@ -120,8 +122,8 @@
 |-------|------|
 | 0 | 경계·포트 고정 (`ports.txt` + 본 문서) |
 | 1 | ProfileRuntime / 기동 정리 |
-| 2 | `/internal` 경로를 agent-api listener로 더 엄격히 격리 (선택) |
-| 3 | Controllers thin + demo/prod Facade |
+| 2 | `/internal` 경로를 agent-api listener로 격리 (`listener_policy`) |
+| 3 | Controllers thin + demo/prod Facade (`facade/`, `demo/*_facade`) |
 | 4 | DemoProfileRuntime 소유권 |
 
 스크립트 레이아웃: `scripts/build/` · `scripts/download/` · `scripts/configure/` · `scripts/run/`.

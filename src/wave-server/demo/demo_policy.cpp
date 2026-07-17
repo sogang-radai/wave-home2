@@ -5,8 +5,8 @@
 #include <drogon/drogon.h>
 
 #include "../app/app_state.h"
-#include "../demo/demo_device_backend.h"
-#include "http/v1/session_store.h"
+#include "demo_device_backend.h"
+#include "../web/http/v1/session_store.h"
 
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN

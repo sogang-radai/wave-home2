@@ -22,7 +22,7 @@ Agent Server
     agent-api: not used
 
 Notes
-- client-api: browser / SPA (/api/v1, static)
-- Backend agent-api: wave-home-agent → /internal/v1 (bind 127.0.0.1 by default)
+- client-api: browser / SPA (/api/v1, static); /internal is rejected (403)
+- Backend agent-api: wave-home-agent → /internal/v1 only (bind 127.0.0.1 by default)
 - Agent Server agent-api: wave-home-agent listen (/chat, /sleep, /power, …)
 - See docs/wave-server-boundaries.md
