@@ -52,6 +52,8 @@ public:
         uint32_t opusBitrate = 28000;
         bool preferCompressedMic = true;
         bool preferCompressedSpk = true;
+        /** Linear mic gain applied to all inbound PCM (1.0 = unity). */
+        float micGain = 1.0f;
     };
 
     struct SessionConfig
@@ -118,6 +120,10 @@ public:
     ConnectionState getConnectionState() const;
     bool isLinkConnected() const;
     bool isIoActive() const;
+
+    /** Hot-update mic gain (clamped). Affects STT/companion and mic_level. */
+    void setMicGain(float gain);
+    float getMicGain() const;
 
     // Device
     int init(const json& config) override;

@@ -177,6 +177,27 @@ void SleepManager::start()
     });
 }
 
+bool SleepManager::isStationMicInUse(const std::string& station_external_id) const
+{
+    if (station_external_id.empty())
+        return false;
+
+    // try_lock: sleep tick holds m_mutex across device I/O; companion must not block on it.
+    std::unique_lock lock(m_mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+
+    for (const auto& [room_id, runtime] : m_runtimes)
+    {
+        (void)room_id;
+        if (!runtime.micSubscribed || !runtime.config.stationExternalId)
+            continue;
+        if (*runtime.config.stationExternalId == station_external_id)
+            return true;
+    }
+    return false;
+}
+
 void SleepManager::stop()
 {
     if (!m_running.exchange(false))

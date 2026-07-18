@@ -120,6 +120,7 @@ set(_wave_server_sources
     service/sleep/sleep_audio.cpp
     service/sleep/sleep_vec_store.cpp
     service/sleep/sleep_manager.cpp
+    service/companion/companion_manager.cpp
     auxiliary/stb_image.cpp
     "${CMAKE_SOURCE_DIR}/src/common/util/exe_path.cpp"
     "${CMAKE_SOURCE_DIR}/src/common/util/time_util.cpp"

@@ -46,12 +46,16 @@ AgentClientResult streamChatTurn(
     const AgentStreamEventCallback& on_event,
     std::string& out_error);
 
+/** Runs a chat turn via the streaming agent API so tool.start/tool.end are available.
+ *  out_tool_events (optional) receives UI-shaped tool event objects (array). */
 AgentClientResult runChatTurnSync(
     const std::string& base_url,
     const AgentChatTurnRequest& request,
     std::string& out_content,
     std::string& out_model,
-    std::string& out_error);
+    std::string& out_error,
+    json* out_tool_events = nullptr,
+    std::string* out_reasoning = nullptr);
 
 struct AgentSleepJobResult
 {

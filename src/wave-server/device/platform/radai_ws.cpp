@@ -147,7 +147,25 @@ namespace
             out.preferCompressedMic = settings["prefer_compressed_mic"].get<bool>();
         if (settings.contains("prefer_compressed_spk"))
             out.preferCompressedSpk = settings["prefer_compressed_spk"].get<bool>();
+        if (settings.contains("mic_gain") && settings["mic_gain"].is_number())
+        {
+            const float gain = settings["mic_gain"].get<float>();
+            if (std::isfinite(gain))
+                out.micGain = std::clamp(gain, 0.1f, 8.0f);
+        }
         return out;
+    }
+
+    void apply_pcm_gain(std::vector<int16_t>& samples, float gain)
+    {
+        if (samples.empty() || std::fabs(gain - 1.0f) < 1e-6f)
+            return;
+        for (auto& sample : samples)
+        {
+            const float scaled = static_cast<float>(sample) * gain;
+            const float clipped = std::max(-32768.0f, std::min(32767.0f, scaled));
+            sample = static_cast<int16_t>(clipped);
+        }
     }
 
     RadaiWs::SessionConfig parse_session_config(const json& config)
@@ -1915,7 +1933,8 @@ void RadaiWs::onMicPcm(const wsp::AudioPCMBody& body, const uint8_t* pcmData, ui
     frame.samples.resize(sampleCount);
     std::memcpy(frame.samples.data(), pcmData, pcmBytes);
 
-    updateMicLevel(compute_rms_level(frame.samples.data(), sampleCount));
+    apply_pcm_gain(frame.samples, getMicGain());
+    updateMicLevel(compute_rms_level(frame.samples.data(), frame.samples.size()));
     enqueueMicFrame(std::move(frame));
 }
 
@@ -1933,6 +1952,7 @@ void RadaiWs::onMicComp(
     AudioFrame frame;
     frame.timestamp = timestampUs;
     frame.samples = std::move(pcm);
+    apply_pcm_gain(frame.samples, getMicGain());
     updateMicLevel(compute_rms_level(frame.samples.data(), frame.samples.size()));
     enqueueMicFrame(std::move(frame));
 #else
@@ -1947,6 +1967,19 @@ void RadaiWs::onMicComp(
 void RadaiWs::enqueueMicFrame(AudioFrame frame)
 {
     m_impl->enqueueMicFrame(std::move(frame));
+}
+
+void RadaiWs::setMicGain(float gain)
+{
+    if (!std::isfinite(gain))
+        return;
+    const float clamped = std::clamp(gain, 0.1f, 8.0f);
+    m_audio.micGain = clamped;
+}
+
+float RadaiWs::getMicGain() const
+{
+    return m_audio.micGain;
 }
 
 void RadaiWs::updateMicLevel(float level)

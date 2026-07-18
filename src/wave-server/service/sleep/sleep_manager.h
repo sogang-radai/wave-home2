@@ -95,6 +95,9 @@ public:
     void stop();
     void reconcile();
 
+    /** True while a sleep session is subscribed to this station's mic_opus. */
+    bool isStationMicInUse(const std::string& station_external_id) const;
+
 private:
     SleepManager() = default;
     ~SleepManager();

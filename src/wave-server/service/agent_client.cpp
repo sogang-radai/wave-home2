@@ -7,9 +7,11 @@
 #include <cstdint>
 #include <cstring>
 #include <netdb.h>
+#include <optional>
 #include <sstream>
 #include <sys/socket.h>
 #include <thread>
+#include <unordered_map>
 #include <unistd.h>
 
 WAVE_NAMESPACE_BEGIN
@@ -495,51 +497,234 @@ AgentClientResult runChatTurnSync(
     const AgentChatTurnRequest& request,
     std::string& out_content,
     std::string& out_model,
-    std::string& out_error)
+    std::string& out_error,
+    json* out_tool_events,
+    std::string* out_reasoning)
 {
-    ParsedEndpoint endpoint {};
-    if (!parse_base_url(base_url, endpoint, out_error))
-        return AgentClientResult::parse_error;
+    out_content.clear();
+    out_model.clear();
+    if (out_tool_events)
+        *out_tool_events = json::array();
+    if (out_reasoning)
+        out_reasoning->clear();
 
-    const std::string path = endpoint.path_prefix + "/chat/v1/turns";
-    const std::string body = build_request_body(request, false);
-    std::string response_body;
+    auto tool_label = [](const std::string& name, bool running, bool failed) -> std::string
+    {
+        static const std::unordered_map<std::string, std::string> labels = {
+            {"query_db", "DB 조회"},
+            {"rag_search", "메모리 검색"},
+            {"list_devices", "기기 목록 조회"},
+            {"get_device_classes", "기기 종류 조회"},
+            {"get_device_capabilities", "기기 기능 조회"},
+            {"query_device", "기기 조회"},
+            {"control_device", "기기 제어"},
+            {"get_schedule_tasks", "일정 조회"},
+            {"update_schedule_task", "일정 수정"},
+        };
+        const auto it = labels.find(name);
+        const std::string base = it != labels.end() ? it->second : name;
+        if (running)
+            return base + " 중";
+        if (failed)
+            return base + " 실패";
+        return base + " 완료";
+    };
 
-    const auto result = send_http_request(
+    auto summarize_tool_result = [](const json& result) -> std::string
+    {
+        if (result.is_null())
+            return {};
+        if (result.is_string())
+            return result.get<std::string>();
+        if (result.is_number_integer())
+            return std::to_string(result.get<int>());
+        if (result.is_number())
+            return std::to_string(result.get<double>());
+        if (result.is_object())
+        {
+            if (result.contains("count") && result["count"].is_number())
+                return std::to_string(result["count"].get<int>()) + "건";
+            if (result.contains("raw") && result["raw"].is_string())
+                return result["raw"].get<std::string>();
+            if (result.contains("deviceName") && result["deviceName"].is_string()
+                && result.contains("action") && result["action"].is_string())
+            {
+                return result["deviceName"].get<std::string>() + " · "
+                    + result["action"].get<std::string>();
+            }
+            if (result.contains("ok") && result["ok"].is_boolean())
+                return result["ok"].get<bool>() ? "성공" : "실패";
+        }
+        return {};
+    };
+
+    auto make_tool_event = [&](
+        const std::string& name,
+        bool running,
+        const std::string& result_summary,
+        bool failed,
+        const json& args,
+        const json& result,
+        const std::string& id) -> json
+    {
+        json event = json::object();
+        if (!id.empty())
+            event["id"] = id;
+        event["name"] = name;
+        event["status"] = running ? "running" : (failed ? "failed" : "done");
+        event["label"] = tool_label(name, running, failed);
+        if (!result_summary.empty())
+            event["resultSummary"] = result_summary;
+        if (!args.is_null())
+            event["args"] = args;
+        if (!result.is_null())
+            event["result"] = result;
+        return event;
+    };
+
+    std::unordered_map<std::string, size_t> tool_index;
+    json local_tools = json::array();
+    json& tools = out_tool_events ? *out_tool_events : local_tools;
+
+    AgentChatTurnRequest streamed = request;
+    streamed.stream = true;
+
+    const auto result = streamChatTurn(
         base_url,
-        "POST",
-        path,
-        body,
-        false,
-        [&](const std::string& data, bool /*is_stream*/) -> bool {
-            response_body = data;
+        streamed,
+        [&](const json& event) -> bool {
+            if (!event.contains("type") || !event["type"].is_string())
+                return true;
+
+            const std::string type = event["type"].get<std::string>();
+
+            if (type == "tool.start")
+            {
+                const std::string name = event.value("name", "");
+                const std::string id = event.value("id", "");
+                const json args = event.contains("args") ? event["args"] : json();
+                const json stored = make_tool_event(name, true, {}, false, args, json(), id);
+                if (!id.empty())
+                {
+                    const auto it = tool_index.find(id);
+                    if (it != tool_index.end())
+                        tools[it->second] = stored;
+                    else
+                    {
+                        tool_index[id] = tools.size();
+                        tools.push_back(stored);
+                    }
+                }
+                else
+                {
+                    tools.push_back(stored);
+                }
+                return true;
+            }
+
+            if (type == "tool.end")
+            {
+                const std::string name = event.value("name", "");
+                const std::string id = event.value("id", "");
+                const bool failed =
+                    event.contains("ok") && event["ok"].is_boolean() && !event["ok"].get<bool>();
+                const json& raw_result = event.contains("result") ? event["result"] : json();
+                const std::string result_summary = summarize_tool_result(raw_result);
+                json prior_args = json();
+                std::optional<size_t> existing;
+                if (!id.empty())
+                {
+                    const auto it = tool_index.find(id);
+                    if (it != tool_index.end())
+                        existing = it->second;
+                }
+                if (!existing)
+                {
+                    for (size_t i = 0; i < tools.size(); ++i)
+                    {
+                        if (tools[i].value("name", "") == name
+                            && tools[i].value("status", "") == "running")
+                        {
+                            existing = i;
+                            break;
+                        }
+                    }
+                }
+                if (existing && tools[*existing].contains("args"))
+                    prior_args = tools[*existing]["args"];
+                const std::string stored_id = !id.empty()
+                    ? id
+                    : (existing && tools[*existing].contains("id")
+                        ? tools[*existing].value("id", "")
+                        : std::string{});
+                const json stored = make_tool_event(
+                    name,
+                    false,
+                    result_summary,
+                    failed,
+                    prior_args,
+                    (raw_result.is_object() || raw_result.is_array()) ? raw_result : json(),
+                    stored_id);
+                if (existing)
+                {
+                    tools[*existing] = stored;
+                    if (!stored_id.empty())
+                        tool_index[stored_id] = *existing;
+                }
+                else
+                {
+                    const auto idx = tools.size();
+                    tools.push_back(stored);
+                    if (!stored_id.empty())
+                        tool_index[stored_id] = idx;
+                }
+                return true;
+            }
+
+            if (type == "message.delta")
+            {
+                if (out_reasoning && event.contains("reasoning") && event["reasoning"].is_string())
+                    *out_reasoning += event["reasoning"].get<std::string>();
+                if (event.contains("content") && event["content"].is_string())
+                    out_content += event["content"].get<std::string>();
+                return true;
+            }
+
+            if (type == "message.completed")
+            {
+                if (event.contains("content") && event["content"].is_string())
+                    out_content = event["content"].get<std::string>();
+                if (event.contains("model") && event["model"].is_string())
+                    out_model = event["model"].get<std::string>();
+                return true;
+            }
+
+            if (type == "error")
+            {
+                if (event.contains("error") && event["error"].is_object())
+                {
+                    const auto& err = event["error"];
+                    if (err.contains("message") && err["message"].is_string())
+                        out_content = err["message"].get<std::string>();
+                }
+                if (out_content.empty())
+                    out_content = "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.";
+                return true;
+            }
+
             return true;
         },
         out_error);
 
-    if (result != AgentClientResult::success)
+    if (result != AgentClientResult::success && result != AgentClientResult::cancelled)
         return result;
 
-    try
+    if (out_content.empty())
     {
-        const json payload = json::parse(response_body);
-        if (payload.contains("content") && payload["content"].is_string())
-            out_content = payload["content"].get<std::string>();
-        if (payload.contains("model") && payload["model"].is_string())
-            out_model = payload["model"].get<std::string>();
-
-        if (out_content.empty())
-        {
-            out_error = "agent response missing content";
-            return AgentClientResult::parse_error;
-        }
-        return AgentClientResult::success;
-    }
-    catch (const json::exception& e)
-    {
-        out_error = std::string("agent response parse error: ") + e.what();
+        out_error = "agent response missing content";
         return AgentClientResult::parse_error;
     }
+    return AgentClientResult::success;
 }
 
 namespace

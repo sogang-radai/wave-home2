@@ -3,6 +3,7 @@
 #include "../../core/json.h"
 #include "../../core/logger.h"
 #include "../../service/alarm_manager.h"
+#include "../../service/companion/companion_manager.h"
 #include "../../service/power_manager.h"
 #include "../../service/sleep/sleep_manager.h"
 #include "../app_config.h"
@@ -68,6 +69,7 @@ void ProductionProfileRuntime::onDatabaseReady(AppState& app, const db::DbClient
 
     app.deviceManager.setOnStartupComplete([&app]()
     {
+        service::CompanionManager::get().onDevicesReady();
         app.startTriggerRuntime();
     });
 
@@ -86,6 +88,9 @@ void ProductionProfileRuntime::onDatabaseReady(AppState& app, const db::DbClient
     service::SleepManager::get().start();
     WLOG_INFO("SleepManager started");
 
+    service::CompanionManager::get().reconcile();
+    service::CompanionManager::get().start();
+
     service::AlarmManager::get().start();
     WLOG_INFO("AlarmManager started");
 
@@ -97,6 +102,7 @@ void ProductionProfileRuntime::shutdown(AppState& app)
     if (m_startedDeviceStack)
     {
         service::PowerManager::get().stop();
+        service::CompanionManager::get().stop();
         service::SleepManager::get().stop();
         service::AlarmManager::get().stop();
     }

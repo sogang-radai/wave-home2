@@ -199,7 +199,8 @@ void RulesController::listRules(const HttpRequestPtr& req, HttpResponseCallback&
     }
 
     Json::Value body(Json::arrayValue);
-    const auto& items = listed.isMember("items") ? listed["items"] : listed;
+    const Json::Value& items =
+        (listed.isObject() && listed.isMember("items")) ? listed["items"] : listed;
     for (const auto& item : items)
     {
         if (!item.isObject())

@@ -1,7 +1,10 @@
 #include "devices_controller.h"
 
+#include <optional>
+
 #include "../../../app/app_state.h"
 #include "../../../device/device.h"
+#include "../../../service/companion/companion_manager.h"
 #include "devices_store.h"
 #include "session_store.h"
 
@@ -79,6 +82,19 @@ void DevicesController::updateDevice(const HttpRequestPtr& req, HttpResponseCall
         const auto status = code == "NOT_FOUND" ? 404 : 400;
         respondError(callback, status, code, error);
         return;
+    }
+
+    if (device->isMember("class") && (*device)["class"].asString() == "wave_station"
+        && device->isMember("settings") && (*device)["settings"].isObject())
+    {
+        const auto& settings = (*device)["settings"];
+        const bool companion = settings.isMember("companion")
+            && settings["companion"].isBool()
+            && settings["companion"].asBool();
+        std::optional<float> mic_gain;
+        if (settings.isMember("mic_gain") && settings["mic_gain"].isNumeric())
+            mic_gain = static_cast<float>(settings["mic_gain"].asDouble());
+        service::CompanionManager::get().notifyDeviceUpdated(deviceId, companion, mic_gain);
     }
 
     callback(drogon::HttpResponse::newHttpJsonResponse(*device));

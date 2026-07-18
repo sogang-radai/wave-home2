@@ -258,7 +258,9 @@ namespace
         std::string& out_content,
         std::string& out_model,
         std::string& out_error,
-        const std::string& demo_runtime_id = {})
+        const std::string& demo_runtime_id = {},
+        Json::Value* out_tool_events = nullptr,
+        std::string* out_reasoning = nullptr)
     {
         service::AgentChatTurnRequest request;
         request.chat_history_id = chat_history_id;
@@ -266,14 +268,23 @@ namespace
         request.messages = messages;
         set_agent_turn_now(request);
         request.demo_runtime_id = demo_runtime_id;
-        request.stream = false;
+        request.stream = true;
 
-        return service::runChatTurnSync(
+        json tool_events = json::array();
+        std::string reasoning;
+        const auto result = service::runChatTurnSync(
             AppState::get().config.agent.base_url,
             request,
             out_content,
             out_model,
-            out_error);
+            out_error,
+            out_tool_events ? &tool_events : nullptr,
+            out_reasoning ? &reasoning : nullptr);
+        if (out_reasoning)
+            *out_reasoning = std::move(reasoning);
+        if (out_tool_events)
+            *out_tool_events = nlohmann_to_json_cpp(tool_events);
+        return result;
     }
 
     std::string trim_personal_prompt(const std::string& value)
@@ -716,10 +727,20 @@ void ChatController::createConversation(const HttpRequestPtr& req, HttpResponseC
         std::string assistant_text;
         std::string model;
         std::string agent_error;
+        std::string reasoning;
+        Json::Value tool_events(Json::arrayValue);
         auto agent_messages = store.buildAgentMessages((*created)["messages"]);
         prepend_personal_prompt(agent_messages, *user_id, runtime_id);
         const auto agent_result = call_agent_sync(
-            conversation_id, *user_id, agent_messages, assistant_text, model, agent_error, runtime_id);
+            conversation_id,
+            *user_id,
+            agent_messages,
+            assistant_text,
+            model,
+            agent_error,
+            runtime_id,
+            &tool_events,
+            &reasoning);
         if (agent_result != service::AgentClientResult::success)
         {
             respondError(callback, 502, "AI_PROVIDER_ERROR", "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.");
@@ -730,7 +751,7 @@ void ChatController::createConversation(const HttpRequestPtr& req, HttpResponseC
             AppState::get().runtime().chat().nextMessageId((*created)["messages"]);
         AppState::get().runtime().chat().appendAssistantMessage(
             *user_id, conversation_id, assistant_id, assistant_text,
-            Json::Value(Json::arrayValue), {}, runtime_id, client);
+            tool_events, reasoning, runtime_id, client);
         const auto conversation = AppState::get().runtime().chat().getConversation(
             *user_id, conversation_id, runtime_id, client);
         if (!conversation)
@@ -914,10 +935,20 @@ void ChatController::appendMessage(const HttpRequestPtr& req, HttpResponseCallba
     std::string assistant_text;
     std::string model;
     std::string agent_error;
+    std::string reasoning;
+    Json::Value tool_events(Json::arrayValue);
     auto agent_messages = store.buildAgentMessages((*appended)["messages"]);
     prepend_personal_prompt(agent_messages, *user_id, runtime_id);
     const auto agent_result = call_agent_sync(
-        *id, *user_id, agent_messages, assistant_text, model, agent_error, runtime_id);
+        *id,
+        *user_id,
+        agent_messages,
+        assistant_text,
+        model,
+        agent_error,
+        runtime_id,
+        &tool_events,
+        &reasoning);
     if (agent_result != service::AgentClientResult::success)
     {
         respondError(callback, 502, "AI_PROVIDER_ERROR", "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.");
@@ -928,13 +959,16 @@ void ChatController::appendMessage(const HttpRequestPtr& req, HttpResponseCallba
         AppState::get().runtime().chat().nextMessageId((*appended)["messages"]);
     AppState::get().runtime().chat().appendAssistantMessage(
         *user_id, *id, assistant_id, assistant_text,
-        Json::Value(Json::arrayValue), {}, runtime_id, client);
+        tool_events, reasoning, runtime_id, client);
 
     Json::Value user_message = (*appended)["userMessage"];
     Json::Value assistant_message;
     assistant_message["id"] = static_cast<Json::Int64>(assistant_id);
     assistant_message["role"] = "assistant";
     assistant_message["text"] = assistant_text;
+    assistant_message["toolEvents"] = tool_events;
+    if (!reasoning.empty())
+        assistant_message["reasoning"] = reasoning;
     assistant_message["createdAt"] = ChatStore::to_created_at_iso(formatTimestamp());
 
     Json::Value body;

@@ -323,65 +323,69 @@ namespace
         if (!client)
             return std::nullopt;
 
-        auto query_by_wire = [&]()
+        // Never construct drogon::orm::Result(nullptr) — Result::empty()/size() segfaults on it.
+        auto room_from_rows = [](const drogon::orm::Result& rows) -> std::optional<Json::Value>
         {
-            if (wire_id.empty())
-                return drogon::orm::Result(nullptr);
-            const auto db_id = dev::dbIdForWireId(client, wire_id);
-            if (!db_id)
-                return drogon::orm::Result(nullptr);
-            return client->execSqlSync(
-                R"SQL(
-    SELECT r.id, r.name
-    FROM device d
-    JOIN device_room_map drm ON drm.device_id = d.id
-    JOIN room r ON r.id = drm.room_id
-    WHERE d.id = ?
-    LIMIT 1
-    )SQL",
-                *db_id);
+            if (rows.empty())
+                return std::nullopt;
+            Json::Value out;
+            out["id"] = static_cast<Json::Int64>(rows[0]["id"].as<int64_t>());
+            out["name"] = rows[0]["name"].as<std::string>();
+            return out;
         };
 
-        auto query_by_name = [&]()
+        if (!wire_id.empty())
         {
-            if (device_name.empty())
-                return drogon::orm::Result(nullptr);
-            return client->execSqlSync(
-                R"SQL(
-    SELECT r.id, r.name
-    FROM device d
-    JOIN device_room_map drm ON drm.device_id = d.id
-    JOIN room r ON r.id = drm.room_id
-    WHERE d.name = ?
-    LIMIT 1
-    )SQL",
-                device_name);
-        };
+            if (const auto db_id = dev::dbIdForWireId(client, wire_id))
+            {
+                if (auto room = room_from_rows(client->execSqlSync(
+                        R"SQL(
+SELECT r.id, r.name
+FROM device d
+JOIN device_room_map drm ON drm.device_id = d.id
+JOIN room r ON r.id = drm.room_id
+WHERE d.id = ?
+LIMIT 1
+)SQL",
+                        *db_id)))
+                {
+                    return room;
+                }
+            }
+        }
 
-        auto query_by_room_name = [&]()
+        if (!device_name.empty())
         {
-            if (!manifest_room.isObject() || !manifest_room.isMember("name"))
-                return drogon::orm::Result(nullptr);
+            if (auto room = room_from_rows(client->execSqlSync(
+                    R"SQL(
+SELECT r.id, r.name
+FROM device d
+JOIN device_room_map drm ON drm.device_id = d.id
+JOIN room r ON r.id = drm.room_id
+WHERE d.name = ?
+LIMIT 1
+)SQL",
+                    device_name)))
+            {
+                return room;
+            }
+        }
+
+        if (manifest_room.isObject() && manifest_room.isMember("name"))
+        {
             const auto room_name = manifest_room["name"].asString();
-            if (room_name.empty())
-                return drogon::orm::Result(nullptr);
-            return client->execSqlSync(
-                "SELECT id, name FROM room WHERE name = ? LIMIT 1",
-                room_name);
-        };
+            if (!room_name.empty())
+            {
+                if (auto room = room_from_rows(client->execSqlSync(
+                        "SELECT id, name FROM room WHERE name = ? LIMIT 1",
+                        room_name)))
+                {
+                    return room;
+                }
+            }
+        }
 
-        auto rows = query_by_wire();
-        if (rows.empty())
-            rows = query_by_name();
-        if (rows.empty())
-            rows = query_by_room_name();
-        if (rows.empty())
-            return std::nullopt;
-
-        Json::Value out;
-        out["id"] = static_cast<Json::Int64>(rows[0]["id"].as<int64_t>());
-        out["name"] = rows[0]["name"].as<std::string>();
-        return out;
+        return std::nullopt;
     }
 
     void apply_db_room_ref(

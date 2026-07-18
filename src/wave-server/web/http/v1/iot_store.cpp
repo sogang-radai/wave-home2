@@ -28,11 +28,13 @@
 #include "../../../device/platform/reolink_e1pro.h"
 #include "../../../device/platform/samsung_tizen.h"
 #include "../../../device/platform/tuya_ep2h.h"
+#include "../../../service/companion/companion_manager.h"
 #include "../../../service/power_manager.h"
 #include "session_store.h"
 #include "../../../core/logger.h"
 #include "util/time_util.h"
 #include "../../../device/device.h"
+#include "../../../device/device_wire_id.hpp"
 #include "../../../device/room.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -622,6 +624,42 @@ Json::Value IotStore::listDevices() const
         size_t manifest_index = 0;
     };
 
+    // Companion / mic_gain live in DB settings_json (PATCH); fall back to manifest.
+    struct StationSettings
+    {
+        bool companion = false;
+        float micGain = 1.0f;
+    };
+    std::unordered_map<std::string, StationSettings> station_settings_by_wire;
+    if (auto client = AppState::get().db())
+    {
+        auto rows = client->execSqlSync(
+            R"SQL(
+SELECT d.id, d.name,
+       COALESCE(json_extract(d.settings_json, '$.companion'), 0) AS companion,
+       COALESCE(json_extract(d.settings_json, '$.mic_gain'), 1.0) AS mic_gain
+FROM device d
+WHERE d.class = 'wave_station' AND d.archived = 0
+)SQL");
+        for (const auto& row : rows)
+        {
+            const auto wire = dev::wireIdForDbRow(
+                row["id"].as<int64_t>(),
+                row["name"].as<std::string>());
+            StationSettings settings;
+            settings.companion = !row["companion"].isNull() && row["companion"].as<int>() != 0;
+            try
+            {
+                settings.micGain = static_cast<float>(row["mic_gain"].as<double>());
+            }
+            catch (...)
+            {
+                settings.micGain = 1.0f;
+            }
+            station_settings_by_wire[wire] = settings;
+        }
+    }
+
     std::vector<ListedDevice> listed;
     listed.reserve(m_devices.manifestEntries().size());
 
@@ -647,6 +685,27 @@ Json::Value IotStore::listDevices() const
             cfg.contains("settings") &&
             cfg["settings"].is_object() &&
             cfg["settings"].value("sleep", false);
+        bool companion = false;
+        float mic_gain = 1.0f;
+        if (class_name == "wave_station")
+        {
+            const auto it = station_settings_by_wire.find(external_id);
+            if (it != station_settings_by_wire.end())
+            {
+                companion = it->second.companion;
+                mic_gain = it->second.micGain;
+            }
+            else if (cfg.contains("settings") && cfg["settings"].is_object())
+            {
+                companion = cfg["settings"].value("companion", false);
+                mic_gain = cfg["settings"].value("mic_gain", 1.0f);
+            }
+            if (auto* ws = dynamic_cast<dev::RadaiWs*>(device))
+                mic_gain = ws->getMicGain();
+        }
+        item["companion"] = companion;
+        if (class_name == "wave_station")
+            item["micGain"] = mic_gain;
         item["connectionStatus"] = status;
         item["connected"] = status == "online";
         item["available"] = true;
@@ -1105,6 +1164,18 @@ Json::Value IotStore::snapshotWaveStationTelemetry(const std::string& external_i
 
     Json::Value body;
     body["ok"] = true;
+    body["micGain"] = wave_station->getMicGain();
+
+    {
+        const auto listen = service::CompanionManager::get().listenStatus(external_id);
+        Json::Value companion(Json::objectValue);
+        companion["enabled"] = listen.enabled;
+        companion["listening"] = listen.listening;
+        companion["processing"] = listen.processing;
+        companion["partialText"] = listen.partialText;
+        companion["finalText"] = listen.finalText;
+        body["companion"] = companion;
+    }
 
     int mic_rc = 0;
     if (auto* actionable = dynamic_cast<dev::Actionable*>(wave_station))

@@ -226,7 +226,10 @@ void IotController::listDevices(const HttpRequestPtr& req, HttpResponseCallback&
         respondError(callback, 503, code, "장치 목록을 조회할 수 없습니다.");
     else
     {
-        const auto& items = body.isMember("items") ? body["items"] : body;
+        // Production returns a bare array; demo may wrap as { items: [...] }.
+        // JsonCpp isMember()/find() throw on arrayValue — check isObject first.
+        const Json::Value& items =
+            (body.isObject() && body.isMember("items")) ? body["items"] : body;
         if (!runtime_id.empty())
             respond_demo_json(req, callback, items, runtime_id);
         else

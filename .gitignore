@@ -11,6 +11,10 @@ bin/data/database.db
 bin/*.db
 bin/*.db-shm
 bin/*.db-wal
+bin/**/*.db-shm
+bin/**/*.db-wal
+*.db-shm
+*.db-wal
 
 # Demo DB pipeline (regenerate: demo/scripts/, see demo/demo.md)
 demo/data/

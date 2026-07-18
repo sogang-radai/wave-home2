@@ -86,6 +86,9 @@ Json::Value DemoDeviceBackend::deviceRowToJson(const drogon::orm::Row& row, cons
     item["sleepAnalysis"] =
         !row["sleep_analysis"].isNull() &&
         row["sleep_analysis"].as<int>() != 0;
+    item["companion"] =
+        !row["companion"].isNull() &&
+        row["companion"].as<int>() != 0;
     item["enabled"] = row["enabled"].as<int>() != 0;
     item["connected"] = device_class != "droid_cam";
     item["stateSummary"] = "데모";
@@ -164,6 +167,7 @@ Json::Value DemoDeviceBackend::listDevices(const std::string& runtime_id, std::s
         R"SQL(
 SELECT d.id, d.name, d.description, d.class, d.enabled,
        COALESCE(json_extract(d.settings_json, '$.sleep'), 0) AS sleep_analysis,
+       COALESCE(json_extract(d.settings_json, '$.companion'), 0) AS companion,
        r.id AS room_id, r.name AS room_name
 FROM device d
 LEFT JOIN device_room_map drm ON drm.device_id = d.id
@@ -194,7 +198,8 @@ Json::Value DemoDeviceBackend::getSummary(const std::string& runtime_id, std::st
 
     int online = 0;
     int total = 0;
-    const auto& items = listed.isMember("items") ? listed["items"] : listed;
+    const Json::Value& items =
+        (listed.isObject() && listed.isMember("items")) ? listed["items"] : listed;
     if (items.isArray())
     {
         total = static_cast<int>(items.size());
