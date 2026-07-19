@@ -16,7 +16,7 @@ namespace
 {
     json load_ir_list()
     {
-        const auto path = AppState::get().resolvePath("device/ir_list.json");
+        const auto path = AppState::get().irListPath();
         std::ifstream in(path);
         json root;
         in >> root;

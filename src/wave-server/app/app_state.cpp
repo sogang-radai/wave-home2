@@ -777,6 +777,11 @@ std::filesystem::path AppState::resolvePath(const std::string& relative) const
     return std::filesystem::weakly_canonical(std::filesystem::current_path() / path);
 }
 
+std::filesystem::path AppState::irListPath() const
+{
+    return resolvePath(config.ir_list_path);
+}
+
 db::DbClientPtr AppState::db() const
 {
     if (test_mode || !m_dbReady.load(std::memory_order_acquire))
@@ -852,7 +857,7 @@ void AppState::startAutomationServices()
     m_irStore = std::make_unique<web::v1::IrStore>();
 
     std::string ir_error;
-    if (!m_irStore->load(resolvePath("device/ir_list.json"), ir_error))
+    if (!m_irStore->load(irListPath(), ir_error))
         WLOG_WARN("IrStore load failed: {}", ir_error);
 
     std::string gesture_error;

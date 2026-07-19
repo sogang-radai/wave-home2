@@ -239,12 +239,14 @@ IR (IIrReceiver / IIrTransmitter):
 IR receive (device → host, WSP1 IrReceive):
   ESP32 pushes raw mark/space timings (μs) when a remote is detected.
   On connect, auto-subscribes IrReceive when capabilities.ir_receive is true.
-  Timings are matched against settings.ir_list_path (default bin/device/ir_list.json).
+  Timings are matched against the shared AppConfig ir_list_path
+  (default bin/device/ir_list.json; same file as IrStore).
   Matched commandId is exposed via last_ir; when wave-server automation is
   running, ir_recv rule triggers are fired via TriggerManager.
 
 IR transmit (host → device, WSP1 IrTransmit):
-  send_ir loads timings from ir_list.json and sends IrTransmitBody + rawData.
+  send_ir requires capabilities.ir_transmit, loads timings from ir_list.json,
+  and sends IrTransmitBody + rawData.
 
 WSP1 control (host → device):
   Subscribe, Unsubscribe, Heartbeat

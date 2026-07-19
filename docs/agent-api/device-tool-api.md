@@ -906,7 +906,7 @@ Wave Station IR 예약 예:
 
 ## 적외선(IR) 커맨드
 
-저장소: `bin/device/ir_list.json` (Wave Station `settings.ir_list_path` 로 재지정 가능).
+저장소: `bin/device/ir_list.json` (앱 설정 `ir_list_path`로 재지정 가능; IrStore·`send_ir`·`ir_recv` 매칭이 동일 파일을 공유).
 
 | 역할 | API | 비고 |
 |------|-----|------|

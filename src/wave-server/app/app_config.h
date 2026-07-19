@@ -32,6 +32,8 @@ struct AppConfig
 
     std::string device_list_path = "device/device_list.json";
     std::string gesture_sets_path = "gestures/gesture_sets.json";
+    /** Shared IR command store (send / learn / ir_recv match). */
+    std::string ir_list_path = "device/ir_list.json";
     std::string sleep_model_path = "models/sleep/model.json";
     std::string stt_model_path = "models/stt/stt.json";
     std::string tts_model_path = "models/tts/tts.json";

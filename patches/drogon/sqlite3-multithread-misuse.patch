@@ -1,0 +1,25 @@
+diff --git a/orm_lib/src/sqlite3_impl/Sqlite3Connection.cc b/orm_lib/src/sqlite3_impl/Sqlite3Connection.cc
+index 2ff8d367..299fce65 100644
+--- a/orm_lib/src/sqlite3_impl/Sqlite3Connection.cc
++++ b/orm_lib/src/sqlite3_impl/Sqlite3Connection.cc
+@@ -91,11 +91,16 @@ void Sqlite3Connection::init()
+     loopThread_.run();
+     loop_ = loopThread_.getLoop();
+     std::call_once(once_, []() {
++        // wave-server registers sqlite-vec via sqlite3_auto_extension after
++        // setting MULTITHREAD. That auto_extension path initializes SQLite, so
++        // this second sqlite3_config() returns SQLITE_MISUSE even though the
++        // library is already in a usable multi-thread mode.
+         auto ret = sqlite3_config(SQLITE_CONFIG_MULTITHREAD);
+-        if (ret != SQLITE_OK)
+-        {
+-            LOG_FATAL << "SQLITE_CONFIG_MULTITHREAD is not supported!";
+-        }
++        if (ret == SQLITE_OK)
++            return;
++        if (ret == SQLITE_MISUSE && sqlite3_threadsafe() != 0)
++            return;
++        LOG_FATAL << "SQLITE_CONFIG_MULTITHREAD is not supported!";
+     });
+     // Get the key and value
+     auto connParams = parseConnString(connInfo_);

@@ -18,6 +18,7 @@
 
 #include "../../core/logger.h"
 #ifndef WAVE_STANDALONE_DEVICE_TEST
+#include "../../app/app_state.h"
 #include "../../service/ir_trigger_bridge.h"
 #endif
 #include "network/net_util.h"
@@ -227,6 +228,21 @@ namespace
 #else
         return "device/ir_list.json";
 #endif
+    }
+
+    // wave-server: always AppState::irListPath() so IrStore / send_ir / ir_recv share one file.
+    // standalone test-ws: WAVE_SOURCE_DIR default, optional settings.ir_list_path override.
+    std::string resolve_ir_list_path(const json& config)
+    {
+#ifndef WAVE_STANDALONE_DEVICE_TEST
+        auto& app = AppState::get();
+        if (!app.config_dir.empty())
+            return app.irListPath().string();
+#endif
+        std::string path = default_ir_list_path();
+        if (config.contains("settings") && config["settings"].is_object())
+            path = config["settings"].value("ir_list_path", path);
+        return path;
     }
 
     double timing_distance(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b)
@@ -1332,10 +1348,10 @@ int RadaiWs::init(const json& config)
         m_errorJson["-4"] = "connection failed";
     if (!m_errorJson.contains("-7"))
         m_errorJson["-7"] = "MAC mismatch";
+    if (!m_errorJson.contains("-8"))
+        m_errorJson["-8"] = "IR transmit not supported";
 
-    std::string irListPath = default_ir_list_path();
-    if (config.contains("settings") && config["settings"].is_object())
-        irListPath = config["settings"].value("ir_list_path", irListPath);
+    const std::string irListPath = resolve_ir_list_path(config);
 
     m_impl->configure(m_interface, m_session, m_audio, irListPath);
     m_ioActive.store(true, std::memory_order_release);
@@ -1477,6 +1493,9 @@ int RadaiWs::invoke(std::string_view name, const json& params)
 {
     if (name == "send_ir")
     {
+        if (!m_capabilities.irTransmit)
+            return -8;
+
         if (!params.contains("commandId") || !params["commandId"].is_string())
             return -1;
 
@@ -1905,6 +1924,8 @@ int RadaiWs::ensureIrSubscription()
 int RadaiWs::sendHeartbeat() { return m_impl->sendHeartbeat(); }
 int RadaiWs::sendIrRaw(const std::vector<uint16_t>& rawUs, uint32_t carrierHz, uint16_t repeat)
 {
+    if (!m_capabilities.irTransmit)
+        return -8;
     return m_impl->sendIrRaw(rawUs, carrierHz, repeat);
 }
 int RadaiWs::sendSpkOpus(const uint8_t* data, size_t size, bool keyFrame)

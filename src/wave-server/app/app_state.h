@@ -164,6 +164,9 @@ public:
 
     std::filesystem::path resolvePath(const std::string& relative) const;
 
+    /** Canonical IR command JSON (config.ir_list_path). Shared by IrStore, send_ir, ir_recv. */
+    std::filesystem::path irListPath() const;
+
     db::DbClientPtr db() const;
 
     IProfileRuntime& runtime();
