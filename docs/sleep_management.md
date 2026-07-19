@@ -153,13 +153,13 @@ FFT 크기 2048. Warmup 약 7회 estimate는 수치 억제.
 
 ## 8. 리포트 · 인사이트 잡
 
-`SleepManager` 전용 잡 큐 (`m_jobs`, 단일 `m_jobWorker`) — 세션/집계 워커와 분리.
+`AgentJobQueue` 공유 큐 (수면·전력·인사이트 단일 워커) — 세션/집계 워커와 분리. 우선순위·운영 규칙은 [`docs/power_management.md`](power_management.md) §5.
 
 | 잡 | 언제 | Agent | 후속 |
 |----|------|-------|------|
 | `Summary30m` | 30m persist 직후 | `POST /sleep/v1/summaries` | embed |
-| `DailyReport` | 세션 close | `POST /sleep/v1/reports` period=daily | `generateAndPersistInsights(..., sleep_report, nightDate)` |
-| `WeeklyReport` | 세션 close마다 | period=weekly, `periodStart = nightDate−6` | 동일 surface (날짜=periodStart 또는 nightDate 정책은 생성기) |
+| `DailyReport` | 세션 close | `POST /sleep/v1/reports` period=daily | Insight 잡 enqueue (`sleep_report`, nightDate) |
+| `WeeklyReport` | 세션 close마다 | period=weekly, `periodStart = nightDate−6` | Insight 잡 enqueue |
 
 - 하루 여러 세션 → close마다 daily 잡 (같은 `night_date`면 DB upsert 정책에 따름).  
 - 주간: 롤링 7일 `[nightDate−6, nightDate]`, 프론트 `getRollingWeekStart`와 동일.  

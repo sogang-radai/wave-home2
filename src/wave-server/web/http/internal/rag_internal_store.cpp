@@ -15,7 +15,7 @@
 
 #include "../../../app/app_state.h"
 #include "../../../core/logger.h"
-#include "../../../service/insight_vec_store.h"
+#include "../../../service/agent/insight_vec_store.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {

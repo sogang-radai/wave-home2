@@ -5,7 +5,7 @@
 
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
-#include "../../../service/insight_generator.h"
+#include "../../../service/agent/insight_generator.h"
 #include "../../../service/rule_store.h"
 #include "../internal/schedule_tasks_internal_store.h"
 #include "action_log_store.h"

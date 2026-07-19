@@ -422,13 +422,13 @@ device_id = NULL 은 계측 플러그(스마트 플러그)들만 합산한 통�
 CREATE TABLE power_energy (
     id           INTEGER     PRIMARY KEY,
     device_id    INTEGER,                 -- NULL = 전체 합산
-    granularity  VARCHAR(3)  NOT NULL,    -- '5m' | '1h' | '24h' | '1w' | '1mo'
-    time_start   VARCHAR(50) NOT NULL,    -- 5m: 'YYYY-MM-DD HH:MM:00', 1h: 'YYYY-MM-DD HH:00:00', 24h/1w/1mo: 'YYYY-MM-DD'(구간 첫날)
+    granularity  VARCHAR(4)  NOT NULL,    -- '5m' | '1h' | '24h' | '1w' | '1mo' | '1yr'
+    time_start   VARCHAR(50) NOT NULL,    -- 5m: 'YYYY-MM-DD HH:MM:00', 1h: 'YYYY-MM-DD HH:00:00', 24h/1w/1mo/1yr: 'YYYY-MM-DD'(구간 첫날)
     energy_wh    REAL        NOT NULL,    -- 정확한 적분값(하위 granularity 를 합산)
     coverage     REAL        NOT NULL,    -- 존재하는 하위 구간의 데이터 완성도 0~1(off 로 생략된 구간은 미포함)
     sample_count INTEGER     NOT NULL,    -- 적분에 사용된 원시 샘플 수
 
-    CHECK (granularity IN ('5m', '1h', '24h', '1w', '1mo')),
+    CHECK (granularity IN ('5m', '1h', '24h', '1w', '1mo', '1yr')),
     FOREIGN KEY (device_id) REFERENCES device(id)
 );
 CREATE UNIQUE INDEX uq_power_energy ON power_energy (COALESCE(device_id, -1), granularity, time_start);

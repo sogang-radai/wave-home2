@@ -3,7 +3,6 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -90,6 +89,8 @@ struct SleepJob
     json payload;
 };
 
+struct AgentJob;
+
 class SleepManager
 {
 public:
@@ -108,6 +109,9 @@ public:
      * 자동화(DemoAutomationRuntime)를 쓰지만 이 job worker 는 별도로 시작해 활용한다. */
     void requestSleepPlan(int32_t user_id, const std::string& plan_date);
 
+    /** Called by AgentJobQueue worker. */
+    void processQueuedJob(const AgentJob& job);
+
 private:
     SleepManager() = default;
     ~SleepManager();
@@ -115,7 +119,6 @@ private:
     SleepManager& operator=(const SleepManager&) = delete;
 
     void runLoop();
-    void runJobLoop();
     void tickRuntime(SleepRuntime& runtime);
     void consumePointCloud(SleepRuntime& runtime);
     void ingestResult(SleepRuntime& runtime, const nn::SleepResult& result);
@@ -128,6 +131,7 @@ private:
     void backfillSessionId(int32_t userId, const std::string& onset, const std::string& final_wake, int64_t session_id);
     void enqueueJob(SleepJob job);
     void processJob(const SleepJob& job);
+    void enqueueInsight(int32_t user_id, const std::string& date);
     bool initPipeline(SleepRuntime& runtime, std::string& out_error);
     std::vector<SleepRoomConfig> loadRoomConfigs();
     void tickVitals(SleepRuntime& runtime);
@@ -141,13 +145,8 @@ private:
     mutable std::mutex m_mutex;
     std::unordered_map<int32_t, SleepRuntime> m_runtimes;
 
-    std::mutex m_jobMutex;
-    std::condition_variable m_jobCv;
-    std::deque<SleepJob> m_jobs;
-
     std::atomic<bool> m_running{false};
     std::thread m_worker;
-    std::thread m_jobWorker;
     std::mutex m_stopMutex;
     std::condition_variable m_stopCv;
     bool m_modelReady = false;

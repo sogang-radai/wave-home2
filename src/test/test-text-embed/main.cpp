@@ -10,7 +10,7 @@
 #include <util/arg_parser.h>
 #include <util/spinner.h>
 
-#include "service/embedding_client.h"
+#include "service/agent/embedding_client.h"
 
 namespace
 {

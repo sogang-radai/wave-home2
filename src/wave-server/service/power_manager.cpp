@@ -65,6 +65,8 @@ void PowerManager::start()
     if (m_running.exchange(true))
         return;
 
+    reloadMeteringFromDb();
+
     m_worker = std::thread([this]()
     {
         while (m_running.load(std::memory_order_acquire))
@@ -75,7 +77,7 @@ void PowerManager::start()
                 && AppState::get().running.load(std::memory_order_acquire))
             {
                 sampleAllPlugs();
-                maybeGenerateHourlyReport();
+                maybeEnqueueSchedules();
             }
 
             const auto elapsed = std::chrono::steady_clock::now() - tick_start;
@@ -135,7 +137,7 @@ void PowerManager::sampleAllPlugs()
         flushDueBuckets(nowMs());
 }
 
-void PowerManager::maybeGenerateHourlyReport()
+void PowerManager::maybeEnqueueSchedules()
 {
     auto client = AppState::get().db();
     if (!client)
@@ -145,21 +147,142 @@ void PowerManager::maybeGenerateHourlyReport()
     if (now_rows.empty())
         return;
     const std::string now_full = now_rows[0]["now"].as<std::string>();
+    if (now_full.size() < 13)
+        return;
+
     const std::string current_hour = now_full.substr(0, 13); // "YYYY-MM-DD HH"
+    const std::string today = now_full.substr(0, 10);
 
     std::string previous_hour;
+    bool run_daily = false;
+    bool run_yearly = false;
     {
         std::lock_guard lock(m_mutex);
-        if (current_hour == m_lastHourlyReportHour)
-            return;
-        previous_hour = m_lastHourlyReportHour;
-        m_lastHourlyReportHour = current_hour;
+        if (current_hour != m_lastHourlyReportHour)
+        {
+            previous_hour = m_lastHourlyReportHour;
+            m_lastHourlyReportHour = current_hour;
+        }
+
+        if (today != m_lastDailyScheduleDate)
+        {
+            // First tick of a new calendar day — schedule for the day that just ended.
+            if (!m_lastDailyScheduleDate.empty())
+                run_daily = true;
+            m_lastDailyScheduleDate = today;
+        }
     }
 
-    if (previous_hour.empty())
-        return; // 서버가 막 떴을 때: 아직 "방금 끝난 시간"이 없다. 다음 시(時) 경계부터 생성.
+    if (!previous_hour.empty())
+        web::v1::PowerStore::enqueue_hourly_report(previous_hour + ":00:00");
 
-    web::v1::PowerStore::ensure_hourly_report(client, previous_hour + ":00:00");
+    if (run_daily)
+    {
+        const auto yesterday_rows = client->execSqlSync("SELECT date(?, '-1 day') AS d", today);
+        const std::string yesterday =
+            yesterday_rows.empty() ? today : yesterday_rows[0]["d"].as<std::string>();
+
+        web::v1::PowerStore::enqueue_daily_report(yesterday);
+
+        const auto week_start_rows = client->execSqlSync("SELECT date(?, '-6 day') AS d", yesterday);
+        const std::string week_start =
+            week_start_rows.empty() ? yesterday : week_start_rows[0]["d"].as<std::string>();
+        web::v1::PowerStore::enqueue_weekly_report(week_start);
+
+        const auto month_start_rows = client->execSqlSync("SELECT date(?, '-29 day') AS d", yesterday);
+        const std::string month_start =
+            month_start_rows.empty() ? yesterday : month_start_rows[0]["d"].as<std::string>();
+        web::v1::PowerStore::enqueue_monthly_report(month_start);
+
+        web::v1::PowerStore::enqueue_power_insights_for_date(yesterday);
+
+        // Sunday = strftime('%w') == '0'. "주 시작" — Sunday midnight batch for the prior 365 days.
+        const auto wday_rows = client->execSqlSync("SELECT strftime('%w', ?) AS w", today);
+        const std::string wday = wday_rows.empty() ? "" : wday_rows[0]["w"].as<std::string>();
+        if (wday == "0")
+        {
+            const auto year_start_rows = client->execSqlSync("SELECT date(?, '-364 day') AS d", yesterday);
+            const std::string year_start =
+                year_start_rows.empty() ? yesterday : year_start_rows[0]["d"].as<std::string>();
+
+            std::string week_key = today;
+            {
+                std::lock_guard lock(m_mutex);
+                if (m_lastYearlyScheduleWeek != week_key)
+                {
+                    m_lastYearlyScheduleWeek = week_key;
+                    run_yearly = true;
+                }
+            }
+            if (run_yearly)
+                web::v1::PowerStore::enqueue_yearly_report(year_start);
+        }
+    }
+}
+
+void PowerManager::setMeteringEnabled(const std::string& external_id, bool enabled)
+{
+    std::lock_guard lock(m_mutex);
+    m_meteringEnabled[external_id] = enabled;
+    if (!enabled)
+    {
+        m_buckets.erase(external_id);
+    }
+}
+
+bool PowerManager::isMeteringEnabled(const std::string& external_id) const
+{
+    std::lock_guard lock(m_mutex);
+    const auto it = m_meteringEnabled.find(external_id);
+    if (it == m_meteringEnabled.end())
+        return true;
+    return it->second;
+}
+
+void PowerManager::reloadMeteringFromDb()
+{
+    auto client = AppState::get().db();
+    if (!client)
+        return;
+
+    try
+    {
+        std::unordered_map<int64_t, bool> by_db_id;
+        const auto rows = client->execSqlSync(
+            R"SQL(
+SELECT d.id AS db_id,
+       COALESCE(json_extract(d.settings_json, '$.metering'), 1) AS metering
+FROM device d
+WHERE d.archived = 0 AND d.class = 'tuya_ep2h'
+)SQL");
+        for (const auto& row : rows)
+            by_db_id[row["db_id"].as<int64_t>()] = row["metering"].as<int>() != 0;
+
+        std::unordered_map<std::string, bool> next;
+        for (const auto& entry : AppState::get().deviceManager.manifestEntries())
+        {
+            if (entry.config.value("class", "") != "tuya_ep2h")
+                continue;
+            const std::string wire = entry.config.value("id", "");
+            if (wire.empty())
+                continue;
+            bool metering = true;
+            if (const auto db_id = dev::dbIdForWireId(client, wire))
+            {
+                const auto it = by_db_id.find(*db_id);
+                if (it != by_db_id.end())
+                    metering = it->second;
+            }
+            next[wire] = metering;
+        }
+
+        std::lock_guard lock(m_mutex);
+        m_meteringEnabled = std::move(next);
+    }
+    catch (const std::exception& e)
+    {
+        WLOG_WARN("PowerManager: reload metering failed: {}", e.what());
+    }
 }
 
 void PowerManager::samplePlug(const std::string& external_id)
@@ -217,7 +340,7 @@ void PowerManager::storeSample(const std::string& external_id, const PlugReading
         trim_history(history);
     }
 
-    if (reading.connected)
+    if (reading.connected && isMeteringEnabled(external_id))
         accumulateEnergy(external_id, reading);
 }
 
@@ -242,6 +365,9 @@ std::string PowerManager::bucket_time_start(int64_t ts_ms)
 
 void PowerManager::accumulateEnergy(const std::string& external_id, const PlugReading& reading)
 {
+    if (!isMeteringEnabled(external_id))
+        return;
+
     const std::string bucket_key = bucket_time_start(reading.ts_ms);
     std::optional<EnergyBucket> due_bucket;
     std::string due_key;
@@ -307,6 +433,9 @@ void PowerManager::flushDueBuckets(int64_t now_ms)
 
     for (auto& [key, bucket] : due)
     {
+        if (!isMeteringEnabled(key))
+            continue;
+
         const auto db_id = resolveDbDeviceId(key);
         flushBucket(key, bucket, db_id);
 

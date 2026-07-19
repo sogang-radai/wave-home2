@@ -17,8 +17,8 @@
 #include "../../device/interface/radar.h"
 #include "../../device/platform/radai_ws.h"
 #include "../../device/platform/srs_r4sn.h"
-#include "../agent_client.h"
-#include "../insight_generator.h"
+#include "../agent/agent_client.h"
+#include "../agent/agent_job_queue.h"
 #include "../sleep_plan_generator.h"
 
 #include <future>
@@ -165,28 +165,6 @@ void SleepManager::start()
             }
         }
     });
-
-    m_jobWorker = std::thread([this]()
-    {
-        while (m_running.load(std::memory_order_acquire))
-        {
-            SleepJob job;
-            {
-                std::unique_lock lock(m_jobMutex);
-                m_jobCv.wait_for(lock, std::chrono::seconds(1), [this]()
-                {
-                    return !m_jobs.empty() || !m_running.load(std::memory_order_acquire);
-                });
-                if (!m_running.load(std::memory_order_acquire))
-                    break;
-                if (m_jobs.empty())
-                    continue;
-                job = std::move(m_jobs.front());
-                m_jobs.pop_front();
-            }
-            processJob(job);
-        }
-    });
 }
 
 bool SleepManager::isStationMicInUse(const std::string& station_external_id) const
@@ -216,12 +194,9 @@ void SleepManager::stop()
         return;
 
     m_stopCv.notify_all();
-    m_jobCv.notify_all();
 
     if (m_worker.joinable())
         m_worker.join();
-    if (m_jobWorker.joinable())
-        m_jobWorker.join();
 }
 
 void SleepManager::reconcile()
@@ -521,10 +496,6 @@ bool SleepManager::initPipeline(SleepRuntime& runtime, std::string& out_error)
 }
 
 void SleepManager::runLoop()
-{
-}
-
-void SleepManager::runJobLoop()
 {
 }
 
@@ -1345,11 +1316,73 @@ void SleepManager::requestSleepPlan(int32_t user_id, const std::string& plan_dat
 
 void SleepManager::enqueueJob(SleepJob job)
 {
+    // Sleep plan is outside AgentJobQueue (no AgentJobKind); keep remote plan jobs working.
+    if (job.kind == SleepJobKind::Plan)
     {
-        std::lock_guard lock(m_jobMutex);
-        m_jobs.push_back(std::move(job));
+        processJob(job);
+        return;
     }
-    m_jobCv.notify_one();
+
+    AgentJob aj;
+    switch (job.kind)
+    {
+    case SleepJobKind::Summary30m:
+        aj.kind = AgentJobKind::SleepSummary30m;
+        break;
+    case SleepJobKind::DailyReport:
+        aj.kind = AgentJobKind::SleepDailyReport;
+        break;
+    case SleepJobKind::WeeklyReport:
+        aj.kind = AgentJobKind::SleepWeeklyReport;
+        break;
+    default:
+        return;
+    }
+    aj.userId = job.userId;
+    aj.roomId = job.roomId;
+    aj.statId = job.statId;
+    aj.sessionId = job.sessionId;
+    aj.period = job.period;
+    aj.periodStart = job.periodStart;
+    aj.payload = std::move(job.payload);
+    AgentJobQueue::get().enqueue(std::move(aj));
+}
+
+void SleepManager::enqueueInsight(int32_t user_id, const std::string& date)
+{
+    AgentJob insight;
+    insight.kind = AgentJobKind::Insight;
+    insight.userId = user_id;
+    insight.surface = "sleep_report";
+    insight.date = date;
+    AgentJobQueue::get().enqueue(std::move(insight));
+}
+
+void SleepManager::processQueuedJob(const AgentJob& job)
+{
+    SleepJob sleep_job;
+    switch (job.kind)
+    {
+    case AgentJobKind::SleepSummary30m:
+        sleep_job.kind = SleepJobKind::Summary30m;
+        break;
+    case AgentJobKind::SleepDailyReport:
+        sleep_job.kind = SleepJobKind::DailyReport;
+        break;
+    case AgentJobKind::SleepWeeklyReport:
+        sleep_job.kind = SleepJobKind::WeeklyReport;
+        break;
+    default:
+        return;
+    }
+    sleep_job.userId = job.userId;
+    sleep_job.roomId = job.roomId;
+    sleep_job.statId = job.statId;
+    sleep_job.sessionId = job.sessionId;
+    sleep_job.period = job.period;
+    sleep_job.periodStart = job.periodStart;
+    sleep_job.payload = job.payload;
+    processJob(sleep_job);
 }
 
 void SleepManager::processJob(const SleepJob& job)
@@ -1487,12 +1520,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         }
 
         {
-            std::string insight_error;
-            if (!generateAndPersistInsights(
-                    client, app.config.agent.base_url, job.userId, "sleep_report", job.periodStart, insight_error))
-            {
-                WLOG_WARN("insight generation (sleep_report daily) failed: {}", insight_error);
-            }
+            enqueueInsight(job.userId, job.periodStart);
         }
         return;
     }
@@ -1608,12 +1636,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         }
 
         {
-            std::string insight_error;
-            if (!generateAndPersistInsights(
-                    client, app.config.agent.base_url, job.userId, "sleep_report", job.periodStart, insight_error))
-            {
-                WLOG_WARN("insight generation (sleep_report weekly) failed: {}", insight_error);
-            }
+            enqueueInsight(job.userId, job.periodStart);
         }
     }
 }

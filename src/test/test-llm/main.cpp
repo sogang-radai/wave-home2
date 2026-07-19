@@ -6,7 +6,7 @@
 #include <util/arg_parser.h>
 #include <util/spinner.h>
 
-#include "service/llm_client.h"
+#include "service/agent/llm_client.h"
 
 namespace
 {

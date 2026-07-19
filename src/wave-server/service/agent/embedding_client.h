@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "../core/json.h"
+#include "../../core/json.h"
 
 #define EMBEDDING_NAMESPACE_BEGIN namespace embedding {
 #define EMBEDDING_NAMESPACE_END }

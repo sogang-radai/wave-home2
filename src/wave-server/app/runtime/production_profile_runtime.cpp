@@ -3,6 +3,7 @@
 #include "../../core/json.h"
 #include "../../core/logger.h"
 #include "../../service/alarm_manager.h"
+#include "../../service/agent/agent_job_queue.h"
 #include "../../service/companion/companion_manager.h"
 #include "../../service/power_manager.h"
 #include "../../service/sleep/sleep_manager.h"
@@ -48,6 +49,7 @@ void ProductionProfileRuntime::startPostListen(AppState& app)
         return;
 
     m_startedDeviceStack = true;
+    service::AgentJobQueue::get().start();
     service::PowerManager::get().start();
 
     std::string tts_error;
@@ -113,6 +115,7 @@ void ProductionProfileRuntime::shutdown(AppState& app)
         service::PowerManager::get().stop();
         service::CompanionManager::get().stop();
         service::AlarmManager::get().stop();
+        service::AgentJobQueue::get().stop();
     }
 
     app.stopAutomationServices();

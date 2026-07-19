@@ -4,7 +4,7 @@
 #include <sstream>
 
 #include "util/time_util.h"
-#include "../../../service/agent_client.h"
+#include "../../../service/agent/agent_client.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {

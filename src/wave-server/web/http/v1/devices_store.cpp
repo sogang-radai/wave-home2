@@ -11,6 +11,7 @@
 #include "../../../core/logger.h"
 #include "../../../device/device.h"
 #include "../../../device/device_wire_id.hpp"
+#include "../../../service/power_manager.h"
 #include "rooms_store.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -451,8 +452,13 @@ std::optional<Json::Value> DevicesStore::updateDevice(
         enabled = body["enabled"].asBool();
     if (body.isMember("interface"))
         interface_json = body["interface"];
-    if (body.isMember("settings"))
-        settings_json = body["settings"];
+    if (body.isMember("settings") && body["settings"].isObject())
+    {
+        if (!had_settings)
+            settings_json = Json::Value(Json::objectValue);
+        for (const auto& name : body["settings"].getMemberNames())
+            settings_json[name] = body["settings"][name];
+    }
 
     if (body.isMember("room_id"))
     {
@@ -514,6 +520,12 @@ WHERE id = ?
         error = "기기 수정에 실패했습니다.";
         code = "UPDATE_FAILED";
         return std::nullopt;
+    }
+
+    if (body.isMember("settings") && device_class == "tuya_ep2h")
+    {
+        const bool metering = !settings_json.isMember("metering") || settings_json["metering"].asBool();
+        service::PowerManager::get().setMeteringEnabled(wire_id, metering);
     }
 
     return findDevice(wire_id);

@@ -1,6 +1,6 @@
 #include "llm_client.h"
 
-#include "../core/task_queue.h"
+#include "../../core/task_queue.h"
 
 #include <algorithm>
 #include <cassert>

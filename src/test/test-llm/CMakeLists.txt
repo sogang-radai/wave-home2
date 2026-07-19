@@ -2,7 +2,7 @@ set(TEST_LLM_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/test")
 
 add_executable(test-llm
     main.cpp
-    "${CMAKE_SOURCE_DIR}/src/wave-server/service/llm_client.cpp"
+    "${CMAKE_SOURCE_DIR}/src/wave-server/service/agent/llm_client.cpp"
     "${CMAKE_SOURCE_DIR}/src/wave-server/core/task_queue.cpp"
     "${CMAKE_SOURCE_DIR}/src/wave-server/auxiliary/stb_image.cpp"
     "${CMAKE_SOURCE_DIR}/src/common/util/spinner.cpp"

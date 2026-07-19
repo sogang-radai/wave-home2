@@ -11,13 +11,14 @@ set(_wave_server_sources
     
     db/database.cpp
     db/vec_tables.cpp
-    service/llm_client.cpp
-    service/agent_client.cpp
-    service/insight_generator.cpp
-    service/insight_vec_store.cpp
+    service/agent/llm_client.cpp
+    service/agent/agent_client.cpp
+    service/agent/insight_generator.cpp
+    service/agent/insight_vec_store.cpp
+    service/agent/goal_coaching_generator.cpp
     service/sleep_plan_generator.cpp
-    service/goal_coaching_generator.cpp
     service/go2rtc_service.cpp
+    service/agent/agent_job_queue.cpp
     service/power_manager.cpp
     service/alarm_manager.cpp
     service/trigger_types.cpp

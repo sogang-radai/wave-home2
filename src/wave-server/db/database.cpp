@@ -423,7 +423,7 @@ namespace
     energy_wh    REAL        NOT NULL,
     coverage     REAL        NOT NULL,
     sample_count INTEGER     NOT NULL,
-    CHECK (granularity IN ('5m', '1h', '24h', '1w', '1mo')),
+    CHECK (granularity IN ('5m', '1h', '24h', '1w', '1mo', '1yr')),
     FOREIGN KEY (device_id) REFERENCES device(id)
     )
     )SQL",
@@ -644,6 +644,34 @@ namespace
             {
                 R"SQL(
     ALTER TABLE user_ai_agent_settings ADD COLUMN voice_auto_send INTEGER NOT NULL DEFAULT 0
+    )SQL",
+            },
+        },
+        {
+            9,
+            "allow power_energy granularity 1yr",
+            {
+                R"SQL(
+    CREATE TABLE power_energy_v9 (
+    id           INTEGER     PRIMARY KEY,
+    device_id    INTEGER,
+    granularity  VARCHAR(4)  NOT NULL,
+    time_start   VARCHAR(50) NOT NULL,
+    energy_wh    REAL        NOT NULL,
+    coverage     REAL        NOT NULL,
+    sample_count INTEGER     NOT NULL,
+    CHECK (granularity IN ('5m', '1h', '24h', '1w', '1mo', '1yr')),
+    FOREIGN KEY (device_id) REFERENCES device(id)
+    )
+    )SQL",
+                R"SQL(
+    INSERT INTO power_energy_v9 (id, device_id, granularity, time_start, energy_wh, coverage, sample_count)
+    SELECT id, device_id, granularity, time_start, energy_wh, coverage, sample_count FROM power_energy
+    )SQL",
+                R"SQL(DROP TABLE power_energy)SQL",
+                R"SQL(ALTER TABLE power_energy_v9 RENAME TO power_energy)SQL",
+                R"SQL(
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_power_energy ON power_energy (COALESCE(device_id, -1), granularity, time_start)
     )SQL",
             },
         },

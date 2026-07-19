@@ -21,7 +21,7 @@
 #include "../../web/http/v1/chat_store.h"
 #include "../../web/http/v1/iot_store.h"
 #include "../../web/http/v1/settings_store.h"
-#include "../agent_client.h"
+#include "../agent/agent_client.h"
 #include "../sleep/sleep_manager.h"
 #include "util/time_util.h"
 

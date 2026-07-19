@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-#include "../core/json.h"
+#include "../../core/json.h"
 
 #define LLM_NAMESPACE_BEGIN namespace llm {
 #define LLM_NAMESPACE_END }

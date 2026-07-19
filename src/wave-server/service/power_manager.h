@@ -52,6 +52,11 @@ public:
     void sampleNow();
     void samplePlugNow(const std::string& external_id);
 
+    /** UI metering toggle — false stops energy aggregation for this plug. Default true. */
+    void setMeteringEnabled(const std::string& external_id, bool enabled);
+    bool isMeteringEnabled(const std::string& external_id) const;
+    void reloadMeteringFromDb();
+
 private:
     PowerManager() = default;
     ~PowerManager();
@@ -69,7 +74,7 @@ private:
 
     void runLoop();
     void sampleAllPlugs();
-    void maybeGenerateHourlyReport();
+    void maybeEnqueueSchedules();
     void samplePlug(const std::string& external_id);
     void storeSample(const std::string& external_id, const PlugReading& reading);
     void accumulateEnergy(const std::string& external_id, const PlugReading& reading);
@@ -84,7 +89,11 @@ private:
     std::unordered_map<std::string, std::deque<PowerSample>> m_history;
     std::unordered_map<std::string, EnergyBucket> m_buckets;
     std::unordered_map<std::string, int64_t> m_db_device_cache;
+    /** external_id → metering; missing key means enabled (true). */
+    std::unordered_map<std::string, bool> m_meteringEnabled;
     std::string m_lastHourlyReportHour;
+    std::string m_lastDailyScheduleDate;
+    std::string m_lastYearlyScheduleWeek;
 
     std::atomic<bool> m_running{false};
     std::thread m_worker;

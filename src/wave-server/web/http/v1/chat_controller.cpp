@@ -16,7 +16,7 @@
 #include "../../../core/json.h"
 #include "../../../core/logger.h"
 #include "util/time_util.h"
-#include "../../../service/agent_client.h"
+#include "../../../service/agent/agent_client.h"
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_runtime_id.h"
 #include "../../../demo/demo_session_writes.h"

@@ -1,6 +1,6 @@
 #include "embedding_client.h"
 
-#include "../core/task_queue.h"
+#include "../../core/task_queue.h"
 
 #include <cassert>
 #include <cmath>

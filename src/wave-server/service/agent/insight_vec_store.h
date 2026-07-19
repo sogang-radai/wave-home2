@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "../db/database.h"
+#include "../../db/database.h"
 
 #include "core/coredefs.h"
 

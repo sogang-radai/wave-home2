@@ -8,7 +8,7 @@
 
 #include "../core/json.h"
 #include "../core/logger.h"
-#include "../service/agent_client.h"
+#include "../service/agent/agent_client.h"
 #include "demo_session_registry.h"
 #include "demo_session_writes.h"
 

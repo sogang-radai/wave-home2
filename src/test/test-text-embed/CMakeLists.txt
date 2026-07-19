@@ -2,7 +2,7 @@ set(TEST_TEXT_EMBED_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/test")
 
 add_executable(test-text-embed
     main.cpp
-    "${CMAKE_SOURCE_DIR}/src/wave-server/service/embedding_client.cpp"
+    "${CMAKE_SOURCE_DIR}/src/wave-server/service/agent/embedding_client.cpp"
     "${CMAKE_SOURCE_DIR}/src/wave-server/core/task_queue.cpp"
     "${CMAKE_SOURCE_DIR}/src/common/util/spinner.cpp"
     "${CMAKE_SOURCE_DIR}/src/common/util/arg_parser.cpp"

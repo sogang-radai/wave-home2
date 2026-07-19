@@ -15,7 +15,7 @@ namespace v1 {
 
 /**
  * `goal`/`goal_recommendation` 테이블 CRUD. goal_coaching_report 읽기/쓰기는
- * service/goal_coaching_generator.h 쪽에 있다(에이전트 호출을 끼고 있어서 여기 두지 않음).
+ * service/agent/goal_coaching_generator.h 쪽에 있다(에이전트 호출을 끼고 있어서 여기 두지 않음).
  *
  * insight/schedule_task 파이프라인과 완전히 독립 — 이 파일은 그쪽 테이블을 전혀 건드리지
  * 않는다.

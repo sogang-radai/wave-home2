@@ -8,7 +8,7 @@
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_goals.h"
 #include "../../../demo/demo_runtime_id.h"
-#include "../../../service/goal_coaching_generator.h"
+#include "../../../service/agent/goal_coaching_generator.h"
 #include "../../../service/rule_store.h"
 #include "../internal/schedule_tasks_internal_store.h"
 #include "action_log_store.h"

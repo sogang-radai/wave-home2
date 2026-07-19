@@ -13,8 +13,8 @@
 #include "../../../core/json.h"
 #include "../../../core/logger.h"
 #include "util/time_util.h"
-#include "../../../service/agent_client.h"
-#include "../../../service/insight_generator.h"
+#include "../../../service/agent/agent_client.h"
+#include "../../../service/agent/agent_job_queue.h"
 #include "../../../service/power_manager.h"
 #include "../../../device/device_wire_id.hpp"
 #include "insights_store.h"
@@ -144,6 +144,7 @@ Json::Value PowerStore::listPlugs()
         plug["connected"] = online;
         plug["connectionStatus"] = connection_status;
         plug["switchOn"] = online && reading && reading->switch_on;
+        plug["metering"] = power.isMeteringEnabled(plug_id);
         plug["trend"] = Json::Value(Json::objectValue);
 
         if (online && reading)
@@ -439,17 +440,18 @@ WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_star
         window_start,
         window_end);
     if (agg_rows.empty() || agg_rows[0]["buckets"].as<int64_t>() == 0)
-        return std::nullopt; // 그 구간 5m 데이터가 아예 없음 — 리포트를 만들 근거가 없다.
+        return std::nullopt;
 
     const double energy_wh = std::round(agg_rows[0]["energy_wh"].as<double>() * 10000.0) / 10000.0;
     const int64_t sample_count = agg_rows[0]["samples"].as<int64_t>();
     const int64_t bucket_count = agg_rows[0]["buckets"].as<int64_t>();
     const double coverage = std::min(1.0, static_cast<double>(bucket_count) / expected_5m_buckets);
 
-    // Demo seed는 24h를 date-only(`YYYY-MM-DD`)로 넣는다. datetime 키를 쓰면
-    // 같은 날이 두 줄이 되어 주간 차트가 "월월화화"처럼 중복 라벨이 된다.
     const std::string energy_time_start =
-        (period == "24h" && period_start.size() >= 10) ? period_start.substr(0, 10) : period_start;
+        (period == "24h" || period == "1w" || period == "1mo" || period == "1yr")
+            && period_start.size() >= 10
+            ? period_start.substr(0, 10)
+            : period_start;
 
     client->execSqlSync(
         R"SQL(
@@ -478,7 +480,7 @@ ON CONFLICT DO UPDATE SET
     target["id"] = energy_id;
     target["deviceId"] = nullptr;
     target["granularity"] = period;
-    target["timeStart"] = period_start;
+    target["timeStart"] = energy_time_start;
     target["energyWh"] = energy_wh;
     target["coverage"] = coverage;
     target["sampleCount"] = sample_count;
@@ -488,13 +490,54 @@ ON CONFLICT DO UPDATE SET
     metrics["coveragePercent"] = std::round(coverage * 1000.0) / 10.0;
     metrics["sampleCount"] = sample_count;
 
+    if (period == "1w" || period == "1mo" || period == "1yr")
+    {
+        const auto day_rows = client->execSqlSync(
+            R"SQL(
+SELECT COUNT(DISTINCT date(time_start)) AS days
+FROM power_energy
+WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_start < ?
+)SQL",
+            window_start,
+            window_end);
+        const int64_t days = day_rows.empty() ? 0 : day_rows[0]["days"].as<int64_t>();
+        metrics["days"] = days;
+        if (days > 0)
+            metrics["avgDailyWh"] = std::round((energy_wh / static_cast<double>(days)) * 100.0) / 100.0;
+    }
+
+    const auto by_device = build_by_device(client, window_start, window_end);
+    if (!by_device.empty())
+        metrics["byDevice"] = by_device;
+
+    if (const auto prev = previous_window_energy(client, period, period_start, window_start, window_end))
+    {
+        if (*prev > 0.0)
+            metrics["vsPrevPct"] = std::round(((energy_wh - *prev) / *prev) * 1000.0) / 10.0;
+    }
+
+    const auto peak_rows = client->execSqlSync(
+        R"SQL(
+SELECT time_start, energy_wh FROM power_energy
+WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_start < ?
+ORDER BY energy_wh DESC LIMIT 1
+)SQL",
+        window_start,
+        window_end);
+    if (!peak_rows.empty())
+    {
+        // 5m Wh → approximate average W over the bucket (Wh * 12).
+        metrics["peakW"] = std::round(peak_rows[0]["energy_wh"].as<double>() * 12.0 * 10.0) / 10.0;
+        metrics["peakAt"] = peak_rows[0]["time_start"].as<std::string>();
+    }
+
     json body;
     body["deviceId"] = nullptr;
     body["period"] = period;
     body["periodStart"] = period_start;
     body["metrics"] = metrics;
     body["target"] = target;
-    body["children"] = json::array();
+    body["children"] = build_children(client, period, window_start, window_end);
     body["embed"] = true;
 
     service::AgentSleepJobResult agent_result;
@@ -544,43 +587,291 @@ ON CONFLICT DO UPDATE SET
     return report_id;
 }
 
-bool PowerStore::ensure_daily_report(const db::DbClientPtr& client, const std::string& date)
+json PowerStore::build_children(
+    const db::DbClientPtr& client,
+    const std::string& period,
+    const std::string& window_start,
+    const std::string& window_end)
+{
+    json children = json::array();
+    std::string child_granularity;
+    if (period == "1h")
+        child_granularity = "5m";
+    else if (period == "24h")
+        child_granularity = "1h";
+    else if (period == "1w" || period == "1mo" || period == "1yr")
+        child_granularity = "24h";
+    else
+        return children;
+
+    try
+    {
+        const auto rows = client->execSqlSync(
+            R"SQL(
+SELECT id, device_id, granularity, time_start, energy_wh, coverage, sample_count
+FROM power_energy
+WHERE device_id IS NULL AND granularity = ? AND time_start >= ? AND time_start < ?
+ORDER BY time_start
+)SQL",
+            child_granularity,
+            window_start,
+            window_end);
+        for (const auto& row : rows)
+        {
+            json child;
+            child["id"] = row["id"].as<int64_t>();
+            child["deviceId"] = nullptr;
+            child["granularity"] = row["granularity"].as<std::string>();
+            child["timeStart"] = row["time_start"].as<std::string>();
+            child["energyWh"] = row["energy_wh"].as<double>();
+            child["coverage"] = row["coverage"].as<double>();
+            child["sampleCount"] = row["sample_count"].as<int64_t>();
+            children.push_back(std::move(child));
+        }
+    }
+    catch (const std::exception& e)
+    {
+        WLOG_WARN("power report children query failed: {}", e.what());
+    }
+    return children;
+}
+
+json PowerStore::build_by_device(
+    const db::DbClientPtr& client,
+    const std::string& window_start,
+    const std::string& window_end)
+{
+    json by_device = json::array();
+    try
+    {
+        const auto rows = client->execSqlSync(
+            R"SQL(
+SELECT pe.device_id AS device_id,
+       COALESCE(SUM(pe.energy_wh), 0) AS energy_wh
+FROM power_energy pe
+LEFT JOIN device d ON d.id = pe.device_id
+WHERE pe.device_id IS NOT NULL
+  AND pe.granularity = '5m'
+  AND pe.time_start >= ? AND pe.time_start < ?
+GROUP BY pe.device_id
+HAVING COALESCE(json_extract(d.settings_json, '$.metering'), 1) != 0
+ORDER BY energy_wh DESC
+)SQL",
+            window_start,
+            window_end);
+        for (const auto& row : rows)
+        {
+            json item;
+            item["deviceId"] = row["device_id"].as<int64_t>();
+            item["energyWh"] = std::round(row["energy_wh"].as<double>() * 100.0) / 100.0;
+            by_device.push_back(std::move(item));
+        }
+    }
+    catch (const std::exception& e)
+    {
+        WLOG_WARN("power report by_device query failed: {}", e.what());
+    }
+    return by_device;
+}
+
+std::optional<double> PowerStore::previous_window_energy(
+    const db::DbClientPtr& client,
+    const std::string& period,
+    const std::string& period_start,
+    const std::string& window_start,
+    const std::string& window_end)
+{
+    (void)period_start;
+    std::string offset;
+    if (period == "1h")
+        offset = "-1 hour";
+    else if (period == "24h")
+        offset = "-1 day";
+    else if (period == "1w")
+        offset = "-7 day";
+    else if (period == "1mo")
+        offset = "-30 day";
+    else if (period == "1yr")
+        offset = "-365 day";
+    else
+        return std::nullopt;
+
+    try
+    {
+        const auto prev_start_rows = client->execSqlSync("SELECT datetime(?, ?) AS d", window_start, offset);
+        const auto prev_end_rows = client->execSqlSync("SELECT datetime(?, ?) AS d", window_end, offset);
+        if (prev_start_rows.empty() || prev_end_rows.empty())
+            return std::nullopt;
+        const auto rows = client->execSqlSync(
+            R"SQL(
+SELECT COALESCE(SUM(energy_wh), 0) AS energy_wh, COUNT(*) AS buckets
+FROM power_energy
+WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_start < ?
+)SQL",
+            prev_start_rows[0]["d"].as<std::string>(),
+            prev_end_rows[0]["d"].as<std::string>());
+        if (rows.empty() || rows[0]["buckets"].as<int64_t>() == 0)
+            return std::nullopt;
+        return rows[0]["energy_wh"].as<double>();
+    }
+    catch (const std::exception&)
+    {
+        return std::nullopt;
+    }
+}
+
+void PowerStore::run_queued_report(const service::AgentJob& job)
+{
+    auto client = AppState::get().db();
+    if (!client)
+        return;
+
+    const bool existed = !client
+                              ->execSqlSync(
+                                  "SELECT id FROM power_report WHERE period = ? AND period_start = ? AND device_id IS NULL",
+                                  job.period,
+                                  job.periodStart)
+                              .empty();
+
+    const auto report_id = generate_report(
+        client,
+        job.period,
+        job.periodStart,
+        job.windowStart,
+        job.windowEnd,
+        job.expected5mBuckets);
+    if (!report_id)
+        return;
+
+    if (!existed && job.period == "24h")
+    {
+        const std::string date =
+            job.periodStart.size() >= 10 ? job.periodStart.substr(0, 10) : job.periodStart;
+        enqueue_power_insights_for_date(date);
+    }
+}
+
+bool PowerStore::enqueue_report_job(
+    const std::string& period,
+    const std::string& period_start,
+    const std::string& window_start,
+    const std::string& window_end,
+    double expected_5m_buckets,
+    bool wait)
+{
+    service::AgentJob job;
+    job.kind = service::AgentJobKind::PowerReport;
+    job.period = period;
+    job.periodStart = period_start;
+    job.windowStart = window_start;
+    job.windowEnd = window_end;
+    job.expected5mBuckets = expected_5m_buckets;
+
+    if (wait)
+        return service::AgentJobQueue::get().enqueueAndWait(std::move(job), std::chrono::seconds(90));
+    return service::AgentJobQueue::get().enqueue(std::move(job));
+}
+
+void PowerStore::enqueue_hourly_report(const std::string& hour_start)
+{
+    const auto client = AppState::get().db();
+    if (!client)
+        return;
+    const auto hour_end_rows = client->execSqlSync("SELECT datetime(?, '+1 hour') AS d", hour_start);
+    const std::string hour_end = hour_end_rows.empty() ? hour_start : hour_end_rows[0]["d"].as<std::string>();
+    enqueue_report_job("1h", hour_start, hour_start, hour_end, 12.0, false);
+}
+
+void PowerStore::enqueue_daily_report(const std::string& date)
 {
     const std::string day_start = date + " 00:00:00";
+    const auto client = AppState::get().db();
+    if (!client)
+        return;
     const auto day_end_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", date);
-    const std::string day_end = (day_end_rows.empty() ? date : day_end_rows[0]["d"].as<std::string>()) + " 00:00:00";
+    const std::string day_end =
+        (day_end_rows.empty() ? date : day_end_rows[0]["d"].as<std::string>()) + " 00:00:00";
+    enqueue_report_job("24h", day_start, day_start, day_end, 288.0, false);
+}
 
-    const auto pre_existing = client->execSqlSync(
-        "SELECT id FROM power_report WHERE period = '24h' AND period_start = ? AND device_id IS NULL", day_start);
-    const bool already_had_report = !pre_existing.empty();
+void PowerStore::enqueue_weekly_report(const std::string& period_start_date)
+{
+    const auto client = AppState::get().db();
+    if (!client)
+        return;
+    const std::string window_start = period_start_date + " 00:00:00";
+    const auto end_rows = client->execSqlSync("SELECT date(?, '+7 day') AS d", period_start_date);
+    const std::string window_end =
+        (end_rows.empty() ? period_start_date : end_rows[0]["d"].as<std::string>()) + " 00:00:00";
+    enqueue_report_job("1w", period_start_date, window_start, window_end, 288.0 * 7.0, false);
+}
 
-    const auto report_id = generate_report(client, "24h", day_start, day_start, day_end, 288.0);
-    if (!report_id)
-        return false;
+void PowerStore::enqueue_monthly_report(const std::string& period_start_date)
+{
+    const auto client = AppState::get().db();
+    if (!client)
+        return;
+    const std::string window_start = period_start_date + " 00:00:00";
+    const auto end_rows = client->execSqlSync("SELECT date(?, '+30 day') AS d", period_start_date);
+    const std::string window_end =
+        (end_rows.empty() ? period_start_date : end_rows[0]["d"].as<std::string>()) + " 00:00:00";
+    enqueue_report_job("1mo", period_start_date, window_start, window_end, 288.0 * 30.0, false);
+}
 
-    if (already_had_report)
-        return true; // 캐시 재사용 — 매 요청마다 인사이트를 다시 만들 필요는 없다.
+void PowerStore::enqueue_yearly_report(const std::string& period_start_date)
+{
+    const auto client = AppState::get().db();
+    if (!client)
+        return;
+    const std::string window_start = period_start_date + " 00:00:00";
+    const auto end_rows = client->execSqlSync("SELECT date(?, '+365 day') AS d", period_start_date);
+    const std::string window_end =
+        (end_rows.empty() ? period_start_date : end_rows[0]["d"].as<std::string>()) + " 00:00:00";
+    enqueue_report_job("1yr", period_start_date, window_start, window_end, 288.0 * 365.0, false);
+}
 
-    // sleep_manager.cpp 와 동일한 지점: 리포트가 막 새로 생성된 직후에만 그 날짜 인사이트도 생성한다.
-    const auto user_rows = client->execSqlSync("SELECT id FROM user");
-    for (const auto& row : user_rows)
+void PowerStore::enqueue_power_insights_for_date(const std::string& date)
+{
+    auto client = AppState::get().db();
+    if (!client)
+        return;
+    try
     {
-        const auto user_id = row["id"].as<int64_t>();
-        std::string insight_error;
-        if (!service::generateAndPersistInsights(
-                client, AppState::get().config.agent.base_url, user_id, "power", date, insight_error))
-            WLOG_WARN("power insight generation failed (user {}): {}", user_id, insight_error);
+        const auto user_rows = client->execSqlSync("SELECT id FROM user");
+        for (const auto& row : user_rows)
+        {
+            service::AgentJob insight;
+            insight.kind = service::AgentJobKind::Insight;
+            insight.userId = row["id"].as<int64_t>();
+            insight.surface = "power";
+            insight.date = date;
+            service::AgentJobQueue::get().enqueue(std::move(insight));
+        }
     }
+    catch (const std::exception& e)
+    {
+        WLOG_WARN("enqueue power insights failed: {}", e.what());
+    }
+}
 
-    return true;
+bool PowerStore::ensure_daily_report(const db::DbClientPtr& client, const std::string& date)
+{
+    if (!client)
+        return false;
+    const std::string day_start = date + " 00:00:00";
+    const auto day_end_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", date);
+    const std::string day_end =
+        (day_end_rows.empty() ? date : day_end_rows[0]["d"].as<std::string>()) + " 00:00:00";
+    return enqueue_report_job("24h", day_start, day_start, day_end, 288.0, true);
 }
 
 bool PowerStore::ensure_hourly_report(const db::DbClientPtr& client, const std::string& hour_start)
 {
+    if (!client)
+        return false;
     const auto hour_end_rows = client->execSqlSync("SELECT datetime(?, '+1 hour') AS d", hour_start);
     const std::string hour_end = hour_end_rows.empty() ? hour_start : hour_end_rows[0]["d"].as<std::string>();
-
-    return generate_report(client, "1h", hour_start, hour_start, hour_end, 12.0).has_value();
+    return enqueue_report_job("1h", hour_start, hour_start, hour_end, 12.0, true);
 }
 
 Json::Value PowerStore::query_report(

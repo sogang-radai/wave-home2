@@ -8,7 +8,7 @@
 #include "../../../db/database.h"
 #include <json/json.h>
 
-#include "../../../service/agent_client.h"
+#include "../../../service/agent/agent_client.h"
 #include "core/coredefs.h"
 
 WAVE_NAMESPACE_BEGIN

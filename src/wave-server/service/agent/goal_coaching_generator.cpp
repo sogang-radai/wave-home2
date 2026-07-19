@@ -1,11 +1,11 @@
 #include "goal_coaching_generator.h"
-#include "../db/database.h"
+#include "../../db/database.h"
 
 #include <optional>
 #include <sstream>
 
-#include "../core/json.h"
-#include "../core/logger.h"
+#include "../../core/json.h"
+#include "../../core/logger.h"
 #include "util/time_util.h"
 #include "agent_client.h"
 
