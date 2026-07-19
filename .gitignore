@@ -36,8 +36,7 @@ sleep-net/dataset/
 sleep-net/samples/
 sleep-net/models/
 sleep-net/training/
-sleep-net/test/**/*.csv
-sleep-net/test/plots/
+sleep-net/test/
 gesture-net/dataset/
 gesture-net/samples/
 gesture-net/models/
@@ -102,7 +101,7 @@ src/r4sn/docs/
 
 # IDE / editor
 .idea/
-.vscode
+.vscode/
 .cursor/
 
 # OS junk

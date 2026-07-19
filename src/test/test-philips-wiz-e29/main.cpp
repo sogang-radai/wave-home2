@@ -96,7 +96,7 @@ int main(int argc, const char* argv[])
     ArgParser parser("test-philips-wiz-e29", "Interactive test for the Philips WiZ E29 bulb.");
     parser.addArgument("--config", "-c")
         .help("device_list.json path.")
-        .defaultValue("bin/data/device_list.json");
+        .defaultValue("bin/device/device_list.json");
     parser.addArgument("--class")
         .help("Device class to load.")
         .defaultValue("philips_wiz_e29");

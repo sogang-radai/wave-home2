@@ -53,7 +53,7 @@ namespace
 
 int main(int argc, char* argv[])
 {
-    const std::string configPath = argc > 1 ? argv[1] : "bin/data/device_list.json";
+    const std::string configPath = argc > 1 ? argv[1] : "bin/device/device_list.json";
     const float azimuthDeg = argc > 2 ? std::stof(argv[2]) : 0.0f;
     const float elevationDeg = argc > 3 ? std::stof(argv[3]) : 0.0f;
     const float distanceM = argc > 4 ? std::stof(argv[4]) : 2.0f;

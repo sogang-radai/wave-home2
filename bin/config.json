@@ -11,7 +11,7 @@
             "home_page": "index.html",
             "database_path": "data/database.db"
         },
-        "device_list_path": "data/device_list.json",
+        "device_list_path": "device/device_list.json",
         "gesture_sets_path": "gestures/gesture_sets.json",
         "sleep_model_path": "models/sleep0-1/model.json",
         "stt_model_path": "models/stt/stt.json",
@@ -41,7 +41,7 @@
             "skip_migrations": true,
             "read_only": true
         },
-        "device_list_path": "data/device_list.json",
+        "device_list_path": "device/device_list.json",
         "gesture_sets_path": "gestures/gesture_sets.json",
         "sleep_model_path": "models/sleep0-1/model.json",
         "stt_model_path": "models/stt/stt.json",

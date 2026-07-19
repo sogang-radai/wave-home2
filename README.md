@@ -1,6 +1,6 @@
 # WaveHome
 
-[썸네일](docs/images/thumbnail.png)
+![WaveHome](docs/images/thumbnail.png)
 
 서강대학교 팀 **RADAI** - 2026 AI·SW 중심대학 디지털 경진대회(SW 부문)
 

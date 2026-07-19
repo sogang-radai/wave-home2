@@ -191,7 +191,7 @@ namespace
 
 int main(int argc, char* argv[])
 {
-    const std::string configPath = argc > 1 ? argv[1] : "bin/data/device_list.json";
+    const std::string configPath = argc > 1 ? argv[1] : "bin/device/device_list.json";
 
     try
     {

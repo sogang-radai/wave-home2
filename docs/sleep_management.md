@@ -35,7 +35,7 @@ srs_r4sn (point cloud + IQ)
 
 - 레이더 `srs_r4sn`: `settings.sleep: true` (예: 침실 하방). 책상 레이더는 `false`.
 - Wave Station: `settings.sleep: true` 이면 수면용 스테이션 후보.
-- SSOT 예: `bin/device/device_list.json`, `bin/data/device_list.json`.
+- SSOT 예: `bin/device/device_list.json`.
 
 ### 2.2 선택 규칙 (`SleepManager::loadRoomConfigs`)
 
