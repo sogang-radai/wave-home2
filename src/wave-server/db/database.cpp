@@ -611,7 +611,7 @@ CREATE TABLE IF NOT EXISTS goal_recommendation (
     rule_json          TEXT,
     schedule_task_json TEXT,
     created_at         VARCHAR(50)  NOT NULL,
-    CHECK (kind IN ('action', 'goal', 'tip')),
+    CHECK (kind IN ('action', 'tip')),
     CHECK (actionable IN (0, 1)),
     CHECK (approved IN (0, 1)),
     CHECK (actionable = 0 OR action_type IS NOT NULL),
