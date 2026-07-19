@@ -3,7 +3,7 @@
 #include "../core/json.h"
 #include "../core/logger.h"
 #include "util/time_util.h"
-#include "agent_client.h"
+#include "agent/agent_client.h"
 
 WAVE_NAMESPACE_BEGIN
 SERVICE_NAMESPACE_BEGIN
