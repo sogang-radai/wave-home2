@@ -10,6 +10,7 @@
 
 #include "../v1/chat_store.h"
 #include "../../../core/logger.h"
+#include "../../../demo/demo_device_backend.h"
 #include "../../../device/device_wire_id.hpp"
 
 WAVE_NAMESPACE_BEGIN
@@ -260,6 +261,9 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             clauses.push_back("d.class = '" + *class_name + "'");
         const int archived = filter.isMember("archived") ? filter["archived"].asInt() : 0;
         clauses.push_back("d.archived = " + std::to_string(archived));
+        // Demo: cameras are hidden from agent db/query the same way as list_devices.
+        if (demoVirtualDevicesEnabled())
+            clauses.push_back("d.class NOT IN ('reolink_e1_pro', 'droid_cam')");
 
         if (!clauses.empty())
         {

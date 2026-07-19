@@ -39,6 +39,11 @@ bool demoVirtualDevicesEnabled()
     return AppState::get().runtime().kind() == ProfileKind::Demo;
 }
 
+bool isDemoHiddenDeviceClass(const std::string& device_class)
+{
+    return device_class == "reolink_e1_pro" || device_class == "droid_cam";
+}
+
 std::string resolveDemoRuntimeId(const drogon::HttpRequestPtr& req, const Json::Value* body)
 {
     if (body && body->isMember("demoRuntimeId") && (*body)["demoRuntimeId"].isString())
@@ -179,8 +184,11 @@ ORDER BY d.id
     Json::Value items(Json::arrayValue);
     for (const auto& row : rows)
     {
+        const std::string device_class = row["class"].as<std::string>();
+        if (isDemoHiddenDeviceClass(device_class))
+            continue;
         const std::string wire_id = dev::wireIdForDbRow(row["id"].as<int64_t>(), row["name"].as<std::string>());
-        const auto state = stateForDevice(runtime_id, wire_id, row["class"].as<std::string>());
+        const auto state = stateForDevice(runtime_id, wire_id, device_class);
         items.append(deviceRowToJson(row, state));
     }
 
@@ -257,6 +265,11 @@ Json::Value DemoDeviceBackend::getState(
     }
 
     const auto device_class = rows[0]["class"].as<std::string>();
+    if (isDemoHiddenDeviceClass(device_class))
+    {
+        code = "NOT_FOUND";
+        return Json::Value();
+    }
     auto state = stateForDevice(runtime_id, device_id, device_class);
     if (device_class == "tuya_ep2h")
     {
@@ -357,9 +370,9 @@ Json::Value DemoDeviceBackend::invokeAction(
     }
 
     const auto device_class = rows[0]["class"].as<std::string>();
-    if (device_class == "droid_cam")
+    if (isDemoHiddenDeviceClass(device_class))
     {
-        code = "DEVICE_OFFLINE";
+        code = "NOT_FOUND";
         return Json::Value();
     }
 

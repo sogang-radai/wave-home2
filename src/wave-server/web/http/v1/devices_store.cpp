@@ -9,6 +9,7 @@
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
 #include "../../../core/logger.h"
+#include "../../../demo/demo_device_backend.h"
 #include "../../../device/device.h"
 #include "../../../device/device_wire_id.hpp"
 #include "../../../service/power_manager.h"
@@ -206,8 +207,12 @@ WHERE d.archived = 0
 ORDER BY d.id
 )SQL");
 
+    const bool hide_demo_cameras = demoVirtualDevicesEnabled();
     for (const auto& row : rows)
     {
+        const auto device_class = row["class"].as<std::string>();
+        if (hide_demo_cameras && isDemoHiddenDeviceClass(device_class))
+            continue;
         const auto device_id = row["id"].as<int64_t>();
         const auto room_id = findRoomIdForDevice(device_id);
         db_by_id.emplace(device_id, rowToDeviceJson(row, room_id));
@@ -232,6 +237,9 @@ ORDER BY d.id
         if (!device.isObject() || device.empty())
             device = manifest_config_to_device_json(entry.config);
 
+        if (hide_demo_cameras && isDemoHiddenDeviceClass(device.get("class", "").asString()))
+            continue;
+
         emitted.insert(wire_id);
         append_device_to_buckets(device, input, output);
     }
@@ -242,6 +250,8 @@ ORDER BY d.id
         if (emitted.contains(wire_id))
             continue;
         (void)db_id;
+        if (hide_demo_cameras && isDemoHiddenDeviceClass(device.get("class", "").asString()))
+            continue;
         append_device_to_buckets(device, input, output);
     }
 
@@ -265,6 +275,10 @@ LIMIT 1
 )SQL",
         *db_id);
     if (rows.empty())
+        return std::nullopt;
+
+    if (demoVirtualDevicesEnabled()
+        && isDemoHiddenDeviceClass(rows[0]["class"].as<std::string>()))
         return std::nullopt;
 
     const auto device_id = rows[0]["id"].as<int64_t>();

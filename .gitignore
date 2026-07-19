@@ -117,3 +117,5 @@ docs/vapid.txt
 
 .deps
 .cursorrules
+# Demo DB local backups (keep demo.db tracked)
+bin/data/demo.db.bak*

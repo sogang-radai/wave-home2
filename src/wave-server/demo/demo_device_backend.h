@@ -13,6 +13,9 @@ WAVE_NAMESPACE_BEGIN
 
 bool demoVirtualDevicesEnabled();
 
+/** Demo UI/agent: cameras are hidden (still in DB) — not listed or operable. */
+bool isDemoHiddenDeviceClass(const std::string& device_class);
+
 std::string resolveDemoRuntimeId(
     const drogon::HttpRequestPtr& req,
     const Json::Value* body = nullptr);
