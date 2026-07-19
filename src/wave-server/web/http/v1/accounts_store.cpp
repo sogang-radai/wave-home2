@@ -1,18 +1,19 @@
 #include "accounts_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <cctype>
 
 #include "session_store.h"
 #include "../../../core/logger.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
 namespace v1 {
 namespace
 {
-    std::string trimCopy(const std::string& value)
+    std::string trim_copy(const std::string& value)
     {
         const auto start = value.find_first_not_of(" \t\n\r");
         if (start == std::string::npos)
@@ -22,7 +23,7 @@ namespace
     }
 }
 
-AccountsStore::AccountsStore(drogon::orm::DbClientPtr client) :
+AccountsStore::AccountsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
@@ -35,7 +36,7 @@ int64_t AccountsStore::nextAccountId() const
 
 std::optional<AccountView> AccountsStore::createAccount(const std::string& name, std::string& error, std::string& field)
 {
-    const auto trimmed = trimCopy(name);
+    const auto trimmed = trim_copy(name);
     if (trimmed.empty())
     {
         error = "이름을 입력해주세요.";
@@ -55,7 +56,7 @@ std::optional<AccountView> AccountsStore::createAccount(const std::string& name,
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to create account: {}", e.what());
+        WLOG_ERROR("Failed to create account: {}", e.what());
         error = "구성원 생성에 실패했습니다.";
         return std::nullopt;
     }
@@ -72,7 +73,7 @@ std::optional<AccountView> AccountsStore::updateAccount(
     std::string& error,
     std::string& field)
 {
-    const auto trimmed = trimCopy(name);
+    const auto trimmed = trim_copy(name);
     if (trimmed.empty())
     {
         error = "이름을 입력해주세요.";
@@ -131,7 +132,7 @@ bool AccountsStore::deleteAccount(int64_t account_id, int64_t session_id, std::s
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to delete account: {}", e.what());
+        WLOG_ERROR("Failed to delete account: {}", e.what());
         error = "구성원 삭제에 실패했습니다.";
         code = "DELETE_FAILED";
         return false;

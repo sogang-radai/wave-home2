@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -40,137 +42,75 @@ public:
     ADD_METHOD_TO(IotController::getGestureSetDefinition, "/api/v1/iot/gesture-sets/{gestureSetId}", drogon::Get);
     ADD_METHOD_TO(IotController::getRadarGestureSet, "/api/v1/iot/devices/{deviceId}/gesture-set", drogon::Get);
     ADD_METHOD_TO(IotController::setRadarGestureSet, "/api/v1/iot/devices/{deviceId}/gesture-set", drogon::Put);
+    ADD_METHOD_TO(IotController::listSpeechOverlays, "/api/v1/iot/speech-overlays", drogon::Get);
     METHOD_LIST_END
 
-    void getSummary(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void getSummary(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void listDevices(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getDeviceState(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void getDeviceState(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void queryDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    void queryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,
         std::string queryName);
 
-    void invokeDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    void invokeDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,
         std::string actionName);
 
-    void reconnectDevice(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void reconnectDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void listEvents(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listEvents(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getCameraStream(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    // Camera stream
+    void getCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void setCameraStream(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void setCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void exchangeCameraWebRtc(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void exchangeCameraWebRtc(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void streamMp4(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void streamMp4(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void streamMjpeg(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void streamMjpeg(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void getPtzCapabilities(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    // Ptz
+    void getPtzCapabilities(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void movePtz(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void movePtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void stopPtz(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void stopPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void zoomPtz(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void zoomPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void captureSnapshot(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    // Snapshot
+    void captureSnapshot(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void sendTts(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    // TTS
+    void sendTts(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void streamWaveStationTelemetry(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    // Wave Station telemetry
+    void streamWaveStationTelemetry(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void listIrCommands(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    // IR commands
+    void listIrCommands(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void saveIrCommand(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void saveIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void deleteIrCommand(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string commandId);
+    void deleteIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string commandId);
 
-    void learnIrCommand(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void learnIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void listGestureSets(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    // Gesture
+    void listGestureSets(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getGestureSetDefinition(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string gestureSetId);
+    void getGestureSetDefinition(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string gestureSetId);
 
-    void getRadarGestureSet(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void getRadarGestureSet(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    void setRadarGestureSet(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string deviceId);
+    void setRadarGestureSet(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
+
+    void listSpeechOverlays(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 } // namespace v1

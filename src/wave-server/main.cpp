@@ -18,23 +18,23 @@ namespace
 {
     std::atomic<bool> g_forceExit{false};
 
-    void installShutdownHandlers()
+    void install_shutdown_handlers()
     {
         struct sigaction action {};
         action.sa_handler = [](int signal)
         {
             if (g_forceExit.exchange(true, std::memory_order_acq_rel))
             {
-                LOG_WARN("Forced exit (signal {})", signal);
+                WLOG_WARN("Forced exit (signal {})", signal);
                 std::_Exit(128 + signal);
             }
 
             if (signal == SIGTSTP)
-                LOG_INFO("Shutdown requested (Ctrl+Z)");
+                WLOG_INFO("Shutdown requested (Ctrl+Z)");
             else if (signal == SIGINT)
-                LOG_INFO("Shutdown requested (Ctrl+C). Press again to force quit.");
+                WLOG_INFO("Shutdown requested (Ctrl+C). Press again to force quit.");
             else
-                LOG_INFO("Shutdown requested (signal {})", signal);
+                WLOG_INFO("Shutdown requested (signal {})", signal);
 
             ws::AppState::get().running.store(false, std::memory_order_release);
         };
@@ -46,16 +46,16 @@ namespace
         sigaction(SIGTERM, &action, nullptr);
     }
 
-    bool isValidProfile(const std::string& profile)
+    bool is_valid_profile(const std::string& profile)
     {
         return profile == "real" || profile == "demo" || profile == "test";
     }
 
-    ws::LaunchOptions parseLaunchOptions(int argc, const char* argv[])
+    ws::LaunchOptions parse_launch_options(int argc, const char* argv[])
     {
         ArgParser parser(
             "wave-server",
-            "Wave Home server (real :8500, demo :8502, test :8503 — see --help)");
+            "Wave Home server (real :8500/:8501, demo :8510/:8511, test :8520 — see docs/ports.txt)");
         parser.addArgument("--config", "-c")
             .help("config file path")
             .defaultValue("config.json");
@@ -75,7 +75,7 @@ namespace
         ws::LaunchOptions launch;
         launch.config_path = parser.get<std::string>("config");
         launch.profile = parser.get<std::string>("profile");
-        if (!isValidProfile(launch.profile))
+        if (!is_valid_profile(launch.profile))
         {
             throw std::runtime_error(
                 "Invalid --profile \"" + launch.profile + "\": use real, demo, or test");
@@ -95,7 +95,7 @@ int main(int argc, const char* argv[])
     ws::LaunchOptions launch;
     try
     {
-        launch = parseLaunchOptions(argc, argv);
+        launch = parse_launch_options(argc, argv);
     }
     catch (const std::exception& e)
     {
@@ -103,29 +103,30 @@ int main(int argc, const char* argv[])
         return 1;
     }
 
-    ws::TaskQueue taskQueue;
-    if (!taskQueue.init(12))
+    auto task_queue = std::make_unique<ws::TaskQueue>();
+    if (!task_queue->init(12))
     {
-        LOG_ERROR("Task queue init failed");
+        WLOG_ERROR("Task queue failed to initialize");
         return 1;
     }
 
-    installShutdownHandlers();
+    install_shutdown_handlers();
 
-    ws::AppState app;
-    app.init(launch);
-    if (!app.running.load(std::memory_order_acquire))
+    auto app = std::make_unique<ws::AppState>();
+    app->init(launch);
+    if (!app->running.load(std::memory_order_acquire))
     {
-        LOG_ERROR("Application failed to start");
+        WLOG_ERROR("Application failed to start");
         return 1;
     }
 
-    LOG_INFO("Main loop started (Ctrl+Z or Ctrl+C to stop)");
-    while (app.running.load(std::memory_order_acquire))
+    WLOG_INFO("Main loop started (Ctrl+Z or Ctrl+C to stop)");
+    while (app->running.load(std::memory_order_acquire))
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    LOG_INFO("Main loop stopped");
-    app.shutdown();
-    taskQueue.shutdown();
+    WLOG_INFO("Main loop stopped");
+    app->shutdown();
+    task_queue->shutdown();
+    
     return 0;
 }

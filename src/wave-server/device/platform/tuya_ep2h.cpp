@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <string_view>
 #include <unistd.h>
 
 #include "tuyaAPI.hpp"
@@ -30,7 +31,14 @@ namespace
     constexpr const char* kDpPowerAlt = "19";
     constexpr const char* kDpVoltageAlt = "20";
 
-    json makeQueryError(int code, std::string_view message = {})
+    bool is_connectivity_failure(std::string_view message)
+    {
+        return message.find("failed to connect") != std::string_view::npos
+            || message.find("failed to send") != std::string_view::npos
+            || message.find("failed to receive") != std::string_view::npos;
+    }
+
+    json make_query_error(int code, std::string_view message = {})
     {
         json out = json::object();
         out["code"] = code;
@@ -39,7 +47,7 @@ namespace
         return out;
     }
 
-    TuyaEP2H::Config parseConfig(const json& config)
+    TuyaEP2H::Config parse_config(const json& config)
     {
         const auto& iface = config.at("interface");
 
@@ -51,7 +59,7 @@ namespace
         return out;
     }
 
-    void validateTuyaEp2hConfig(const json& config)
+    void validate_tuya_ep2h_config(const json& config)
     {
         if (config.at("class").get<std::string>() != "tuya_ep2h")
             throw std::invalid_argument("tuya_ep2h config field 'class' must be 'tuya_ep2h'");
@@ -72,7 +80,7 @@ namespace
 
     // Verifies the host still maps to the MAC pinned in the config. Returns -7
     // on mismatch, 0 when it matches or when no MAC is pinned / not resolvable.
-    int verifyMac(const json& config, const std::string& host)
+    int verify_mac(const json& config, const std::string& host)
     {
         const std::string expected = config.at("interface").value("mac", "");
         if (expected.empty())
@@ -81,19 +89,19 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("tuya_ep2h: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("tuya_ep2h: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("tuya_ep2h: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("tuya_ep2h: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("tuya_ep2h: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("tuya_ep2h: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
-    json parseTuyaResponse(const std::string& response)
+    json parse_tuya_response(const std::string& response)
     {
         if (response.empty())
             throw std::runtime_error("empty tuya response");
@@ -120,14 +128,14 @@ namespace
         }
     }
 
-    bool readSwitchState(const json& dps)
+    bool read_switch_state(const json& dps)
     {
         if (dps.contains(kDpSwitch))
             return dps[kDpSwitch].get<bool>();
         return false;
     }
 
-    double readVoltageVolts(const json& dps)
+    double read_voltage_volts(const json& dps)
     {
         if (dps.contains(kDpVoltageRaw))
             return dps[kDpVoltageRaw].get<double>() / 10.0;
@@ -136,7 +144,7 @@ namespace
         throw std::runtime_error("voltage datapoint not available");
     }
 
-    double readCurrentMilliamps(const json& dps)
+    double read_current_milliamps(const json& dps)
     {
         if (dps.contains(kDpCurrentMa))
             return dps[kDpCurrentMa].get<double>();
@@ -145,7 +153,7 @@ namespace
         throw std::runtime_error("current datapoint not available");
     }
 
-    double readPowerWatts(const json& dps)
+    double read_power_watts(const json& dps)
     {
         if (dps.contains(kDpPowerRaw))
             return dps[kDpPowerRaw].get<double>() / 10.0;
@@ -154,7 +162,7 @@ namespace
         throw std::runtime_error("power datapoint not available");
     }
 
-    double readEnergyKwh(const json& dps)
+    double read_energy_kwh(const json& dps)
     {
         if (!dps.contains(kDpEnergyRaw))
             throw std::runtime_error("energy datapoint not available");
@@ -162,19 +170,19 @@ namespace
         return dps[kDpEnergyRaw].get<double>() / 1000.0;
     }
 
-    json buildStatusResult(const json& dps)
+    json build_status_result(const json& dps)
     {
         json out = json::object();
-        out["switch"] = readSwitchState(dps);
+        out["switch"] = read_switch_state(dps);
 
         if (dps.contains(kDpVoltageRaw) || dps.contains(kDpVoltageAlt))
-            out["voltage_v"] = readVoltageVolts(dps);
+            out["voltage_v"] = read_voltage_volts(dps);
         if (dps.contains(kDpCurrentMa) || dps.contains(kDpCurrentAlt))
-            out["current_ma"] = readCurrentMilliamps(dps);
+            out["current_ma"] = read_current_milliamps(dps);
         if (dps.contains(kDpPowerRaw) || dps.contains(kDpPowerAlt))
-            out["power_w"] = readPowerWatts(dps);
+            out["power_w"] = read_power_watts(dps);
         if (dps.contains(kDpEnergyRaw))
-            out["energy_kwh"] = readEnergyKwh(dps);
+            out["energy_kwh"] = read_energy_kwh(dps);
         if (dps.contains(kDpTimer))
             out["timer_s"] = dps[kDpTimer];
         if (dps.contains(kDpOvercurrent))
@@ -219,7 +227,7 @@ struct TuyaEP2H::Impl
 
         const std::string response = client->DecodeTuyaMessage(messageBuffer, numBytes, config.localKey);
         client->disconnect();
-        return parseTuyaResponse(response);
+        return parse_tuya_response(response);
     }
 
     void controlSwitch(bool on)
@@ -284,25 +292,31 @@ const TuyaEP2H::Config& TuyaEP2H::getConfig() const
 json TuyaEP2H::readStatus(bool force_refresh)
 {
     if (m_state != DeviceState::Running)
-        return makeQueryError(-4);
+        return make_query_error(-4);
 
     try
     {
         const json dps = fetchDatapoints(force_refresh);
-        return buildStatusResult(dps);
+        return build_status_result(dps);
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("TuyaEP2H readStatus failed: {}", ex.what());
-        return makeQueryError(-5, ex.what());
+        if (is_connectivity_failure(ex.what()))
+        {
+            markOffline(ex.what());
+            return make_query_error(-5, ex.what());
+        }
+
+        WLOG_ERROR("TuyaEP2H readStatus failed: {}", ex.what());
+        return make_query_error(-5, ex.what());
     }
 }
 
 int TuyaEP2H::init(const json& config)
 {
-    validateTuyaEp2hConfig(config);
+    validate_tuya_ep2h_config(config);
     loadBaseConfig(config);
-    m_config = parseConfig(config);
+    m_config = parse_config(config);
     m_impl->config = m_config;
 
     if (!isEnabled())
@@ -321,7 +335,7 @@ int TuyaEP2H::init(const json& config)
         std::lock_guard<std::mutex> lock(m_mutex);
         (void)m_impl->queryDatapoints();
 
-        const int macRc = verifyMac(config, m_config.host);
+        const int macRc = verify_mac(config, m_config.host);
         if (macRc != 0)
         {
             m_state = DeviceState::Stopped;
@@ -329,7 +343,7 @@ int TuyaEP2H::init(const json& config)
         }
 
         m_state = DeviceState::Running;
-        LOG_INFO("TuyaEP2H connected: {}", m_config.host);
+        WLOG_INFO("TuyaEP2H connected: {}", m_config.host);
         return 0;
     }
     catch (const std::exception& ex)
@@ -362,7 +376,7 @@ json TuyaEP2H::query(std::string_view name, const json& params)
     (void)params;
 
     if (m_state != DeviceState::Running)
-        return makeQueryError(-4);
+        return make_query_error(-4);
 
     try
     {
@@ -374,14 +388,14 @@ json TuyaEP2H::query(std::string_view name, const json& params)
         if (name == "switch")
         {
             return {
-                {"value", readSwitchState(dps)},
+                {"value", read_switch_state(dps)},
             };
         }
 
         if (name == "voltage")
         {
             return {
-                {"value", readVoltageVolts(dps)},
+                {"value", read_voltage_volts(dps)},
                 {"unit", "V"},
             };
         }
@@ -389,7 +403,7 @@ json TuyaEP2H::query(std::string_view name, const json& params)
         if (name == "current")
         {
             return {
-                {"value", readCurrentMilliamps(dps)},
+                {"value", read_current_milliamps(dps)},
                 {"unit", "mA"},
             };
         }
@@ -397,7 +411,7 @@ json TuyaEP2H::query(std::string_view name, const json& params)
         if (name == "power")
         {
             return {
-                {"value", readPowerWatts(dps)},
+                {"value", read_power_watts(dps)},
                 {"unit", "W"},
             };
         }
@@ -405,17 +419,23 @@ json TuyaEP2H::query(std::string_view name, const json& params)
         if (name == "energy")
         {
             return {
-                {"value", readEnergyKwh(dps)},
+                {"value", read_energy_kwh(dps)},
                 {"unit", "kWh"},
             };
         }
 
-        return makeQueryError(-8);
+        return make_query_error(-8);
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("TuyaEP2H query failed: {}", ex.what());
-        return makeQueryError(-5, ex.what());
+        if (is_connectivity_failure(ex.what()))
+        {
+            markOffline(ex.what());
+            return make_query_error(-5, ex.what());
+        }
+
+        WLOG_ERROR("TuyaEP2H query failed: {}", ex.what());
+        return make_query_error(-5, ex.what());
     }
 }
 
@@ -448,11 +468,17 @@ int TuyaEP2H::invoke(std::string_view name, const json& params)
         try
         {
             const json dps = fetchDatapoints();
-            return setSwitch(!readSwitchState(dps));
+            return setSwitch(!read_switch_state(dps));
         }
         catch (const std::exception& ex)
         {
-            LOG_ERROR("TuyaEP2H toggle failed: {}", ex.what());
+            if (is_connectivity_failure(ex.what()))
+            {
+                markOffline(ex.what());
+                return -5;
+            }
+
+            WLOG_ERROR("TuyaEP2H toggle failed: {}", ex.what());
             return -5;
         }
     }
@@ -514,6 +540,16 @@ void TuyaEP2H::invalidateDatapointCache()
     m_cachedDps.reset();
 }
 
+void TuyaEP2H::markOffline(std::string_view reason)
+{
+    if (m_state != DeviceState::Running)
+        return;
+
+    WLOG_WARN("TuyaEP2H offline ({}): {}", m_config.host, reason);
+    m_state = DeviceState::Stopped;
+    invalidateDatapointCache();
+}
+
 int TuyaEP2H::setSwitch(bool on)
 {
     try
@@ -527,7 +563,13 @@ int TuyaEP2H::setSwitch(bool on)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("TuyaEP2H setSwitch failed: {}", ex.what());
+        if (is_connectivity_failure(ex.what()))
+        {
+            markOffline(ex.what());
+            return -5;
+        }
+
+        WLOG_ERROR("TuyaEP2H setSwitch failed: {}", ex.what());
         return -5;
     }
 }

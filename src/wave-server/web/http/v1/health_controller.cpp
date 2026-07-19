@@ -6,9 +6,7 @@ WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
 
-void HealthController::health(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void HealthController::health(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     Json::Value body;
     body["status"] = "ok";

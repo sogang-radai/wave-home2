@@ -1,4 +1,5 @@
 #include "weekly_plan_controller.h"
+#include "../../../db/database.h"
 
 #include "../../../app/app_state.h"
 #include "insights_store.h"
@@ -12,7 +13,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, drogon::orm::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
@@ -20,9 +21,7 @@ namespace
     }
 }
 
-void WeeklyPlanController::weeklyReport(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void WeeklyPlanController::weeklyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -31,7 +30,7 @@ void WeeklyPlanController::weeklyReport(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -50,9 +49,7 @@ void WeeklyPlanController::weeklyReport(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void WeeklyPlanController::recommendations(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void WeeklyPlanController::recommendations(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -61,14 +58,14 @@ void WeeklyPlanController::recommendations(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
         return;
     }
 
-    const auto ref_date = InsightsStore::referenceDate(client);
+    const auto ref_date = InsightsStore::reference_date(client);
     InsightsStore store(client);
     callback(drogon::HttpResponse::newHttpJsonResponse(
         store.list(*user_id, std::string("weekly_plan"), ref_date, std::nullopt, std::nullopt, std::nullopt)));

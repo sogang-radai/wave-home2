@@ -1,0 +1,28 @@
+# Local listen ports (SSOT)
+
+Production
+Backend Server
+    client-api: 8500
+    agent-api: 8501
+Agent Server
+    agent-api: 8502
+
+Demo
+Backend Server
+    client-api: 8510
+    agent-api: 8511
+Agent Server
+    agent-api: 8512
+
+Test
+Backend Server
+    client-api: 8520
+    agent-api: not used
+Agent Server
+    agent-api: not used
+
+Notes
+- client-api: browser / SPA (/api/v1, static); /internal is rejected (403)
+- Backend agent-api: wave-home-agent → /internal/v1 only (bind 127.0.0.1 by default)
+- Agent Server agent-api: wave-home-agent listen (/chat, /sleep, /power, …)
+- See docs/wave-server-boundaries.md

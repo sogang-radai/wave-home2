@@ -1,4 +1,5 @@
 #include "sleep_controller.h"
+#include "../../../db/database.h"
 
 #include "../../../app/app_state.h"
 #include "session_store.h"
@@ -11,7 +12,7 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, drogon::orm::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
@@ -19,9 +20,7 @@ namespace
     }
 }
 
-void SleepController::todaySummary(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SleepController::todaySummary(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -30,7 +29,7 @@ void SleepController::todaySummary(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -41,9 +40,7 @@ void SleepController::todaySummary(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.getTodaySummary(*user_id)));
 }
 
-void SleepController::todayPlan(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SleepController::todayPlan(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -52,7 +49,7 @@ void SleepController::todayPlan(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -63,9 +60,7 @@ void SleepController::todayPlan(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.getTodayPlan(*user_id)));
 }
 
-void SleepController::todayPhoneUsage(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SleepController::todayPhoneUsage(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     (void)req;
     auto client = AppState::get().db();
@@ -79,9 +74,7 @@ void SleepController::todayPhoneUsage(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.getTodayPhoneUsage()));
 }
 
-void SleepController::todayAutomationSummary(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SleepController::todayAutomationSummary(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -90,7 +83,7 @@ void SleepController::todayAutomationSummary(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -101,9 +94,7 @@ void SleepController::todayAutomationSummary(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.getTodayAutomationSummary(*user_id)));
 }
 
-void SleepController::dailySessions(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SleepController::dailySessions(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -112,7 +103,7 @@ void SleepController::dailySessions(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -137,9 +128,7 @@ void SleepController::dailySessions(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void SleepController::dailyReport(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SleepController::dailyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -148,7 +137,7 @@ void SleepController::dailyReport(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -175,9 +164,7 @@ void SleepController::dailyReport(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void SleepController::weeklyReport(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SleepController::weeklyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -186,7 +173,7 @@ void SleepController::weeklyReport(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");

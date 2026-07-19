@@ -1,6 +1,6 @@
 # Weekly Plan Analysis API
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)** · Base URL: `/weekly-plan/v1`
+호출 방향: **백엔드(:8500) → 에이전트(:8502)** · Base URL: `/weekly-plan/v1`
 
 주간 계획 **상단 배너**(`weekly_plan_report`) narrative 생성.
 에이전트가 `db/query`·`rag/search` 툴로 `schedule_task`·수면/자세 리포트 등을 **직접 조회**한다.

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 
 #include "core/coredefs.h"
 
@@ -16,13 +16,14 @@ SERVICE_NAMESPACE_BEGIN
  * insight_generator.cpp 와 동일 규칙).
  *
  * GET /api/v1/sleep/today/plan(sleep_store.cpp) 은 이 테이블을 읽기만 하고 직접 계산하지
- * 않는다 — 취침/기상 시각 판단은 항상 여기(에이전트, app/graph/sleep_plan_graph.py)에서
- * 이뤄진다. 이 함수는 SleepManager 의 작업 큐(비동기 워커 스레드)에서 호출되어, 실제 밤
- * 세션이 종료되거나(다음날 계획) 데모 세션이 시딩될 때 미리 생성해둔다 — GET 요청 경로에서는
- * 절대 호출하지 않는다(에이전트 응답 지연이 요청을 막지 않도록).
+ * 않는다 — 취침/기상 시각 판단은 항상 여기(에이전트, sleep_plan 생성 job)에서 이뤄진다.
+ * 이 함수는 SleepManager 의 작업 큐(비동기 워커 스레드)에서 호출되어, 실제 밤 세션이
+ * 종료되거나(다음날 계획) sleep_plan 캐시가 아직 없는 상태로 GET 요청이 들어왔을 때
+ * 미리 생성해둔다 — GET 요청 경로에서는 절대 동기 호출하지 않는다(에이전트 응답 지연이
+ * 요청을 막지 않도록).
  */
 bool generateAndPersistSleepPlan(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& agent_base_url,
     int64_t user_id,
     const std::string& plan_date,

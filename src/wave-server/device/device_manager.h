@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -52,6 +53,9 @@ public:
     bool manifestLoaded() const { return m_manifestLoaded; }
     bool startupComplete() const { return m_startupComplete.load(std::memory_order_acquire); }
 
+    /** Invoked once when the async device start pass finishes (may be called on worker thread). */
+    void setOnStartupComplete(std::function<void()> callback);
+
     const std::vector<DeviceManifestEntry>& manifestEntries() const { return m_manifest; }
 
     const std::vector<RoomPtr>& enumerateRooms() const;
@@ -83,6 +87,7 @@ private:
     std::atomic<bool> m_startupComplete{false};
     std::atomic<bool> m_startRequested{false};
     std::atomic<bool> m_shutdown{false};
+    std::function<void()> m_onStartupComplete;
     std::thread m_startThread;
     std::thread m_retryThread;
     std::atomic<bool> m_retryStop{false};

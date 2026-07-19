@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "../../../service/agent_client.h"
@@ -18,10 +18,10 @@ namespace v1 {
 class ChatStore
 {
 public:
-    explicit ChatStore(drogon::orm::DbClientPtr client);
+    explicit ChatStore(db::DbClientPtr client);
 
-    static std::string toCreatedAtIso(const std::string& db_time);
-    static std::string titleFromText(const std::string& text);
+    static std::string to_created_at_iso(const std::string& db_time);
+    static std::string title_from_text(const std::string& text);
 
     Json::Value listSummaries(int64_t user_id) const;
     std::optional<Json::Value> getConversation(int64_t user_id, int64_t conversation_id) const;
@@ -62,8 +62,14 @@ public:
     int64_t nextMessageId(const Json::Value& messages) const;
     Json::Value makeAssistantShell(int64_t message_id, const std::string& created_at) const;
 
+    /** Accept ChatStore array or mock seed {"messages":[{role,content},...]} and
+     *  normalize to [{id,role,text,createdAt},...] (system rows dropped). */
+    static Json::Value normalize_messages_json(
+        Json::Value raw,
+        const std::string& fallback_db_time = {});
+
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     int64_t nextConversationId() const;
     Json::Value parseMessagesColumn(const std::string& raw) const;

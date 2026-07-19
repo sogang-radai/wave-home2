@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -16,19 +16,19 @@ namespace internal {
 
 struct RagSearchConfig
 {
-    std::string agent_base_url = "http://127.0.0.1:8501";
+    std::string agent_base_url = "http://127.0.0.1:8502";
     std::string embedding_model = "nomic-embed-text";
 };
 
 class RagInternalStore
 {
 public:
-    explicit RagInternalStore(drogon::orm::DbClientPtr client, RagSearchConfig config = {});
+    explicit RagInternalStore(db::DbClientPtr client, RagSearchConfig config = {});
 
     Json::Value search(const Json::Value& request, std::string& error, std::string& field) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
     RagSearchConfig m_config;
 
     bool embedQuery(const std::string& query, std::vector<float>& out_embedding, std::string& out_error) const;
@@ -52,13 +52,14 @@ private:
     Json::Value searchInsightSurface(
         const Json::Value& target,
         const std::string& collection,
-        const std::string& surface) const;
+        const std::string& surface,
+        const std::vector<float>* query_embedding) const;
     Json::Value searchPostureReport(const Json::Value& target) const;
     Json::Value searchWeeklyPlanReport(const Json::Value& target) const;
 
-    static std::optional<int64_t> targetInt(const Json::Value& target, const char* key);
-    static std::optional<std::string> targetString(const Json::Value& target, const char* key);
-    static int targetTopK(const Json::Value& target);
+    static std::optional<int64_t> target_int(const Json::Value& target, const char* key);
+    static std::optional<std::string> target_string(const Json::Value& target, const char* key);
+    static int target_top_k(const Json::Value& target);
 };
 
 } // namespace internal

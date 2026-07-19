@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../../db/database.h"
 
 #include "../../core/coredefs.h"
 #include "web_push.h"
@@ -15,14 +15,14 @@ namespace web {
 namespace push {
 
 bool upsertSubscription(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int64_t session_id,
     const Subscription& subscription);
 
-bool deleteSubscriptions(const drogon::orm::DbClientPtr& client, int64_t session_id);
+bool deleteSubscriptions(const db::DbClientPtr& client, int64_t session_id);
 
 std::vector<Subscription> listSubscriptions(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int64_t session_id);
 
 } // namespace push

@@ -2,26 +2,27 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <thread>
 
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <drogon/drogon.h>
 #include <drogon/orm/DbConfig.h>
-
-#undef LOG_TRACE
-#undef LOG_DEBUG
-#undef LOG_INFO
-#undef LOG_WARN
-#undef LOG_ERROR
-#undef LOG_FATAL
 
 #include "../core/coredefs.h"
 #include "../core/logger.h"
 #include "../app/app_state.h"
 #include "../db/database.h"
 #include "../db/sqlite_vec_support.h"
-#include "demo_policy.h"
+#include "../db/vec_tables.h"
+#include "listener_policy.h"
 #include "util/exe_path.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -44,7 +45,7 @@ namespace
             std::filesystem::current_path() / resolved);
     }
 
-    bool ensureDir(const std::filesystem::path& dir_path)
+    bool ensure_dir(const std::filesystem::path& dir_path)
     {
         if (dir_path.empty())
             return true;
@@ -53,14 +54,14 @@ namespace
         std::filesystem::create_directories(dir_path, ec);
         if (ec)
         {
-            LOG_ERROR("Failed to create directory {}: {}", dir_path.string(), ec.message());
+            WLOG_ERROR("Failed to create directory {}: {}", dir_path.string(), ec.message());
             return false;
         }
 
         return true;
     }
 
-    bool ensureParentDir(const std::filesystem::path& file_path)
+    bool ensure_parent_dir(const std::filesystem::path& file_path)
     {
         const auto parent = file_path.parent_path();
         if (parent.empty())
@@ -70,16 +71,17 @@ namespace
         std::filesystem::create_directories(parent, ec);
         if (ec)
         {
-            LOG_ERROR("Failed to create directory {}: {}", parent.string(), ec.message());
+            WLOG_ERROR("Failed to create directory {}: {}", parent.string(), ec.message());
             return false;
         }
 
         return true;
     }
 
-    void configureStaticFileTypes(drogon::HttpAppFramework& app)
+    void configure_static_file_types(drogon::HttpAppFramework& app)
     {
         // Drogon defaults omit .json; CRA ships manifest.json and asset-manifest.json.
+        // Landing WaveCanvas also needs .mp4 (public/water-crossfade.mp4).
         app.registerCustomExtensionMime("json", "application/json");
         app.registerCustomExtensionMime("map", "application/json");
         app.registerCustomExtensionMime("gltf", "model/gltf+json");
@@ -105,11 +107,52 @@ namespace
             "ico",
             "icns",
             "webp",
+            "mp4",
+            "webm",
             "json",
             "map",
             "gltf",
             "bin",
         });
+    }
+
+    /** Probe-bind so drogon FATAL/segfault on EADDRINUSE is avoided. */
+    bool can_bind_tcp(const std::string& host, uint16_t port, std::string& error)
+    {
+        const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0)
+        {
+            error = "socket() failed: " + std::string(std::strerror(errno));
+            return false;
+        }
+
+        const int reuse = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+        sockaddr_in addr {};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        if (host.empty() || host == "0.0.0.0")
+        {
+            addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        }
+        else if (::inet_pton(AF_INET, host.c_str(), &addr.sin_addr) != 1)
+        {
+            ::close(fd);
+            error = "invalid bind address: " + host;
+            return false;
+        }
+
+        const int rc = ::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        if (rc != 0)
+        {
+            error = host + ":" + std::to_string(port) + " — " + std::strerror(errno);
+            ::close(fd);
+            return false;
+        }
+
+        ::close(fd);
+        return true;
     }
 }
 
@@ -132,15 +175,22 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
 {
     if (m_impl->running.load(std::memory_order_acquire))
     {
-        LOG_WARN("Web server is already running");
+        WLOG_WARN("Web server is already running");
         return false;
     }
 
     const auto base_dir = getExecutableDir();
     if (base_dir.empty())
-        LOG_WARN("Executable directory is unknown; using relative paths from cwd");
+        WLOG_WARN("Executable directory is unknown; using relative paths from cwd");
 
-    const uint16_t port = config.value("port", 8502);
+    const uint16_t port = static_cast<uint16_t>(config.value("port", 0));
+    if (port == 0)
+    {
+        WLOG_ERROR("server.port is required (see docs/ports.txt; profile defaults apply in IProfileRuntime)");
+        return false;
+    }
+    const uint16_t agent_api_port = static_cast<uint16_t>(config.value("agent_api_port", 0));
+    const std::string agent_api_bind = config.value("agent_api_bind", "127.0.0.1");
     const size_t thread_num = config.value("threads_num", 2);
     const std::string document_root = config.value(
         "document_root",
@@ -162,7 +212,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         const auto fallback = std::filesystem::path(WAVE_SOURCE_DIR) / fallback_name;
         if (std::filesystem::exists(fallback))
         {
-            LOG_INFO(
+            WLOG_INFO(
                 "Document root {} not found; using {}",
                 path.string(),
                 fallback.string());
@@ -184,7 +234,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         const auto fallback = std::filesystem::path(WAVE_SOURCE_DIR) / "bin" / "gestures";
         if (std::filesystem::exists(fallback))
         {
-            LOG_INFO(
+            WLOG_INFO(
                 "Gestures directory {} not found; using {}",
                 path.string(),
                 fallback.string());
@@ -197,8 +247,8 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
 
     if (!std::filesystem::exists(resolved_document_root))
     {
-        LOG_WARN(
-            "Document root does not exist: {} (run scripts/build-site.sh, build-site-test.sh, or build-site-demo.sh)",
+        WLOG_WARN(
+            "Document root does not exist: {} (run scripts/build/site.sh, site-test.sh, or site-demo.sh)",
             resolved_document_root.string());
     }
 
@@ -208,17 +258,17 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         {
             if (!std::filesystem::exists(resolved_database_path))
             {
-                LOG_ERROR("Read-only database not found: {}", resolved_database_path.string());
+                WLOG_ERROR("Read-only database not found: {}", resolved_database_path.string());
                 return false;
             }
         }
-        else if (!ensureParentDir(resolved_database_path))
+        else if (!ensure_parent_dir(resolved_database_path))
         {
             return false;
         }
     }
 
-    if (!ensureDir(resolved_upload_path))
+    if (!ensure_dir(resolved_upload_path))
         return false;
 
     auto& app = drogon::app();
@@ -230,11 +280,11 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     app.setImplicitPageEnable(true);
     app.setImplicitPage(home_page);
     app.setUploadPath(resolved_upload_path.string());
-    configureStaticFileTypes(app);
+    configure_static_file_types(app);
 
     if (!std::filesystem::exists(resolved_gestures_root))
     {
-        LOG_WARN(
+        WLOG_WARN(
             "Gestures directory does not exist: {} (thumbnail URLs under /gestures/ will 404)",
             resolved_gestures_root.string());
     }
@@ -242,13 +292,37 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     {
         const auto gestures_alias = std::filesystem::weakly_canonical(resolved_gestures_root).string();
         app.addALocation("/gestures", "", gestures_alias);
-        LOG_INFO("Serving gesture assets at /gestures/ from {}", gestures_alias);
+        WLOG_INFO("Serving gesture assets at /gestures/ from {}", gestures_alias);
+    }
+
+    {
+        std::string bind_error;
+        if (!can_bind_tcp("0.0.0.0", port, bind_error))
+        {
+            WLOG_ERROR("Client API port already in use ({})", bind_error);
+            return false;
+        }
+        if (agent_api_port != 0 && !can_bind_tcp(agent_api_bind, agent_api_port, bind_error))
+        {
+            WLOG_ERROR(
+                "Agent API port already in use ({}). "
+                "Demo agent must listen on :8512; wave-server owns :8511 (see docs/ports.txt).",
+                bind_error);
+            return false;
+        }
     }
 
     app.addListener("0.0.0.0", port);
+    if (agent_api_port != 0)
+    {
+        app.addListener(agent_api_bind, agent_api_port);
+        WLOG_INFO(
+            "Agent API listener: {}:{} (loopback recommended; see docs/ports.txt)",
+            agent_api_bind,
+            agent_api_port);
+    }
 
-    if (demo_mode)
-        registerDemoPolicy();
+    registerListenerIsolation(port, agent_api_port);
 
     if (!test_mode)
     {
@@ -272,11 +346,12 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
             {
                 const auto rows = client->execSqlSync("SELECT vec_version() AS v");
                 if (!rows.empty())
-                    LOG_INFO("sqlite-vec ready: {}", rows[0]["v"].as<std::string>());
+                    WLOG_INFO("sqlite-vec ready: {}", rows[0]["v"].as<std::string>());
+                db::ensureVecTables(client);
             }
             catch (const std::exception& e)
             {
-                LOG_WARN("sqlite-vec probe failed (RAG will use text fallback): {}", e.what());
+                WLOG_WARN("sqlite-vec probe failed (RAG will use text fallback): {}", e.what());
             }
             if (read_only)
             {
@@ -286,7 +361,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_WARN("PRAGMA query_only failed: {}", e.what());
+                    WLOG_WARN("PRAGMA query_only failed: {}", e.what());
                 }
             }
             else
@@ -298,7 +373,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
                 : db::runMigrations(client);
             if (!ok)
             {
-                LOG_ERROR("Database preparation failed; stopping server");
+                WLOG_ERROR("Database preparation failed; stopping server");
                 drogon::app().quit();
                 return;
             }
@@ -308,15 +383,16 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
     }
     else
     {
-        LOG_INFO("Test mode: static hosting only (no database, no API DB routes)");
+        WLOG_INFO("Test mode: static hosting only (no database, no API DB routes)");
     }
 
     m_impl->port = port;
     m_impl->documentRoot = resolved_document_root.string();
 
-    LOG_INFO(
-        "Web server configured: port={}, threads={}, document_root={}, database={}, uploads={}, test_mode={}, demo_mode={}, read_only={}, skip_migrations={}",
+    WLOG_INFO(
+        "Web server configured: port={}, agent_api_port={}, threads={}, document_root={}, database={}, uploads={}, test_mode={}, demo_mode={}, read_only={}, skip_migrations={}",
         port,
+        agent_api_port == 0 ? std::string("(none)") : std::to_string(agent_api_port),
         thread_num,
         m_impl->documentRoot,
         test_mode ? "(disabled)" : resolved_database_path.string(),
@@ -333,15 +409,15 @@ void Server::run()
 {
     if (m_impl->running.exchange(true, std::memory_order_acq_rel))
     {
-        LOG_WARN("Web server thread is already running");
+        WLOG_WARN("Web server thread is already running");
         return;
     }
 
     m_impl->thread = std::thread([port = m_impl->port, document_root = m_impl->documentRoot]()
     {
-        LOG_INFO("Web server starting on 0.0.0.0:{} (static: {})", port, document_root);
+        WLOG_INFO("Web server starting on 0.0.0.0:{} (static: {})", port, document_root);
         drogon::app().run();
-        LOG_INFO("Web server event loop exited");
+        WLOG_INFO("Web server event loop exited");
     });
 }
 
@@ -350,13 +426,13 @@ void Server::shutdown()
     if (!m_impl->running.exchange(false, std::memory_order_acq_rel))
         return;
 
-    LOG_INFO("Shutting down web server...");
+    WLOG_INFO("Shutting down web server...");
     drogon::app().quit();
 
     if (m_impl->thread.joinable())
         m_impl->thread.join();
 
-    LOG_INFO("Web server shutdown complete");
+    WLOG_INFO("Web server shutdown complete");
 }
 
 WEB_NAMESPACE_END

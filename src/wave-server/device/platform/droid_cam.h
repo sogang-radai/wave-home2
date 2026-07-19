@@ -22,13 +22,13 @@ DEVICE_NAMESPACE_BEGIN
 // Connects to the DroidCam app on a phone at host:port (default :4747).
 //   - Snapshot : HTTP GET videoPath (MJPEG frame) -> IImageProvider
 //   - Live     : MJPEG via wave-server HTTP proxy -> IVideoStreamProvider
-//   - Microphone : optional phone mic (audioPath)  -> IAudioSource
+//   - Microphone : optional phone mic (audioPath)  -> IAudioInput
 class DroidCam :
     public Device,
     public Queryable,
     public IImageProvider,
     public IVideoStreamProvider,
-    public IAudioSource
+    public IAudioInput
 {
 public:
     static constexpr const char* kClass = "droid_cam";
@@ -94,12 +94,13 @@ public:
     bool enumerateStreamProfiles(std::vector<CameraStreamProfile>& outProfiles) override;
     bool getStreamUri(std::string_view profile, std::string& outUri) override;
 
-    // IAudioSource (phone microphone, when AudioConfig::enabled)
+    // IAudioInput (phone microphone, when AudioConfig::enabled)
     AudioFormat getSourceFormat() const override;
     void setAudioQueueSize(size_t size) override;
     size_t getAudioQueueSize() const override;
     bool getLatestFrame(AudioFrame& outFrame) override;
     std::future<void> getLatestFrameAsync(AudioFrame& outFrame) override;
+    bool popFrame(AudioFrame& outFrame) override;
 
 private:
     void registerQueries();

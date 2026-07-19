@@ -1,4 +1,5 @@
 #include "demo_device_backend.h"
+#include "../db/database.h"
 
 #include <unordered_set>
 
@@ -9,6 +10,7 @@
 #include "demo_power_meter.h"
 #include "demo_runtime_id.h"
 #include "demo_session_registry.h"
+#include "demo_session_writes.h"
 
 WAVE_NAMESPACE_BEGIN
 
@@ -30,25 +32,11 @@ namespace
             return "light";
         return "";
     }
-
-    double rated_power_for_device(const std::string& device_id)
-    {
-        if (device_id == "0000000000000006")
-            return 20.0;
-        if (device_id == "0000000000000007")
-            return 100.0;
-        if (device_id == "0000000000000008")
-            return 600.0;
-        if (device_id == "0000000000000009")
-            return 2400.0;
-        return 0.0;
-    }
 }
 
 bool demoVirtualDevicesEnabled()
 {
-    const auto& state = AppState::get();
-    return state.demo_mode && state.no_devices;
+    return AppState::get().runtime().kind() == ProfileKind::Demo;
 }
 
 std::string resolveDemoRuntimeId(const drogon::HttpRequestPtr& req, const Json::Value* body)
@@ -77,7 +65,7 @@ std::string resolveDemoRuntimeId(const drogon::HttpRequestPtr& req, const Json::
     return fallbackDemoRuntimeId();
 }
 
-DemoDeviceBackend::DemoDeviceBackend(drogon::orm::DbClientPtr client) :
+DemoDeviceBackend::DemoDeviceBackend(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
@@ -93,11 +81,14 @@ Json::Value DemoDeviceBackend::deviceRowToJson(const drogon::orm::Row& row, cons
     item["name"] = row["name"].as<std::string>();
     item["description"] = row["description"].as<std::string>();
     item["class"] = device_class;
-    item["classLabel"] = web::internal::DeviceClassRegistry::labelForClass(device_class);
+    item["classLabel"] = web::internal::DeviceClassRegistry::label_for_class(device_class);
     item["panel"] = panel_for_class(device_class);
     item["sleepAnalysis"] =
         !row["sleep_analysis"].isNull() &&
         row["sleep_analysis"].as<int>() != 0;
+    item["companion"] =
+        !row["companion"].isNull() &&
+        row["companion"].as<int>() != 0;
     item["enabled"] = row["enabled"].as<int>() != 0;
     item["connected"] = device_class != "droid_cam";
     item["stateSummary"] = "데모";
@@ -105,7 +96,7 @@ Json::Value DemoDeviceBackend::deviceRowToJson(const drogon::orm::Row& row, cons
     if (!row["room_id"].isNull())
     {
         Json::Value room;
-        room["id"] = static_cast<Json::Int64>(row["room_id"].as<int64_t>());
+        room["id"] = dev::wireIdForDbRow(row["room_id"].as<int64_t>());
         room["name"] = row["room_name"].as<std::string>();
         item["room"] = room;
     }
@@ -128,20 +119,22 @@ Json::Value DemoDeviceBackend::stateForDevice(
     const std::string& device_id,
     const std::string& device_class) const
 {
-    auto& registry = DemoSessionRegistry::instance();
-    auto& session = registry.touch(runtime_id);
+    auto& registry = demoSessionRegistry();
+    auto locked_session = registry.lockSession(runtime_id);
+    auto& session = *locked_session;
     const auto it = session.device_state.find(device_id);
     if (it != session.device_state.end())
         return it->second;
     auto state = demoSeedStateForClass(device_class);
     if (device_class == "tuya_ep2h")
     {
-        const double rated_power = rated_power_for_device(device_id);
-        const bool switch_on = device_id != "0000000000000009";
+        const double rated_power = DemoPowerMeter::rated_power_for_device(device_id);
+        const bool switch_on =
+            device_id != "0000000000000009" && device_id != "000000000000000e";
         state["switch"] = switch_on;
         state["ratedPower"] = rated_power;
         state["voltage"] = 235.0;
-        const auto reading = DemoPowerMeter::instance().samplePlug(
+        const auto reading = demoPowerMeter().samplePlug(
             runtime_id, device_id, switch_on, rated_power, 235.0);
         state["power"] = reading.power_w;
         state["current"] = reading.current_ma;
@@ -157,7 +150,8 @@ void DemoDeviceBackend::saveState(
     const std::string& device_id,
     const Json::Value& state) const
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     session.device_state[device_id] = state;
 }
 
@@ -173,6 +167,7 @@ Json::Value DemoDeviceBackend::listDevices(const std::string& runtime_id, std::s
         R"SQL(
 SELECT d.id, d.name, d.description, d.class, d.enabled,
        COALESCE(json_extract(d.settings_json, '$.sleep'), 0) AS sleep_analysis,
+       COALESCE(json_extract(d.settings_json, '$.companion'), 0) AS companion,
        r.id AS room_id, r.name AS room_name
 FROM device d
 LEFT JOIN device_room_map drm ON drm.device_id = d.id
@@ -192,6 +187,45 @@ ORDER BY d.id
     Json::Value body;
     body["items"] = items;
     body["count"] = static_cast<Json::UInt>(items.size());
+    return body;
+}
+
+Json::Value DemoDeviceBackend::getSummary(const std::string& runtime_id, std::string& code) const
+{
+    const auto listed = listDevices(runtime_id, code);
+    if (!code.empty())
+        return Json::Value();
+
+    int online = 0;
+    int total = 0;
+    const Json::Value& items =
+        (listed.isObject() && listed.isMember("items")) ? listed["items"] : listed;
+    if (items.isArray())
+    {
+        total = static_cast<int>(items.size());
+        for (const auto& item : items)
+        {
+            if (item.isObject() && item.get("connected", false).asBool())
+                ++online;
+        }
+    }
+
+    ensureDemoSessionSeeded(runtime_id, m_client);
+    int active_rules = 0;
+    for (const auto& rule : demoListRules(runtime_id, 0))
+    {
+        if (rule.isObject() && rule.get("enabled", true).asBool())
+            ++active_rules;
+    }
+
+    // Demo sessions do not keep a persistent IoT event ring yet.
+    Json::Value body;
+    body["onlineDeviceCount"] = online;
+    body["totalDeviceCount"] = total;
+    body["initializingDeviceCount"] = 0;
+    body["devicesStarting"] = false;
+    body["todayEventCount"] = 0;
+    body["activeRuleCount"] = active_rules;
     return body;
 }
 
@@ -226,11 +260,15 @@ Json::Value DemoDeviceBackend::getState(
     auto state = stateForDevice(runtime_id, device_id, device_class);
     if (device_class == "tuya_ep2h")
     {
-        const auto reading = DemoPowerMeter::instance().samplePlug(
+        // Refresh from the shared table so code edits take effect even if the
+        // session already cached an older ratedPower.
+        const double rated_power = DemoPowerMeter::rated_power_for_device(device_id);
+        state["ratedPower"] = rated_power;
+        const auto reading = demoPowerMeter().samplePlug(
             runtime_id,
             device_id,
             state.get("switch", false).asBool(),
-            state.get("ratedPower", rated_power_for_device(device_id)).asDouble(),
+            rated_power,
             state.get("voltage", 235.0).asDouble());
         state["power"] = reading.power_w;
         state["current"] = reading.current_ma;
@@ -256,29 +294,36 @@ Json::Value DemoDeviceBackend::queryDevice(
         return Json::Value();
 
     Json::Value state = state_body["state"];
-    if (state.isObject() && state.isMember("ratedPower"))
-    {
-        const auto reading = DemoPowerMeter::instance().samplePlug(
-            runtime_id,
-            device_id,
-            state.get("switch", false).asBool(),
-            state.get("ratedPower", 0.0).asDouble(),
-            state.get("voltage", 235.0).asDouble());
-        state["power"] = reading.power_w;
-        state["current"] = reading.current_ma;
-        state["voltage"] = reading.voltage_v;
-        saveState(runtime_id, device_id, state);
-    }
 
     Json::Value response;
     response["deviceId"] = device_id;
     response["query"] = query_name;
     if (query_name == "status" || query_name == "state")
+    {
         response["result"] = state;
+    }
     else if (state.isObject() && state.isMember(query_name))
-        response["result"] = state[query_name];
+    {
+        // device-tool-api: result 는 항상 object. scalar 는 { queryName: value } 로 감싼다.
+        const auto& value = state[query_name];
+        if (value.isObject())
+        {
+            response["result"] = value;
+        }
+        else
+        {
+            Json::Value wrapped(Json::objectValue);
+            wrapped[query_name] = value;
+            response["result"] = wrapped;
+        }
+    }
     else
-        response["result"] = state;
+    {
+        // Unknown query names used to silently return the whole state, which made
+        // LLM mistakes like query="off" look successful and encouraged retries.
+        code = "QUERY_NOT_FOUND";
+        return Json::Value();
+    }
     return response;
 }
 
@@ -342,11 +387,11 @@ Json::Value DemoDeviceBackend::invokeAction(
     }
     if (device_class == "tuya_ep2h")
     {
-        const double rated = next.get("ratedPower", rated_power_for_device(device_id)).asDouble();
+        const double rated = DemoPowerMeter::rated_power_for_device(device_id);
         const bool switch_on = next.get("switch", false).asBool();
         const double voltage = next.get("voltage", 235.0).asDouble();
-        DemoPowerMeter::instance().syncPlug(runtime_id, device_id, switch_on, rated, voltage);
-        const auto reading = DemoPowerMeter::instance().samplePlug(
+        demoPowerMeter().syncPlug(runtime_id, device_id, switch_on, rated, voltage);
+        const auto reading = demoPowerMeter().samplePlug(
             runtime_id, device_id, switch_on, rated, voltage);
         next["power"] = reading.power_w;
         next["current"] = reading.current_ma;
@@ -356,8 +401,12 @@ Json::Value DemoDeviceBackend::invokeAction(
     saveState(runtime_id, device_id, next);
 
     const std::string echoed_action =
-        (action_name == "power_off" || action_name == "turn_off" || action_name == "switch_off") ? "off"
-        : (action_name == "power_on" || action_name == "turn_on" || action_name == "switch_on") ? "on"
+        (action_name == "power_off" || action_name == "turn_off" || action_name == "switch_off"
+         || action_name == "powerOff" || action_name == "turnOff" || action_name == "끄기"
+         || action_name == "disable" || action_name == "shutdown") ? "off"
+        : (action_name == "power_on" || action_name == "turn_on" || action_name == "switch_on"
+           || action_name == "powerOn" || action_name == "turnOn" || action_name == "켜기"
+           || action_name == "enable") ? "on"
         : action_name;
 
     Json::Value response;

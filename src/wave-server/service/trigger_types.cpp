@@ -159,7 +159,7 @@ bool parseTriggerFromJson(const json& value, Trigger& out_trigger, std::string& 
 
 namespace
 {
-    json normalizeLegacyScheduleJson(const json& value)
+    json normalize_legacy_schedule_json(const json& value)
     {
         if (!value.is_object())
             return value;
@@ -217,7 +217,7 @@ namespace
 
 bool parseRuleScheduleFromJson(const json& value, RuleSchedule& out_schedule, std::string& out_error)
 {
-    const json normalized = normalizeLegacyScheduleJson(value);
+    const json normalized = normalize_legacy_schedule_json(value);
     if (!normalized.is_object())
     {
         out_error = "schedule must be an object";

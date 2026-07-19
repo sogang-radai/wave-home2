@@ -4,13 +4,14 @@
         "io_threads_num": 8,
         "server": {
             "port": 8500,
+            "agent_api_port": 8501,
+            "agent_api_bind": "127.0.0.1",
             "threads_num": 4,
             "document_root": "../site",
             "home_page": "index.html",
             "database_path": "data/database.db"
         },
-        "setting_path": "data/settings.json",
-        "device_list_path": "device/device_list.json",
+        "device_list_path": "data/device_list.json",
         "gesture_sets_path": "gestures/gesture_sets.json",
         "sleep_model_path": "models/sleep0-1/model.json",
         "stt_model_path": "models/stt/stt.json",
@@ -21,7 +22,7 @@
             "subject": "mailto:wavehome@local"
         },
         "agent": {
-            "base_url": "http://127.0.0.1:8501"
+            "base_url": "http://127.0.0.1:8502"
         }
     },
     "demo": {
@@ -30,16 +31,17 @@
         "anchor_date": "2026-06-30",
         "devices_enabled": false,
         "server": {
-            "port": 8502,
+            "port": 8510,
+            "agent_api_port": 8511,
+            "agent_api_bind": "127.0.0.1",
             "threads_num": 4,
             "document_root": "../site-demo",
             "home_page": "index.html",
-            "database_path": "../mock/data/mock.db",
+            "database_path": "data/demo.db",
             "skip_migrations": true,
             "read_only": true
         },
-        "setting_path": "data/settings.json",
-        "device_list_path": "device/device_list.json",
+        "device_list_path": "data/device_list.json",
         "gesture_sets_path": "gestures/gesture_sets.json",
         "sleep_model_path": "models/sleep0-1/model.json",
         "stt_model_path": "models/stt/stt.json",
@@ -50,7 +52,7 @@
             "subject": "mailto:wavehome@local"
         },
         "agent": {
-            "base_url": "http://127.0.0.1:8501"
+            "base_url": "http://127.0.0.1:8512"
         }
     },
     "test": {
@@ -58,7 +60,7 @@
         "io_threads_num": 4,
         "devices_enabled": false,
         "server": {
-            "port": 8503,
+            "port": 8520,
             "threads_num": 2,
             "document_root": "../site-test",
             "home_page": "index.html"
@@ -69,7 +71,7 @@
             "subject": "mailto:wavehome@local"
         },
         "agent": {
-            "base_url": "http://127.0.0.1:8501"
+            "base_url": "http://127.0.0.1:8502"
         }
     }
 }

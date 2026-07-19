@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -21,33 +23,17 @@ public:
     ADD_METHOD_TO(RulesController::executeRule, "/api/v1/iot/rules/{ruleId}/execute", drogon::Post);
     METHOD_LIST_END
 
-    void listRules(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listRules(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void createRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void createRule(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void updateRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void updateRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
-    void deleteRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void deleteRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
-    void setRuleEnabled(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void setRuleEnabled(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
-    void executeRule(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        std::string ruleId);
+    void executeRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 };
 
 } // namespace v1

@@ -7,7 +7,7 @@ import argparse
 import csv
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -108,22 +108,30 @@ def hour_labels_from_series(series: Dict[str, List[Row]]) -> List[str]:
 
 
 def pick_zoom_hour(series: Dict[str, List[Row]], session_label: str) -> Tuple[datetime, datetime]:
-    """Pick the hour with the largest 0-0 vs 0-1 absent-rate gap."""
+    """Pick the hour with the largest 0-0 vs 0-1 absent-rate gap.
+
+    Uses the actual calendar day of the samples (noon→noon sessions may span
+    two dates), not only session_label.
+    """
     if "0-0" not in series or "0-1" not in series:
         ref = valid_rows(next(iter(series.values())))
         if not ref:
             y, m, d = (int(session_label.split("-")[i]) for i in range(3))
             t0 = datetime(y, m, d, 8, 0, 0)
             return t0, t0.replace(hour=9)
+        t0 = ref[0].ts.replace(minute=0, second=0, microsecond=0)
+        return t0, t0 + timedelta(hours=1)
 
-    hourly: Dict[str, Dict[str, Counter]] = defaultdict(lambda: defaultdict(Counter))
+    # Bucket by (date, hour) so Jul17 12:00 and Jul18 12:00 stay distinct.
+    hourly: Dict[Tuple[str, str], Dict[str, Counter]] = defaultdict(lambda: defaultdict(Counter))
     for key in ("0-0", "0-1"):
         for r in valid_rows(series[key]):
-            hourly[r.ts.strftime("%H")][key][r.status] += 1
+            bucket = (r.ts.strftime("%Y-%m-%d"), r.ts.strftime("%H"))
+            hourly[bucket][key][r.status] += 1
 
-    best_hour = "08"
+    best_bucket = (session_label, "08")
     best_gap = -1.0
-    for hour, by_model in hourly.items():
+    for bucket, by_model in hourly.items():
         def absent_pct(model: str) -> float:
             counts = by_model.get(model, Counter())
             total = sum(counts.values()) or 1
@@ -132,13 +140,13 @@ def pick_zoom_hour(series: Dict[str, List[Row]], session_label: str) -> Tuple[da
         gap = abs(absent_pct("0-0") - absent_pct("0-1"))
         if gap > best_gap:
             best_gap = gap
-            best_hour = hour
+            best_bucket = bucket
 
-    y, m, d = (int(session_label.split("-")[i]) for i in range(3))
-    hour_i = int(best_hour)
+    day_s, hour_s = best_bucket
+    y, m, d = (int(x) for x in day_s.split("-"))
+    hour_i = int(hour_s)
     t0 = datetime(y, m, d, hour_i, 0, 0)
-    t1 = t0.replace(hour=hour_i + 1) if hour_i < 23 else t0.replace(day=d + 1, hour=0)
-    return t0, t1
+    return t0, t0 + timedelta(hours=1)
 
 
 def plot_single_model(key: str, rows: List[Row], out_dir: Path, *, hour_labels: Sequence[str], zoom: Tuple[datetime, datetime]) -> None:

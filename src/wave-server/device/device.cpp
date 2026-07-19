@@ -8,14 +8,14 @@ DEVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    json defaultErrorJson()
+    json default_error_json()
     {
         return json{
             {"0", "success"}
         };
     }
 
-    void validateErrorsObject(const json& errors)
+    void validate_errors_object(const json& errors)
     {
         for (const auto& [key, value] : errors.items())
         {
@@ -25,7 +25,7 @@ namespace
         }
     }
 
-    void validateDeviceConfig(const json& config)
+    void validate_device_config(const json& config)
     {
         if (!config.is_object())
             throw std::invalid_argument("device config must be a JSON object");
@@ -70,7 +70,7 @@ namespace
             if (!config["errors"].is_object())
                 throw std::invalid_argument("device config field 'errors' must be an object");
 
-            validateErrorsObject(config["errors"]);
+            validate_errors_object(config["errors"]);
         }
     }
 }
@@ -142,7 +142,7 @@ std::string roomIDToString(RoomID id)
 Device::Device() :
     m_state(DeviceState::Uninitialized),
     m_baseInfo(),
-    m_errorJson(defaultErrorJson())
+    m_errorJson(default_error_json())
 {
 }
 
@@ -209,7 +209,7 @@ std::string_view Device::getErrorString(int error_code) const
 
 const DeviceBaseInfo& Device::loadBaseConfig(const json& config)
 {
-    validateDeviceConfig(config);
+    validate_device_config(config);
 
     m_baseInfo.id = parseDeviceID(config["id"].get<std::string>());
     m_baseInfo.roomId = config.contains("room_id")
@@ -222,7 +222,7 @@ const DeviceBaseInfo& Device::loadBaseConfig(const json& config)
     m_baseInfo.className = config["class"].get<std::string>();
     m_baseInfo.enabled = config["enabled"].get<bool>();
 
-    m_errorJson = defaultErrorJson();
+    m_errorJson = default_error_json();
     if (config.contains("errors"))
         m_errorJson.update(config["errors"]);
 

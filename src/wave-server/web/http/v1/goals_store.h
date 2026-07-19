@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -23,7 +23,7 @@ namespace v1 {
 class GoalsStore
 {
 public:
-    explicit GoalsStore(drogon::orm::DbClientPtr client);
+    explicit GoalsStore(db::DbClientPtr client);
 
     Json::Value list(int64_t user_id, const std::optional<std::string>& status) const;
     Json::Value getById(int64_t user_id, int64_t goal_id) const;
@@ -60,7 +60,7 @@ public:
     bool markRecommendationCanceled(int64_t recommendation_id) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     Json::Value rowToJson(const drogon::orm::Row& row) const;
     Json::Value recommendationRowToJson(const drogon::orm::Row& row) const;

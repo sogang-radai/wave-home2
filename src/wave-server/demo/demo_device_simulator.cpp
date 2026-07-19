@@ -3,27 +3,82 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <optional>
 #include <string>
 
 WAVE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::string normalizePowerActionName(const std::string& action_name)
+    std::string to_lower_ascii(std::string value)
     {
-        if (action_name == "power_on" || action_name == "turn_on" || action_name == "switch_on")
-            return "on";
-        if (action_name == "power_off" || action_name == "turn_off" || action_name == "switch_off")
-            return "off";
-        return action_name;
+        for (auto& ch : value)
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        return value;
     }
 
-    int clampInt(int value, int lo, int hi)
+    std::string normalize_power_action_name(const std::string& action_name)
+    {
+        const auto action = to_lower_ascii(action_name);
+        if (action == "on" || action == "power_on" || action == "turn_on" || action == "switch_on"
+            || action == "poweron" || action == "turnon" || action == "switchon"
+            || action == "enable" || action == "start" || action == "켜기" || action == "전원켜기"
+            || action == "전원_켜기")
+            return "on";
+        if (action == "off" || action == "power_off" || action == "turn_off" || action == "switch_off"
+            || action == "poweroff" || action == "turnoff" || action == "switchoff"
+            || action == "disable" || action == "stop" || action == "shutdown" || action == "끄기"
+            || action == "전원끄기" || action == "전원_끄기")
+            return "off";
+        if (action == "toggle" || action == "power_toggle" || action == "switch_toggle"
+            || action == "토글" || action == "전환")
+            return "toggle";
+        // LLMs often confuse the datapoint name "switch" with an action.
+        if (action == "switch" || action == "set_switch" || action == "set_power")
+            return "switch";
+        return action;
+    }
+
+    std::optional<bool> extract_switch_target(const Json::Value& params)
+    {
+        if (!params.isObject())
+            return std::nullopt;
+
+        auto fromValue = [](const Json::Value& value) -> std::optional<bool> {
+            if (value.isBool())
+                return value.asBool();
+            if (value.isInt() || value.isUInt())
+                return value.asInt() != 0;
+            if (value.isDouble())
+                return value.asDouble() != 0.0;
+            if (value.isString())
+            {
+                const auto text = to_lower_ascii(value.asString());
+                if (text == "on" || text == "true" || text == "1" || text == "켜기")
+                    return true;
+                if (text == "off" || text == "false" || text == "0" || text == "끄기")
+                    return false;
+            }
+            return std::nullopt;
+        };
+
+        for (const char* key : {"value", "switch", "on", "power", "state", "enabled"})
+        {
+            if (params.isMember(key))
+            {
+                if (const auto parsed = fromValue(params[key]))
+                    return parsed;
+            }
+        }
+        return std::nullopt;
+    }
+
+    int clamp_int(int value, int lo, int hi)
     {
         return std::clamp(value, lo, hi);
     }
 
-    int paramInt(const Json::Value& params, const char* key, int fallback)
+    int param_int(const Json::Value& params, const char* key, int fallback)
     {
         if (!params.isObject() || !params.isMember(key))
             return fallback;
@@ -48,7 +103,7 @@ namespace
         return fallback;
     }
 
-    bool parseHexColor(const std::string& raw, int& r, int& g, int& b)
+    bool parse_hex_color(const std::string& raw, int& r, int& g, int& b)
     {
         std::string hex = raw;
         if (!hex.empty() && hex[0] == '#')
@@ -66,55 +121,55 @@ namespace
         return true;
     }
 
-    bool extractRgb(const Json::Value& params, int& r, int& g, int& b)
+    bool extract_rgb(const Json::Value& params, int& r, int& g, int& b)
     {
         if (!params.isObject())
             return false;
 
         if (params.isMember("r") || params.isMember("g") || params.isMember("b"))
         {
-            r = clampInt(paramInt(params, "r", 255), 0, 255);
-            g = clampInt(paramInt(params, "g", 255), 0, 255);
-            b = clampInt(paramInt(params, "b", 255), 0, 255);
+            r = clamp_int(param_int(params, "r", 255), 0, 255);
+            g = clamp_int(param_int(params, "g", 255), 0, 255);
+            b = clamp_int(param_int(params, "b", 255), 0, 255);
             return true;
         }
 
         if (params.isMember("color") && params["color"].isObject())
         {
             const auto& color = params["color"];
-            r = clampInt(paramInt(color, "r", 255), 0, 255);
-            g = clampInt(paramInt(color, "g", 255), 0, 255);
-            b = clampInt(paramInt(color, "b", 255), 0, 255);
+            r = clamp_int(param_int(color, "r", 255), 0, 255);
+            g = clamp_int(param_int(color, "g", 255), 0, 255);
+            b = clamp_int(param_int(color, "b", 255), 0, 255);
             return true;
         }
 
         if (params.isMember("hex") && params["hex"].isString())
-            return parseHexColor(params["hex"].asString(), r, g, b);
+            return parse_hex_color(params["hex"].asString(), r, g, b);
         if (params.isMember("color") && params["color"].isString())
-            return parseHexColor(params["color"].asString(), r, g, b);
+            return parse_hex_color(params["color"].asString(), r, g, b);
 
         return false;
     }
 
-    int extractBrightness(const Json::Value& params, int fallback)
+    int extract_brightness(const Json::Value& params, int fallback)
     {
         if (params.isMember("value"))
-            return clampInt(paramInt(params, "value", fallback), 0, 100);
+            return clamp_int(param_int(params, "value", fallback), 0, 100);
         if (params.isMember("brightness"))
-            return clampInt(paramInt(params, "brightness", fallback), 0, 100);
+            return clamp_int(param_int(params, "brightness", fallback), 0, 100);
         if (params.isMember("dimming"))
-            return clampInt(paramInt(params, "dimming", fallback), 0, 100);
+            return clamp_int(param_int(params, "dimming", fallback), 0, 100);
         return fallback;
     }
 
-    int extractTemperature(const Json::Value& params, int fallback)
+    int extract_temperature(const Json::Value& params, int fallback)
     {
         if (params.isMember("value"))
-            return clampInt(paramInt(params, "value", fallback), 2200, 6500);
+            return clamp_int(param_int(params, "value", fallback), 2200, 6500);
         if (params.isMember("temperature"))
-            return clampInt(paramInt(params, "temperature", fallback), 2200, 6500);
+            return clamp_int(param_int(params, "temperature", fallback), 2200, 6500);
         if (params.isMember("temp"))
-            return clampInt(paramInt(params, "temp", fallback), 2200, 6500);
+            return clamp_int(param_int(params, "temp", fallback), 2200, 6500);
         return fallback;
     }
 }
@@ -187,7 +242,7 @@ Json::Value demoApplyAction(
     applied = false;
     Json::Value next = prev_state.isObject() ? prev_state : Json::Value(Json::objectValue);
     // LLMs often invent power_on/power_off; map to the real catalog names.
-    const std::string action = normalizePowerActionName(action_name);
+    const std::string action = normalize_power_action_name(action_name);
 
     if (device_class == "tuya_ep2h")
     {
@@ -199,6 +254,14 @@ Json::Value demoApplyAction(
         else if (action == "off")
         {
             next["switch"] = false;
+            applied = true;
+        }
+        else if (action == "switch")
+        {
+            if (const auto target = extract_switch_target(params))
+                next["switch"] = *target;
+            else
+                next["switch"] = !prev_state.get("switch", false).asBool();
             applied = true;
         }
 
@@ -222,15 +285,23 @@ Json::Value demoApplyAction(
             next["on"] = false;
             applied = true;
         }
+        else if (action == "switch")
+        {
+            if (const auto target = extract_switch_target(params))
+                next["on"] = *target;
+            else
+                next["on"] = !prev_state.get("on", false).asBool();
+            applied = true;
+        }
         else if (action == "brightness")
         {
-            next["brightness"] = extractBrightness(params, prev_state.get("brightness", 50).asInt());
+            next["brightness"] = extract_brightness(params, prev_state.get("brightness", 50).asInt());
             next["on"] = next["brightness"].asInt() > 0;
             applied = true;
         }
         else if (action == "temperature")
         {
-            next["temperature"] = extractTemperature(params, prev_state.get("temperature", 4000).asInt());
+            next["temperature"] = extract_temperature(params, prev_state.get("temperature", 4000).asInt());
             next["on"] = true;
             applied = true;
         }
@@ -239,7 +310,7 @@ Json::Value demoApplyAction(
             int r = 255;
             int g = 255;
             int b = 255;
-            if (extractRgb(params, r, g, b))
+            if (extract_rgb(params, r, g, b))
             {
                 Json::Value color;
                 color["r"] = r;
@@ -263,24 +334,32 @@ Json::Value demoApplyAction(
             next["on"] = false;
             applied = true;
         }
+        else if (action == "switch")
+        {
+            if (const auto target = extract_switch_target(params))
+                next["on"] = *target;
+            else
+                next["on"] = !prev_state.get("on", false).asBool();
+            applied = true;
+        }
         else if (action == "volume_up")
         {
-            next["volume"] = prev_state.get("volume", 0).asInt() + std::max(1, paramInt(params, "count", 1));
+            next["volume"] = prev_state.get("volume", 0).asInt() + std::max(1, param_int(params, "count", 1));
             applied = true;
         }
         else if (action == "volume_down")
         {
-            next["volume"] = std::max(0, prev_state.get("volume", 0).asInt() - std::max(1, paramInt(params, "count", 1)));
+            next["volume"] = std::max(0, prev_state.get("volume", 0).asInt() - std::max(1, param_int(params, "count", 1)));
             applied = true;
         }
         else if (action == "channel_up")
         {
-            next["channel"] = prev_state.get("channel", 0).asInt() + std::max(1, paramInt(params, "count", 1));
+            next["channel"] = prev_state.get("channel", 0).asInt() + std::max(1, param_int(params, "count", 1));
             applied = true;
         }
         else if (action == "channel_down")
         {
-            next["channel"] = std::max(0, prev_state.get("channel", 0).asInt() - std::max(1, paramInt(params, "count", 1)));
+            next["channel"] = std::max(0, prev_state.get("channel", 0).asInt() - std::max(1, param_int(params, "count", 1)));
             applied = true;
         }
         else if (action == "mute")

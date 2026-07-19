@@ -1,17 +1,17 @@
 # LLM 모델 포워딩 API
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)** · Base URL: `/llm/v1`
+호출 방향: **백엔드(:8500) → 에이전트(:8502)** · Base URL: `/llm/v1`
 
 
 에이전트 서버가 제공하는 **LLM/임베딩 서비스 API**다. 실제 모델 제공자(Gemini API, Ollama 등)와의 연결은 에이전트 서버가 소유하고, 백엔드는 이 API를 호출해 LLM을 사용한다.
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)**
+호출 방향: **백엔드(:8500) → 에이전트(:8502)**
 
 ### 공통
 
-- Base URL: `/llm/v1` (에이전트 서버, `http://<agent>:8501/llm/v1`)
+- Base URL: `/llm/v1` (에이전트 서버, `http://<agent>:8502/llm/v1`)
 - OpenAI Chat Completions / Embeddings 호환 스키마를 따른다.
-- 백엔드는 OpenAI SDK 등 표준 클라이언트의 `base_url`을 `http://<agent>:8501/llm/v1`로 두고  
+- 백엔드는 OpenAI SDK 등 표준 클라이언트의 `base_url`을 `http://<agent>:8502/llm/v1`로 두고  
 사용할 수 있다.
 - 공통 에러 응답: `{ "error": { "code": "...", "message": "..." } }`
 - 채팅 히스토리는 이 API로 저장하지 않는다. 대화 기록은 백엔드가 `chat_history`에 관리한다.

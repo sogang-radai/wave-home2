@@ -5,8 +5,11 @@
 
 #include "core/coredefs.h"
 
+#define DB_NAMESPACE_BEGIN namespace db {
+#define DB_NAMESPACE_END }
+
 WAVE_NAMESPACE_BEGIN
-namespace db {
+DB_NAMESPACE_BEGIN
 
 struct Migration
 {
@@ -15,10 +18,11 @@ struct Migration
     std::vector<const char*> statements;
 };
 
-void configureConnectionSettings(const drogon::orm::DbClientPtr& client);
-bool runMigrations(const drogon::orm::DbClientPtr& client);
-bool validateDatabaseSchema(const drogon::orm::DbClientPtr& client);
+using DbClientPtr = drogon::orm::DbClientPtr;
 
-} // namespace db
+void configureConnectionSettings(const DbClientPtr& client);
+bool runMigrations(const DbClientPtr& client);
+bool validateDatabaseSchema(const DbClientPtr& client);
 
+DB_NAMESPACE_END
 WAVE_NAMESPACE_END

@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -24,41 +26,23 @@ public:
     ADD_METHOD_TO(SettingsController::putAiAgent, "/api/v1/settings/ai-agent", drogon::Put);
     METHOD_LIST_END
 
-    void getGeneral(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void getGeneral(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void putGeneral(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void putGeneral(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getSleep(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void getSleep(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void putSleep(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void putSleep(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void listSounds(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listSounds(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void listTtsSpeakers(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listTtsSpeakers(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void listAiModels(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listAiModels(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void getAiAgent(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void getAiAgent(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void putAiAgent(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void putAiAgent(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 } // namespace v1

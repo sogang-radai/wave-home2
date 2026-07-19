@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -17,13 +19,8 @@ public:
     ADD_METHOD_TO(WeeklyPlanController::recommendations, "/api/v1/weekly-plan/recommendations", drogon::Get);
     METHOD_LIST_END
 
-    void weeklyReport(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void recommendations(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void weeklyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void recommendations(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 } // namespace v1

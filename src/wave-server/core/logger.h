@@ -61,16 +61,16 @@ struct LogItem
 class Logger
 {
 public:
-    static void setQueueSize(size_t size = 1024);
-    static void addItem(const LogItem& item);
+    static void set_queue_size(size_t size = 1024);
+    static void add_item(const LogItem& item);
 
-    static void enumerateItems(std::function<void(const LogItem& item)> callback);
-    static void enumerateItems(
+    static void enumerate_items(std::function<void(const LogItem& item)> callback);
+    static void enumerate_items(
         log_time_t start,
         log_time_t end,
         std::function<void(const LogItem& item)> callback);
 
-    static void setOutputFunction(std::function<void(const LogItem& item)> outputFunction);
+    static void set_output_function(std::function<void(const LogItem& item)> outputFunction);
 
     static void log(
         LogLevel level,
@@ -92,11 +92,11 @@ public:
         0u, \
         ::ws::detail::formatLog((fmt) __VA_OPT__(,) __VA_ARGS__))
 
-#define LOG_TRACE(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Trace, fmt, __VA_ARGS__)
-#define LOG_DEBUG(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Debug, fmt, __VA_ARGS__)
-#define LOG_INFO(fmt, ...)  WS_LOG_IMPL(::ws::LogLevel::Info,  fmt, __VA_ARGS__)
-#define LOG_WARN(fmt, ...)  WS_LOG_IMPL(::ws::LogLevel::Warn,  fmt, __VA_ARGS__)
-#define LOG_ERROR(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Error, fmt, __VA_ARGS__)
-#define LOG_FATAL(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Fatal, fmt, __VA_ARGS__)
+#define WLOG_TRACE(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Trace, fmt, __VA_ARGS__)
+#define WLOG_DEBUG(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Debug, fmt, __VA_ARGS__)
+#define WLOG_INFO(fmt, ...)  WS_LOG_IMPL(::ws::LogLevel::Info,  fmt, __VA_ARGS__)
+#define WLOG_WARN(fmt, ...)  WS_LOG_IMPL(::ws::LogLevel::Warn,  fmt, __VA_ARGS__)
+#define WLOG_ERROR(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Error, fmt, __VA_ARGS__)
+#define WLOG_FATAL(fmt, ...) WS_LOG_IMPL(::ws::LogLevel::Fatal, fmt, __VA_ARGS__)
 
 WAVE_NAMESPACE_END

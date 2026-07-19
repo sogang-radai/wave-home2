@@ -2,14 +2,19 @@ set(_wave_server_sources
     main.cpp
     app/app_state.cpp
     app/app_config.cpp
-    app/app_setting.cpp
+    app/runtime/profile_runtime.cpp
+    app/runtime/production_profile_runtime.cpp
+    app/runtime/demo_profile_runtime.cpp
+    app/runtime/test_profile_runtime.cpp
     core/logger.cpp
     core/task_queue.cpp
-    core/time_util.cpp
+    
     db/database.cpp
+    db/vec_tables.cpp
     service/llm_client.cpp
     service/agent_client.cpp
     service/insight_generator.cpp
+    service/insight_vec_store.cpp
     service/sleep_plan_generator.cpp
     service/goal_coaching_generator.cpp
     service/go2rtc_service.cpp
@@ -21,13 +26,28 @@ set(_wave_server_sources
     service/trigger_manager.cpp
     service/ir_trigger_bridge.cpp
     web/server.cpp
-    web/demo_policy.cpp
+    demo/demo_policy.cpp
+    web/listener_policy.cpp
+    facade/real_alarms_facade.cpp
+    facade/real_schedule_tasks_facade.cpp
+    facade/real_rules_facade.cpp
+    facade/real_iot_facade.cpp
+    facade/real_devices_internal_facade.cpp
+    facade/real_chat_session_facade.cpp
     demo/demo_runtime_id.cpp
     demo/demo_session_registry.cpp
     demo/demo_device_simulator.cpp
     demo/demo_device_backend.cpp
     demo/demo_session_writes.cpp
+    demo/demo_goals.cpp
     demo/demo_power_meter.cpp
+    demo/demo_automation_runtime.cpp
+    demo/demo_alarms_facade.cpp
+    demo/demo_schedule_tasks_facade.cpp
+    demo/demo_rules_facade.cpp
+    demo/demo_iot_facade.cpp
+    demo/demo_devices_internal_facade.cpp
+    demo/demo_chat_session_facade.cpp
     db/sqlite_vec_support.cpp
     web/http/api_controller.cpp
     web/http/v1/health_controller.cpp
@@ -47,6 +67,7 @@ set(_wave_server_sources
     web/http/v1/schedule_tasks_controller.cpp
     web/http/v1/alarms_controller.cpp
     web/http/v1/chat_controller.cpp
+    web/http/v1/chat_stt_controller.cpp
     web/http/v1/chat_store.cpp
     web/http/internal/internal_controller.cpp
     web/http/internal/db_query_store.cpp
@@ -97,16 +118,22 @@ set(_wave_server_sources
     service/sleep/sleep_session_fsm.cpp
     service/sleep/sleep_stage_synth.cpp
     service/sleep/sleep_vitals.cpp
+    service/sleep/sleep_audio.cpp
     service/sleep/sleep_vec_store.cpp
     service/sleep/sleep_manager.cpp
+    service/companion/companion_manager.cpp
     auxiliary/stb_image.cpp
     "${CMAKE_SOURCE_DIR}/src/common/util/exe_path.cpp"
+    "${CMAKE_SOURCE_DIR}/src/common/util/time_util.cpp"
     "${CMAKE_SOURCE_DIR}/src/common/util/arg_parser.cpp"
     "${CMAKE_SOURCE_DIR}/src/common/network/net_util.cpp"
 )
 
 if(WAVE_BUILD_TTS)
-    list(APPEND _wave_server_sources service/tts_service.cpp)
+    list(APPEND _wave_server_sources
+        service/tts_service.cpp
+        service/stt_service.cpp
+    )
 endif()
 
 add_executable(wave-server ${_wave_server_sources})

@@ -7,9 +7,7 @@ WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
 
-void SessionController::getSession(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SessionController::getSession(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -23,9 +21,7 @@ void SessionController::getSession(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.sessionJson(session)));
 }
 
-void SessionController::patchActiveAccount(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void SessionController::patchActiveAccount(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())

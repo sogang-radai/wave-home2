@@ -4,7 +4,7 @@
 #include <string>
 
 #include <drogon/HttpRequest.h>
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -20,9 +20,11 @@ std::string resolveDemoRuntimeId(
 class DemoDeviceBackend
 {
 public:
-    explicit DemoDeviceBackend(drogon::orm::DbClientPtr client);
+    explicit DemoDeviceBackend(db::DbClientPtr client);
 
     Json::Value listDevices(const std::string& runtime_id, std::string& code) const;
+    /** Session-scoped summary for IoT header cards (devices / rules / events). */
+    Json::Value getSummary(const std::string& runtime_id, std::string& code) const;
     Json::Value getState(const std::string& runtime_id, const std::string& device_id, std::string& code) const;
     Json::Value queryDevice(
         const std::string& runtime_id,
@@ -41,7 +43,7 @@ private:
     Json::Value stateForDevice(const std::string& runtime_id, const std::string& device_id, const std::string& device_class) const;
     void saveState(const std::string& runtime_id, const std::string& device_id, const Json::Value& state) const;
 
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 };
 
 WAVE_NAMESPACE_END

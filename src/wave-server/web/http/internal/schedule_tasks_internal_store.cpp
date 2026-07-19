@@ -1,9 +1,10 @@
 #include "schedule_tasks_internal_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <sstream>
 
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../v1/chat_store.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -11,7 +12,7 @@ namespace web {
 namespace internal {
 namespace
 {
-    std::string trimCopy(const std::string& value)
+    std::string trim_copy(const std::string& value)
     {
         const auto start = value.find_first_not_of(" \t\n\r");
         if (start == std::string::npos)
@@ -20,7 +21,7 @@ namespace
         return value.substr(start, end - start + 1);
     }
 
-    bool isValidDay(const std::string& day)
+    bool is_valid_day(const std::string& day)
     {
         static const char* kDays[] = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"};
         return std::any_of(std::begin(kDays), std::end(kDays), [&](const char* candidate) {
@@ -29,7 +30,7 @@ namespace
     }
 }
 
-ScheduleTasksInternalStore::ScheduleTasksInternalStore(drogon::orm::DbClientPtr client) :
+ScheduleTasksInternalStore::ScheduleTasksInternalStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
@@ -49,7 +50,7 @@ Json::Value ScheduleTasksInternalStore::rowToJson(const drogon::orm::Row& row) c
     if (row["created_at"].isNull())
         item["createdAt"] = Json::nullValue;
     else
-        item["createdAt"] = v1::ChatStore::toCreatedAtIso(row["created_at"].as<std::string>());
+        item["createdAt"] = v1::ChatStore::to_created_at_iso(row["created_at"].as<std::string>());
     item["createdBy"] = row["created_by"].as<std::string>();
     item["category"] = row["category"].as<std::string>();
     item["scheduleKind"] = row["schedule_kind"].as<std::string>();
@@ -136,13 +137,13 @@ std::optional<Json::Value> ScheduleTasksInternalStore::create(
         field = "userId";
         return std::nullopt;
     }
-    if (!body.isMember("title") || !body["title"].isString() || trimCopy(body["title"].asString()).empty())
+    if (!body.isMember("title") || !body["title"].isString() || trim_copy(body["title"].asString()).empty())
     {
         error = "title 이 필요합니다.";
         field = "title";
         return std::nullopt;
     }
-    if (!body.isMember("dayOfWeek") || !body["dayOfWeek"].isString() || !isValidDay(body["dayOfWeek"].asString()))
+    if (!body.isMember("dayOfWeek") || !body["dayOfWeek"].isString() || !is_valid_day(body["dayOfWeek"].asString()))
     {
         error = "dayOfWeek 가 필요합니다.";
         field = "dayOfWeek";
@@ -150,7 +151,7 @@ std::optional<Json::Value> ScheduleTasksInternalStore::create(
     }
 
     const int64_t user_id = body["userId"].asInt64();
-    const std::string title = trimCopy(body["title"].asString());
+    const std::string title = trim_copy(body["title"].asString());
     const std::string day_of_week = body["dayOfWeek"].asString();
     const std::string schedule_kind = body.isMember("scheduleKind") && body["scheduleKind"].isString()
         ? body["scheduleKind"].asString()
@@ -249,12 +250,12 @@ std::optional<Json::Value> ScheduleTasksInternalStore::update(
     };
 
     if (body.isMember("title") && body["title"].isString())
-        bindText("title", trimCopy(body["title"].asString()));
+        bindText("title", trim_copy(body["title"].asString()));
     if (body.isMember("category") && body["category"].isString())
         bindText("category", body["category"].asString());
     if (body.isMember("dayOfWeek") && body["dayOfWeek"].isString())
     {
-        if (!isValidDay(body["dayOfWeek"].asString()))
+        if (!is_valid_day(body["dayOfWeek"].asString()))
         {
             error = "dayOfWeek 값이 올바르지 않습니다.";
             field = "dayOfWeek";

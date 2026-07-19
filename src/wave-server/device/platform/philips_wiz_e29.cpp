@@ -29,7 +29,7 @@ namespace
         return out;
     }
 
-    PhilipsWizE29::Config parseConfig(const json& config)
+    PhilipsWizE29::Config parse_config(const json& config)
     {
         const auto& iface = config.at("interface");
 
@@ -41,7 +41,7 @@ namespace
         return out;
     }
 
-    void validateConfig(const json& config)
+    void validate_config(const json& config)
     {
         if (config.at("class").get<std::string>().rfind("philips_wiz_e29", 0) != 0)
             throw std::invalid_argument("philips_wiz_e29 config field 'class' must start with 'philips_wiz_e29'");
@@ -56,7 +56,7 @@ namespace
 
     // Derives capabilities from the WiZ moduleName (e.g. "ESP01_SHRGB1C_31"),
     // cross-checked against the fields the bulb reports in getPilot.
-    PhilipsWizE29::Capabilities deriveCapabilities(const std::string& moduleName, const json& pilot)
+    PhilipsWizE29::Capabilities derive_capabilities(const std::string& moduleName, const json& pilot)
     {
         PhilipsWizE29::Capabilities caps;
         caps.module = moduleName;
@@ -189,9 +189,9 @@ const PhilipsWizE29::Capabilities& PhilipsWizE29::getCapabilities() const
 
 int PhilipsWizE29::init(const json& config)
 {
-    validateConfig(config);
+    validate_config(config);
     loadBaseConfig(config);
-    m_config = parseConfig(config);
+    m_config = parse_config(config);
     m_impl->config = m_config;
 
     if (!isEnabled())
@@ -215,18 +215,18 @@ int PhilipsWizE29::init(const json& config)
 
         if (!m_config.mac.empty() && !mac.empty() && !net::macEquals(m_config.mac, mac))
         {
-            LOG_ERROR("philips_wiz_e29: MAC mismatch for {} (expected {}, got {})",
+            WLOG_ERROR("philips_wiz_e29: MAC mismatch for {} (expected {}, got {})",
                 m_config.host, m_config.mac, mac);
             m_state = DeviceState::Stopped;
             return -7;
         }
 
         const json pilot = m_impl->getPilot();
-        m_capabilities = deriveCapabilities(moduleName, pilot);
+        m_capabilities = derive_capabilities(moduleName, pilot);
         registerActionsAndQueries();
 
         m_state = DeviceState::Running;
-        LOG_INFO("philips_wiz_e29 connected: {} (module={}, color={}, tunableWhite={})",
+        WLOG_INFO("philips_wiz_e29 connected: {} (module={}, color={}, tunableWhite={})",
             m_config.host, moduleName, m_capabilities.color, m_capabilities.tunableWhite);
         return 0;
     }
@@ -310,7 +310,7 @@ json PhilipsWizE29::query(std::string_view name, const json& params)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 query failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 query failed: {}", ex.what());
         return makeError(-5, ex.what());
     }
 }
@@ -397,7 +397,7 @@ int PhilipsWizE29::setPower(bool on)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 setPower failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 setPower failed: {}", ex.what());
         return -5;
     }
 }
@@ -413,7 +413,7 @@ int PhilipsWizE29::togglePower()
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 togglePower failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 togglePower failed: {}", ex.what());
         return -5;
     }
 }
@@ -427,7 +427,7 @@ int PhilipsWizE29::setBrightness(uint8_t percent)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 setBrightness failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 setBrightness failed: {}", ex.what());
         return -5;
     }
 }
@@ -441,7 +441,7 @@ int PhilipsWizE29::setColorRGB(uint8_t r, uint8_t g, uint8_t b)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 setColorRGB failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 setColorRGB failed: {}", ex.what());
         return -5;
     }
 }
@@ -455,7 +455,7 @@ int PhilipsWizE29::setColorTemperature(uint16_t kelvin)
     }
     catch (const std::exception& ex)
     {
-        LOG_ERROR("philips_wiz_e29 setColorTemperature failed: {}", ex.what());
+        WLOG_ERROR("philips_wiz_e29 setColorTemperature failed: {}", ex.what());
         return -5;
     }
 }

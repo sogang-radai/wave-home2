@@ -22,14 +22,14 @@ void SessionFsm::reset()
     m_state = SessionState{};
 }
 
-bool SessionFsm::isAsleepMinute(const MinuteStat& minute)
+bool SessionFsm::is_asleep_minute(const MinuteStat& minute)
 {
     return minute.asleepR >= kOnsetAsleepR
         || (minute.statusRatio.is_object()
             && minute.statusRatio.value("asleep", 0.0) >= kOnsetAsleepR);
 }
 
-bool SessionFsm::isWakeMinute(const MinuteStat& minute)
+bool SessionFsm::is_wake_minute(const MinuteStat& minute)
 {
     if (!minute.statusRatio.is_object())
         return false;
@@ -38,14 +38,14 @@ bool SessionFsm::isWakeMinute(const MinuteStat& minute)
     return (awake + absent) >= kWakeAwakeAbsentRatio;
 }
 
-bool SessionFsm::isAbsentMinute(const MinuteStat& minute)
+bool SessionFsm::is_absent_minute(const MinuteStat& minute)
 {
     if (!minute.statusRatio.is_object())
         return false;
     return minute.statusRatio.value("absent", 0.0) >= kAbsentRatio;
 }
 
-std::string SessionFsm::dateFromTimestamp(const std::string& timestamp)
+std::string SessionFsm::date_from_timestamp(const std::string& timestamp)
 {
     if (timestamp.size() >= 10)
         return timestamp.substr(0, 10);
@@ -57,9 +57,9 @@ std::optional<SessionCloseResult> SessionFsm::onMinute(const MinuteStat& minute)
     m_state.pendingMinutes.push_back(minute);
     m_state.totalTossEvents += minute.tossEvents;
 
-    const bool asleep_minute = isAsleepMinute(minute);
-    const bool wake_minute = isWakeMinute(minute);
-    const bool absent_minute = isAbsentMinute(minute);
+    const bool asleep_minute = is_asleep_minute(minute);
+    const bool wake_minute = is_wake_minute(minute);
+    const bool absent_minute = is_absent_minute(minute);
 
     switch (m_state.phase)
     {
@@ -73,7 +73,7 @@ std::optional<SessionCloseResult> SessionFsm::onMinute(const MinuteStat& minute)
             m_state.absentMinuteHits = 0;
             m_state.microWakeMinutes = 0;
             m_state.onset = minute.timeStart;
-            m_state.nightDate = dateFromTimestamp(minute.timeStart);
+            m_state.nightDate = date_from_timestamp(minute.timeStart);
             m_state.inBedMinutes = 1;
         }
         break;
@@ -87,7 +87,7 @@ std::optional<SessionCloseResult> SessionFsm::onMinute(const MinuteStat& minute)
             {
                 m_state.phase = SessionPhase::Sleeping;
                 m_state.onset = minute.timeStart;
-                m_state.nightDate = dateFromTimestamp(minute.timeStart);
+                m_state.nightDate = date_from_timestamp(minute.timeStart);
             }
         }
         else
@@ -176,7 +176,7 @@ std::optional<SessionCloseResult> SessionFsm::onMinute(const MinuteStat& minute)
         {
             SessionCloseResult result;
             result.closed = true;
-            result.nightDate = m_state.nightDate.value_or(dateFromTimestamp(minute.timeStart));
+            result.nightDate = m_state.nightDate.value_or(date_from_timestamp(minute.timeStart));
             result.onset = m_state.onset.value_or(minute.timeStart);
             result.finalWake = m_state.finalWake.value_or(minute.timeStart);
             result.timeInBedS = m_state.inBedMinutes * 60;

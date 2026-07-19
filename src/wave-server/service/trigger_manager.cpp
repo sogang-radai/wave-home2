@@ -15,7 +15,7 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::string weekdayToken(int wday)
+    std::string weekday_token(int wday)
     {
         switch (wday)
         {
@@ -38,7 +38,7 @@ namespace
         }
     }
 
-    bool parseClock(const std::string& hhmm, int& out_hour, int& out_minute)
+    bool parse_clock(const std::string& hhmm, int& out_hour, int& out_minute)
     {
         const auto colon = hhmm.find(':');
         if (colon == std::string::npos)
@@ -48,11 +48,11 @@ namespace
         return true;
     }
 
-    bool localClockMatches(const std::string& hhmm)
+    bool local_clock_matches(const std::string& hhmm)
     {
         int hour = 0;
         int minute = 0;
-        if (!parseClock(hhmm, hour, minute))
+        if (!parse_clock(hhmm, hour, minute))
             return false;
 
         const std::time_t now_t = std::time(nullptr);
@@ -65,7 +65,7 @@ namespace
         return local_tm.tm_hour == hour && local_tm.tm_min == minute;
     }
 
-    int localWeekday()
+    int local_weekday()
     {
         const std::time_t now_t = std::time(nullptr);
         std::tm local_tm {};
@@ -187,7 +187,7 @@ void TriggerManager::ensureGestureRuntime(const GestureIndexKey& key)
     const auto set_path = m_resolvePath(key.gestureSetPath);
     if (!std::filesystem::exists(set_path))
     {
-        LOG_WARN("TriggerManager: gesture set not found: {}", set_path.string());
+        WLOG_WARN("TriggerManager: gesture set not found: {}", set_path.string());
         return;
     }
 
@@ -208,7 +208,7 @@ void TriggerManager::ensureGestureRuntime(const GestureIndexKey& key)
         const auto set_dir = set_path.parent_path();
         if (!runtime.pipeline->init(set_dir.string(), set_config, error))
         {
-            LOG_WARN("TriggerManager: gesture pipeline init failed: {}", error);
+            WLOG_WARN("TriggerManager: gesture pipeline init failed: {}", error);
             return;
         }
 
@@ -220,14 +220,14 @@ void TriggerManager::ensureGestureRuntime(const GestureIndexKey& key)
         }
 
         m_gestureRuntimes.push_back(std::move(runtime));
-        LOG_INFO(
+        WLOG_INFO(
             "TriggerManager: gesture pipeline ready (radar={}, set={})",
             key.radarDeviceId,
             key.gestureSetPath);
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("TriggerManager: failed to load gesture set {}: {}", key.gestureSetPath, e.what());
+        WLOG_WARN("TriggerManager: failed to load gesture set {}: {}", key.gestureSetPath, e.what());
     }
 }
 
@@ -493,53 +493,58 @@ void TriggerManager::tickSchedule()
 {
     const auto now = std::chrono::system_clock::now();
     std::vector<Rule> due_rules;
+    std::vector<std::string> once_to_disable;
 
-    std::lock_guard lock(m_stateMutex);
-    for (auto& [rule_id, state] : m_scheduleStates)
     {
-        (void)rule_id;
-        if (!state.rule.enabled || !state.rule.schedule)
-            continue;
-
-        const RuleSchedule& schedule = *state.rule.schedule;
-
-        if (schedule.repeat == "once")
+        std::lock_guard lock(m_stateMutex);
+        for (auto& [rule_id, state] : m_scheduleStates)
         {
-            if (!state.firedOnce && now >= state.nextFire)
-            {
-                due_rules.push_back(state.rule);
-                state.firedOnce = true;
-            }
-            continue;
-        }
+            (void)rule_id;
+            if (!state.rule.enabled || !state.rule.schedule)
+                continue;
 
-        if (schedule.repeat == "daily" && schedule.time)
-        {
-            if (localClockMatches(*schedule.time) && !state.firedOnce)
-            {
-                due_rules.push_back(state.rule);
-                state.firedOnce = true;
-            }
-            else if (!localClockMatches(*schedule.time))
-            {
-                state.firedOnce = false;
-            }
-            continue;
-        }
+            const RuleSchedule& schedule = *state.rule.schedule;
 
-        if (schedule.repeat == "weekly" && schedule.time)
-        {
-            const std::string token = weekdayToken(localWeekday());
-            const bool day_match = std::find(schedule.daysOfWeek.begin(), schedule.daysOfWeek.end(), token)
-                != schedule.daysOfWeek.end();
-            if (day_match && localClockMatches(*schedule.time) && !state.firedOnce)
+            if (schedule.repeat == "once")
             {
-                due_rules.push_back(state.rule);
-                state.firedOnce = true;
+                if (!state.firedOnce && now >= state.nextFire)
+                {
+                    due_rules.push_back(state.rule);
+                    state.firedOnce = true;
+                    state.rule.enabled = false;
+                    once_to_disable.push_back(state.rule.id);
+                }
+                continue;
             }
-            else if (!localClockMatches(*schedule.time))
+
+            if (schedule.repeat == "daily" && schedule.time)
             {
-                state.firedOnce = false;
+                if (local_clock_matches(*schedule.time) && !state.firedOnce)
+                {
+                    due_rules.push_back(state.rule);
+                    state.firedOnce = true;
+                }
+                else if (!local_clock_matches(*schedule.time))
+                {
+                    state.firedOnce = false;
+                }
+                continue;
+            }
+
+            if (schedule.repeat == "weekly" && schedule.time)
+            {
+                const std::string token = weekday_token(local_weekday());
+                const bool day_match = std::find(schedule.daysOfWeek.begin(), schedule.daysOfWeek.end(), token)
+                    != schedule.daysOfWeek.end();
+                if (day_match && local_clock_matches(*schedule.time) && !state.firedOnce)
+                {
+                    due_rules.push_back(state.rule);
+                    state.firedOnce = true;
+                }
+                else if (!local_clock_matches(*schedule.time))
+                {
+                    state.firedOnce = false;
+                }
             }
         }
     }
@@ -554,6 +559,21 @@ void TriggerManager::tickSchedule()
         binding.repeatIntervalMs = rule.repeatIntervalMs;
         binding.action = rule.action;
         dispatchBindings({binding}, -1, rule.schedule ? "schedule:" + rule.id : "rule:" + rule.id);
+    }
+
+    // One-shot schedules should turn off after firing so the UI toggle reflects completion.
+    for (const auto& rule_id : once_to_disable)
+    {
+        if (!m_rules)
+            continue;
+        try
+        {
+            m_rules->setEnabledAsync(rule_id, false).get();
+        }
+        catch (const std::exception& e)
+        {
+            WLOG_WARN("TriggerManager: disable once schedule failed ({}): {}", rule_id, e.what());
+        }
     }
 }
 

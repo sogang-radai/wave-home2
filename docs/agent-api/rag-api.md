@@ -1,6 +1,6 @@
 # RAG 검색 API
 
-호출 방향: **에이전트(:8501) → 백엔드(:8500)** · **POST** `/internal/v1/rag/search`
+호출 방향: **에이전트(:8502) → 백엔드 agent-api(:8501)** · **POST** `/internal/v1/rag/search`
 
 RAG 는 **백엔드 전담**이다. 에이전트가 직접 벡터 검색·DB 접근을 하지 않고, 백엔드에 HTTP 로
 검색을 위임한다. 백엔드가 쿼리를 임베딩(`/llm/v1/embeddings`)하고 `sqlite-vec` 로 유사 문서를 찾아
@@ -145,7 +145,7 @@ POST /internal/v1/rag/search
 import httpx
 from langchain_core.tools import tool
 
-BACKEND = "http://127.0.0.1:8500/internal/v1"
+BACKEND = "http://127.0.0.1:8501/internal/v1"
 
 @tool
 def search_memory(query: str, user_id: int) -> list[dict]:

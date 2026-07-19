@@ -88,7 +88,7 @@ namespace
         float maxZ;
     };
 
-    uint64_t steadyUs()
+    uint64_t steady_us()
     {
         const auto now = std::chrono::steady_clock::now();
         return std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
@@ -145,7 +145,7 @@ namespace
         size_t m_offset;
     };
 
-    bool findPacketMagic(const std::vector<uint8_t>& buffer, size_t& outOffset)
+    bool find_packet_magic(const std::vector<uint8_t>& buffer, size_t& outOffset)
     {
         if (buffer.size() < 4)
             return false;
@@ -164,10 +164,10 @@ namespace
         return false;
     }
 
-    bool tryExtractPacket(std::vector<uint8_t>& streamBuf, std::vector<uint8_t>& outPacketBuf)
+    bool try_extract_packet(std::vector<uint8_t>& streamBuf, std::vector<uint8_t>& outPacketBuf)
     {
         size_t packetMagicOffset = 0;
-        if (!findPacketMagic(streamBuf, packetMagicOffset))
+        if (!find_packet_magic(streamBuf, packetMagicOffset))
         {
             if (streamBuf.size() > 7)
                 streamBuf.erase(streamBuf.begin(), streamBuf.end() - 7);
@@ -197,9 +197,9 @@ namespace
         return true;
     }
 
-    bool parsePacket(const std::vector<uint8_t>& packetBuf, RadarPointCloud& outFrame, uint64_t& lastTimestampUs)
+    bool parse_packet(const std::vector<uint8_t>& packetBuf, RadarPointCloud& outFrame, uint64_t& lastTimestampUs)
     {
-        const uint64_t now = steadyUs();
+        const uint64_t now = steady_us();
         if (lastTimestampUs == 0)
             outFrame.timestamp = now;
         else
@@ -311,7 +311,7 @@ namespace
         return true;
     }
 
-    SRSR4SN::Config parseConfig(const json& config)
+    SRSR4SN::Config parse_config(const json& config)
     {
         const auto& iface = config.at("interface");
 
@@ -343,7 +343,7 @@ namespace
         return out;
     }
 
-    SRSR4SN::Settings parseSettings(const json& config)
+    SRSR4SN::Settings parse_settings(const json& config)
     {
         SRSR4SN::Settings settings;
         if (!config.contains("settings"))
@@ -372,7 +372,7 @@ namespace
 
     // Verifies the host still maps to the MAC pinned in the config. Returns -7
     // on mismatch, 0 when it matches or when no MAC is pinned / not resolvable.
-    int verifyMac(const json& config, const std::string& host)
+    int verify_mac(const json& config, const std::string& host)
     {
         const std::string expected = config.at("interface").value("mac", "");
         if (expected.empty())
@@ -381,19 +381,19 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("srs_r4sn: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("srs_r4sn: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("srs_r4sn: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("srs_r4sn: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("srs_r4sn: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("srs_r4sn: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
-    void validateSrsR4snConfig(const json& config)
+    void validate_srs_r4sn_config(const json& config)
     {
         if (config.at("class").get<std::string>() != "srs_r4sn")
             throw std::invalid_argument("srs_r4sn config field 'class' must be 'srs_r4sn'");
@@ -614,7 +614,7 @@ private:
             m_socket.cancel(cancelEc);
             m_socket.close(cancelEc);
             m_connecting.store(false);
-            LOG_WARN("srs_r4sn connect timed out after {} ms", kConnectTimeoutMs);
+            WLOG_WARN("srs_r4sn connect timed out after {} ms", kConnectTimeoutMs);
             scheduleReconnect("connect_timeout");
         });
 
@@ -632,7 +632,7 @@ private:
                 if (resolveEc)
                 {
                     m_connecting.store(false);
-                    LOG_ERROR("srs_r4sn resolve failed: {}", resolveEc.message());
+                    WLOG_ERROR("srs_r4sn resolve failed: {}", resolveEc.message());
                     scheduleReconnect("resolve_failed");
                     return;
                 }
@@ -653,7 +653,7 @@ private:
                         if (connectEc)
                         {
                             m_connecting.store(false);
-                            LOG_WARN("srs_r4sn connect failed: {}", connectEc.message());
+                            WLOG_WARN("srs_r4sn connect failed: {}", connectEc.message());
                             scheduleReconnect("connect_failed");
                             return;
                         }
@@ -664,7 +664,7 @@ private:
                         m_connecting.store(false);
                         if (m_reconnectAttempts > 0)
                         {
-                            LOG_INFO(
+                            WLOG_INFO(
                                 "srs_r4sn reconnected to {}:{} (backoff reset)",
                                 endpoint.address().to_string(),
                                 endpoint.port());
@@ -673,7 +673,7 @@ private:
                         m_reconnectAttempts = 0;
                         m_streamBuf.clear();
 
-                        LOG_INFO(
+                        WLOG_INFO(
                             "srs_r4sn connected to {}:{}",
                             endpoint.address().to_string(),
                             endpoint.port());
@@ -702,7 +702,7 @@ private:
         m_reconnectDelayMs = std::min(m_reconnectDelayMs * 2u, kMaxReconnectDelayMs);
         ++m_reconnectAttempts;
 
-        LOG_WARN(
+        WLOG_WARN(
             "srs_r4sn disconnected ({}) — retry #{} in {} ms",
             reason,
             m_reconnectAttempts,
@@ -714,7 +714,7 @@ private:
             if (timerEc || !m_work)
                 return;
 
-            LOG_INFO("srs_r4sn reconnecting (delay was {} ms)", delay);
+            WLOG_INFO("srs_r4sn reconnecting (delay was {} ms)", delay);
             openConnection();
         });
     }
@@ -730,7 +730,7 @@ private:
 
                 if (ec)
                 {
-                    LOG_ERROR("srs_r4sn read failed: {}", ec.message());
+                    WLOG_ERROR("srs_r4sn read failed: {}", ec.message());
                     scheduleReconnect("read_failed");
                     return;
                 }
@@ -740,11 +740,11 @@ private:
                 while (true)
                 {
                     std::vector<uint8_t> packetBuf;
-                    if (!tryExtractPacket(m_streamBuf, packetBuf))
+                    if (!try_extract_packet(m_streamBuf, packetBuf))
                         break;
 
                     RadarPointCloud frame;
-                    if (parsePacket(packetBuf, frame, m_lastFrameTimestampUs))
+                    if (parse_packet(packetBuf, frame, m_lastFrameTimestampUs))
                     {
                         std::lock_guard<std::mutex> lock(m_mutex);
                         if (m_frames.size() >= m_queueSize)
@@ -762,7 +762,7 @@ private:
                     }
                     else
                     {
-                        LOG_ERROR("srs_r4sn failed to parse point cloud frame");
+                        WLOG_ERROR("srs_r4sn failed to parse point cloud frame");
                     }
                 }
 
@@ -1016,10 +1016,10 @@ const SRSR4SN::Settings& SRSR4SN::getSettings() const
 
 int SRSR4SN::init(const json& config)
 {
-    validateSrsR4snConfig(config);
+    validate_srs_r4sn_config(config);
     loadBaseConfig(config);
-    m_config = parseConfig(config);
-    m_settings = parseSettings(config);
+    m_config = parse_config(config);
+    m_settings = parse_settings(config);
 
     if (!isEnabled())
         return -2;
@@ -1043,7 +1043,7 @@ int SRSR4SN::init(const json& config)
             m_pointCloudQueueSize);
         m_impl->start();
 
-        const int macRc = verifyMac(config, m_config.host);
+        const int macRc = verify_mac(config, m_config.host);
         if (macRc != 0)
         {
             m_impl->stop();
@@ -1209,7 +1209,7 @@ std::future<void> SRSR4SN::requestIQAsync(
 
         std::string error;
         if (!m_iqImpl->request(requests, outResponses, error))
-            LOG_ERROR("srs_r4sn IQ request failed: {}", error);
+            WLOG_ERROR("srs_r4sn IQ request failed: {}", error);
     });
 }
 

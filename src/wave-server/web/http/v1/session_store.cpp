@@ -1,9 +1,10 @@
 #include "session_store.h"
+#include "../../../db/database.h"
 
 #include <string_view>
 
 #include "../../../core/logger.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
@@ -11,7 +12,7 @@ namespace v1 {
 
 namespace
 {
-    std::string extractBearerToken(const drogon::HttpRequestPtr& req)
+    std::string extract_bearer_token(const drogon::HttpRequestPtr& req)
     {
         const auto auth = req->getHeader("Authorization");
         constexpr std::string_view prefix = "Bearer ";
@@ -47,14 +48,14 @@ void respondError(
     callback(resp);
 }
 
-SessionStore::SessionStore(drogon::orm::DbClientPtr client) :
+SessionStore::SessionStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
 
 int64_t SessionStore::resolveSessionId(const drogon::HttpRequestPtr& req) const
 {
-    const auto token = extractBearerToken(req);
+    const auto token = extract_bearer_token(req);
     if (!token.empty())
     {
         auto rows = m_client->execSqlSync(

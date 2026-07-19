@@ -44,10 +44,10 @@ private:
         std::vector<uint16_t> timings;
     };
 
-    static Command commandFromJson(const Json::Value& value);
-    static Json::Value commandToJson(const Command& command, bool include_timings);
-    static std::string isoNowKst();
-    static std::string makeCommandId(const std::string& name);
+    static Command command_from_json(const Json::Value& value);
+    static Json::Value command_to_json(const Command& command, bool include_timings);
+    static std::string iso_now_kst();
+    static std::string make_command_id(const std::string& name);
 
     bool persistLocked(std::string& code) const;
     const Command* findLocked(const std::string& command_id) const;

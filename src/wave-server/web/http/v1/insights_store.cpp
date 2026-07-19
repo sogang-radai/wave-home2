@@ -1,4 +1,5 @@
 #include "insights_store.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
@@ -10,7 +11,7 @@ namespace v1 {
 
 namespace
 {
-    bool tableExists(drogon::orm::DbClientPtr client, const char* name)
+    bool tableExists(db::DbClientPtr client, const char* name)
     {
         const auto rows = client->execSqlSync(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
@@ -19,12 +20,12 @@ namespace
     }
 }
 
-InsightsStore::InsightsStore(drogon::orm::DbClientPtr client) :
+InsightsStore::InsightsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
 
-std::string InsightsStore::referenceDate(drogon::orm::DbClientPtr client)
+std::string InsightsStore::reference_date(db::DbClientPtr client)
 {
     const auto& state = AppState::get();
     if (state.demo_mode && !state.anchor_date.empty())
@@ -36,7 +37,7 @@ std::string InsightsStore::referenceDate(drogon::orm::DbClientPtr client)
     return rows[0]["d"].as<std::string>();
 }
 
-Json::Value InsightsStore::parseJsonColumn(const drogon::orm::Field& field)
+Json::Value InsightsStore::parse_json_column(const drogon::orm::Field& field)
 {
     if (field.isNull())
         return Json::nullValue;
@@ -70,8 +71,8 @@ Json::Value InsightsStore::rowToJson(const drogon::orm::Row& row) const
     else
         item["actionType"] = row["action_type"].as<std::string>();
     item["approved"] = row["approved"].as<int>() != 0;
-    item["ruleJson"] = parseJsonColumn(row["rule_json"]);
-    item["scheduleTaskJson"] = parseJsonColumn(row["schedule_task_json"]);
+    item["ruleJson"] = parse_json_column(row["rule_json"]);
+    item["scheduleTaskJson"] = parse_json_column(row["schedule_task_json"]);
     if (!row["created_at"].isNull())
     {
         const auto created = row["created_at"].as<std::string>();
@@ -171,7 +172,7 @@ Json::Value InsightsStore::dashboardDailyMessage(int64_t user_id) const
     if (!tableExists(m_client, "insight"))
         return Json::nullValue;
 
-    const auto ref_date = referenceDate(m_client);
+    const auto ref_date = reference_date(m_client);
     const auto rows = m_client->execSqlSync(
         "SELECT title, text FROM insight"
         " WHERE user_id = ? AND surface = 'dashboard_banner' AND date <= ?"

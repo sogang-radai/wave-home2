@@ -1,6 +1,19 @@
 새 채팅의 경우 docs/style.md파일 참조
 
-backend server build: scripts/build-server.sh
-test front build: scripts/build-site-test.sh
-demo front build: scripts/build-site-demo.sh
-production front build: scripts/build-site.sh
+# 포트 (SSOT: docs/ports.txt)
+Production — backend client 8500 / agent-api 8501 · agent 8502
+Demo — backend client 8510 / agent-api 8511 · agent 8512
+Test — backend client 8520
+
+# 백엔드 빌드 (백엔드 수정 후 실행)
+backend server build: scripts/build/server.sh
+
+# 프론트 빌드 (프론트 수정 후 실행)
+production front build: scripts/build/site.sh
+demo front build: scripts/build/site-demo.sh
+test front build: scripts/build/site-test.sh
+
+# 실행
+production: scripts/run/prod.sh  (또는 scripts/run-prod.sh)
+demo: scripts/run/demo.sh       (또는 scripts/run-demo.sh)
+test: scripts/run/test.sh       (또는 scripts/run-test.sh)

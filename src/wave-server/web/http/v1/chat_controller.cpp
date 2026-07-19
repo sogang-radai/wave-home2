@@ -1,8 +1,10 @@
 #include "chat_controller.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -13,11 +15,12 @@
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
 #include "../../../core/logger.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../../../service/agent_client.h"
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_runtime_id.h"
 #include "../../../demo/demo_session_writes.h"
+#include "../../../facade/chat_session_facade.h"
 #include "chat_store.h"
 #include "session_store.h"
 #include "settings_store.h"
@@ -27,7 +30,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    std::optional<int64_t> parseConversationId(const std::string& raw)
+    std::optional<int64_t> parse_conversation_id(const std::string& raw)
     {
         try
         {
@@ -39,9 +42,9 @@ namespace
         }
     }
 
-    std::optional<int64_t> resolveUserId(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback)
+    std::optional<int64_t> resolve_user_id(
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback)
     {
         auto& state = AppState::get();
         if (!state.db())
@@ -61,7 +64,7 @@ namespace
         return user_id;
     }
 
-    std::string extractText(const std::shared_ptr<const Json::Value>& json, std::string& error, std::string& field)
+    std::string extract_text(const std::shared_ptr<const Json::Value>& json, std::string& error, std::string& field)
     {
         if (!json || !json->isMember("text") || !(*json)["text"].isString())
         {
@@ -90,7 +93,7 @@ namespace
         return text;
     }
 
-    bool sendSseEvent(const std::shared_ptr<drogon::ResponseStream>& stream, const Json::Value& event)
+    bool send_sse_event(const std::shared_ptr<drogon::ResponseStream>& stream, const Json::Value& event)
     {
         if (!stream)
             return false;
@@ -101,12 +104,15 @@ namespace
         return stream->send("data: " + payload + "\n\n");
     }
 
-    std::string toolLabel(const std::string& name, bool running, bool failed = false)
+    std::string tool_label(const std::string& name, bool running, bool failed = false)
     {
         static const std::unordered_map<std::string, std::string> labels = {
             {"query_db", "DB 조회"},
             {"rag_search", "메모리 검색"},
             {"list_devices", "기기 목록 조회"},
+            {"get_device_classes", "기기 종류 조회"},
+            {"get_device_capabilities", "기기 기능 조회"},
+            {"query_device", "기기 조회"},
             {"control_device", "기기 제어"},
             {"get_schedule_tasks", "일정 조회"},
             {"update_schedule_task", "일정 수정"},
@@ -121,7 +127,7 @@ namespace
         return base + " 완료";
     }
 
-    std::string summarizeToolResult(const json& result)
+    std::string summarize_tool_result(const json& result)
     {
         if (result.is_null())
             return {};
@@ -148,7 +154,7 @@ namespace
         return {};
     }
 
-    Json::Value nlohmannToJsonCpp(const json& value)
+    Json::Value nlohmann_to_json_cpp(const json& value)
     {
         if (value.is_null())
             return Json::nullValue;
@@ -162,18 +168,21 @@ namespace
         return Json::nullValue;
     }
 
-    Json::Value makeToolEvent(
+    Json::Value make_tool_event(
         const std::string& name,
         bool running,
         const std::string& result_summary = {},
         bool failed = false,
         const Json::Value& args = Json::nullValue,
-        const Json::Value& result = Json::nullValue)
+        const Json::Value& result = Json::nullValue,
+        const std::string& id = {})
     {
         Json::Value event;
+        if (!id.empty())
+            event["id"] = id;
         event["name"] = name;
         event["status"] = running ? "running" : (failed ? "failed" : "done");
-        event["label"] = toolLabel(name, running, failed);
+        event["label"] = tool_label(name, running, failed);
         if (!result_summary.empty())
             event["resultSummary"] = result_summary;
         if (!args.isNull())
@@ -183,7 +192,35 @@ namespace
         return event;
     }
 
-    std::string buildAgentNow()
+    // Prefer agent run id; fall back to first running row with the same name
+    // so parallel same-name tools (e.g. many query_device) do not overwrite.
+    std::optional<Json::ArrayIndex> find_tool_event_index(
+        const Json::Value& tool_events,
+        const std::unordered_map<std::string, Json::ArrayIndex>& tool_index,
+        const std::string& id,
+        const std::string& name,
+        bool prefer_running)
+    {
+        if (!id.empty())
+        {
+            const auto it = tool_index.find(id);
+            if (it != tool_index.end())
+                return it->second;
+        }
+        if (prefer_running)
+        {
+            for (Json::ArrayIndex i = 0; i < tool_events.size(); ++i)
+            {
+                const auto& te = tool_events[i];
+                if (te.isMember("name") && te["name"].asString() == name
+                    && te.isMember("status") && te["status"].asString() == "running")
+                    return i;
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::string build_agent_now()
     {
         const auto& state = AppState::get();
         if (state.demo_mode && !state.anchor_date.empty())
@@ -209,76 +246,84 @@ namespace
         return formatTimestamp();
     }
 
-    void setAgentTurnNow(service::AgentChatTurnRequest& request)
+    void set_agent_turn_now(service::AgentChatTurnRequest& request)
     {
-        request.now = buildAgentNow();
+        request.now = build_agent_now();
     }
 
-    service::AgentClientResult callAgentSync(
+    service::AgentClientResult call_agent_sync(
         int64_t chat_history_id,
         int64_t user_id,
         const std::vector<service::AgentChatMessage>& messages,
         std::string& out_content,
         std::string& out_model,
         std::string& out_error,
-        const std::string& demo_runtime_id = {})
+        const std::string& demo_runtime_id = {},
+        Json::Value* out_tool_events = nullptr,
+        std::string* out_reasoning = nullptr)
     {
         service::AgentChatTurnRequest request;
         request.chat_history_id = chat_history_id;
         request.user_id = user_id;
         request.messages = messages;
-        setAgentTurnNow(request);
+        set_agent_turn_now(request);
         request.demo_runtime_id = demo_runtime_id;
-        request.stream = false;
+        request.stream = true;
 
-        return service::runChatTurnSync(
+        json tool_events = json::array();
+        std::string reasoning;
+        const auto result = service::runChatTurnSync(
             AppState::get().config.agent.base_url,
             request,
             out_content,
             out_model,
-            out_error);
+            out_error,
+            out_tool_events ? &tool_events : nullptr,
+            out_reasoning ? &reasoning : nullptr);
+        if (out_reasoning)
+            *out_reasoning = std::move(reasoning);
+        if (out_tool_events)
+            *out_tool_events = nlohmann_to_json_cpp(tool_events);
+        return result;
     }
 
-    std::vector<service::AgentChatMessage> buildAgentMessagesFromJson(const Json::Value& messages)
+    std::string trim_personal_prompt(const std::string& value)
     {
-        std::vector<service::AgentChatMessage> out;
-        if (!messages.isArray())
-            return out;
-
-        for (const auto& message : messages)
-        {
-            if (!message.isMember("role") || !message["role"].isString())
-                continue;
-            if (!message.isMember("text") || !message["text"].isString())
-                continue;
-
-            const std::string role = message["role"].asString();
-            if (role != "user" && role != "assistant")
-                continue;
-
-            const std::string text = message["text"].asString();
-            if (text.empty())
-                continue;
-
-            out.push_back({role, text});
-        }
-        return out;
+        const auto start = value.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos)
+            return {};
+        const auto end = value.find_last_not_of(" \t\r\n");
+        return value.substr(start, end - start + 1);
     }
 
-    std::optional<int64_t> parseRequiredInt64(
-        const Json::Value& json,
-        const char* field,
-        std::string& error)
+    std::string resolve_personal_prompt(int64_t user_id, const std::string& demo_runtime_id)
     {
-        if (!json.isMember(field) || !json[field].isInt64())
-        {
-            error = std::string("필수 필드가 없습니다: ") + field;
-            return std::nullopt;
-        }
-        return json[field].asInt64();
+        auto prompt = AppState::get().runtime().chat().resolvePersonalPrompt(
+            user_id, demo_runtime_id, AppState::get().db());
+        return trim_personal_prompt(prompt);
     }
 
-    bool runAgentStreamCore(
+    void prepend_personal_prompt(
+        std::vector<service::AgentChatMessage>& messages,
+        int64_t user_id,
+        const std::string& demo_runtime_id)
+    {
+        // Drop any prior system rows so an updated personal prompt replaces
+        // rather than stacking on top of an older injection.
+        messages.erase(
+            std::remove_if(
+                messages.begin(),
+                messages.end(),
+                [](const service::AgentChatMessage& message) { return message.role == "system"; }),
+            messages.end());
+
+        const auto prompt = resolve_personal_prompt(user_id, demo_runtime_id);
+        if (prompt.empty())
+            return;
+        messages.insert(messages.begin(), {"system", prompt});
+    }
+
+    bool run_agent_stream_core(
         const std::shared_ptr<drogon::ResponseStream>& stream,
         int64_t user_id,
         int64_t conversation_id,
@@ -293,7 +338,7 @@ namespace
         agent_request.chat_history_id = conversation_id;
         agent_request.user_id = user_id;
         agent_request.messages = agent_messages;
-        setAgentTurnNow(agent_request);
+        set_agent_turn_now(agent_request);
         agent_request.demo_runtime_id = demo_runtime_id;
         agent_request.stream = true;
 
@@ -312,23 +357,34 @@ namespace
                 if (type == "tool.start")
                 {
                     const std::string name = event.value("name", "");
+                    const std::string id = event.value("id", "");
                     const Json::Value args = event.contains("args")
-                        ? nlohmannToJsonCpp(event["args"])
+                        ? nlohmann_to_json_cpp(event["args"])
                         : Json::Value(Json::nullValue);
+                    Json::Value stored = make_tool_event(name, true, {}, false, args, Json::nullValue, id);
                     Json::Value payload;
                     payload["type"] = "tool_start";
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
-                    payload["toolEvent"] = makeToolEvent(name, true, {}, false, args);
-                    if (!sendSseEvent(stream, payload))
+                    payload["toolEvent"] = stored;
+                    if (!send_sse_event(stream, payload))
                         return false;
 
-                    Json::Value stored = makeToolEvent(name, true, {}, false, args);
-                    if (tool_index.count(name) > 0)
-                        tool_events[tool_index[name]] = stored;
+                    // Never overwrite a completed same-name tool — that caused UI flicker
+                    // when many query_device calls shared one name-keyed slot.
+                    if (!id.empty())
+                    {
+                        const auto it = tool_index.find(id);
+                        if (it != tool_index.end())
+                            tool_events[it->second] = stored;
+                        else
+                        {
+                            tool_index[id] = tool_events.size();
+                            tool_events.append(stored);
+                        }
+                    }
                     else
                     {
-                        tool_index[name] = tool_events.size();
                         tool_events.append(stored);
                     }
                     return true;
@@ -337,30 +393,44 @@ namespace
                 if (type == "tool.end")
                 {
                     const std::string name = event.value("name", "");
+                    const std::string id = event.value("id", "");
                     const bool failed = event.contains("ok") && event["ok"].is_boolean() && !event["ok"].get<bool>();
                     const json& raw_result = event.contains("result") ? event["result"] : json();
-                    const std::string result_summary = summarizeToolResult(raw_result);
+                    const std::string result_summary = summarize_tool_result(raw_result);
                     const Json::Value result = raw_result.is_object() || raw_result.is_array()
-                        ? nlohmannToJsonCpp(raw_result)
+                        ? nlohmann_to_json_cpp(raw_result)
                         : Json::Value(Json::nullValue);
                     Json::Value prior_args = Json::nullValue;
-                    if (tool_index.count(name) > 0 && tool_events[tool_index[name]].isMember("args"))
-                        prior_args = tool_events[tool_index[name]]["args"];
+                    const auto existing = find_tool_event_index(tool_events, tool_index, id, name, true);
+                    if (existing && tool_events[*existing].isMember("args"))
+                        prior_args = tool_events[*existing]["args"];
+                    const std::string stored_id = !id.empty()
+                        ? id
+                        : (existing && tool_events[*existing].isMember("id")
+                            ? tool_events[*existing]["id"].asString()
+                            : std::string{});
+                    Json::Value stored = make_tool_event(
+                        name, false, result_summary, failed, prior_args, result, stored_id);
                     Json::Value payload;
                     payload["type"] = "tool_end";
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
-                    payload["toolEvent"] = makeToolEvent(name, false, result_summary, failed, prior_args, result);
-                    if (!sendSseEvent(stream, payload))
+                    payload["toolEvent"] = stored;
+                    if (!send_sse_event(stream, payload))
                         return false;
 
-                    Json::Value stored = makeToolEvent(name, false, result_summary, failed, prior_args, result);
-                    if (tool_index.count(name) > 0)
-                        tool_events[tool_index[name]] = stored;
+                    if (existing)
+                    {
+                        tool_events[*existing] = stored;
+                        if (!stored_id.empty())
+                            tool_index[stored_id] = *existing;
+                    }
                     else
                     {
-                        tool_index[name] = tool_events.size();
+                        const auto idx = tool_events.size();
                         tool_events.append(stored);
+                        if (!stored_id.empty())
+                            tool_index[stored_id] = idx;
                     }
                     return true;
                 }
@@ -372,7 +442,7 @@ namespace
                     payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                     payload["messageId"] = static_cast<Json::Int64>(assistant_id);
                     payload["phase"] = event["phase"].get<std::string>();
-                    if (!sendSseEvent(stream, payload))
+                    if (!send_sse_event(stream, payload))
                         return false;
                     return true;
                 }
@@ -390,7 +460,7 @@ namespace
                             payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                             payload["messageId"] = static_cast<Json::Int64>(assistant_id);
                             payload["reasoning"] = accumulated_reasoning;
-                            if (!sendSseEvent(stream, payload))
+                            if (!send_sse_event(stream, payload))
                                 return false;
                         }
                     }
@@ -406,7 +476,7 @@ namespace
                             payload["conversationId"] = static_cast<Json::Int64>(conversation_id);
                             payload["messageId"] = static_cast<Json::Int64>(assistant_id);
                             payload["text"] = accumulated_text;
-                            if (!sendSseEvent(stream, payload))
+                            if (!send_sse_event(stream, payload))
                                 return false;
                         }
                     }
@@ -440,7 +510,7 @@ namespace
         if (agent_result != service::AgentClientResult::success &&
             agent_result != service::AgentClientResult::cancelled)
         {
-            LOG_ERROR("Agent stream failed: {}", agent_error);
+            WLOG_ERROR("Agent stream failed: {}", agent_error);
             if (accumulated_text.empty())
                 accumulated_text = "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.";
         }
@@ -452,7 +522,7 @@ namespace
         return true;
     }
 
-    void runStreamingTurn(
+    void run_streaming_turn(
         std::shared_ptr<drogon::ResponseStream> stream,
         int64_t user_id,
         int64_t conversation_id,
@@ -463,9 +533,8 @@ namespace
     {
         ChatStore store(AppState::get().db());
         const auto messages = conversation_for_event["messages"];
-        const int64_t assistant_id = demo_runtime_id.empty()
-            ? store.nextMessageId(messages)
-            : demoNextChatMessageId(messages);
+        const int64_t assistant_id =
+            AppState::get().runtime().chat().nextMessageId(messages);
         const std::string assistant_created_at = formatTimestamp();
         const Json::Value assistant_shell = store.makeAssistantShell(assistant_id, assistant_created_at);
 
@@ -475,67 +544,56 @@ namespace
         user_added["message"] = user_message;
         if (is_new_conversation)
             user_added["conversation"] = conversation_for_event;
-        if (!sendSseEvent(stream, user_added))
+        if (!send_sse_event(stream, user_added))
             return;
 
         Json::Value assistant_start;
         assistant_start["type"] = "assistant_start";
         assistant_start["conversationId"] = static_cast<Json::Int64>(conversation_id);
         assistant_start["message"] = assistant_shell;
-        if (!sendSseEvent(stream, assistant_start))
+        if (!send_sse_event(stream, assistant_start))
             return;
 
         std::string accumulated_text;
         std::string accumulated_reasoning;
         Json::Value tool_events(Json::arrayValue);
 
-        runAgentStreamCore(
+        auto agent_messages = store.buildAgentMessages(messages);
+        prepend_personal_prompt(agent_messages, user_id, demo_runtime_id);
+
+        run_agent_stream_core(
             stream,
             user_id,
             conversation_id,
             assistant_id,
-            store.buildAgentMessages(messages),
+            agent_messages,
             accumulated_text,
             accumulated_reasoning,
             tool_events,
             demo_runtime_id);
 
-        if (!demo_runtime_id.empty())
-        {
-            demoAppendChatAssistantMessage(
-                demo_runtime_id,
-                user_id,
-                conversation_id,
-                assistant_id,
-                accumulated_text,
-                tool_events,
-                accumulated_reasoning);
-        }
-        else
-        {
-            store.appendAssistantMessage(
-                user_id,
-                conversation_id,
-                assistant_id,
-                accumulated_text,
-                tool_events,
-                accumulated_reasoning);
-        }
+        AppState::get().runtime().chat().appendAssistantMessage(
+            user_id,
+            conversation_id,
+            assistant_id,
+            accumulated_text,
+            tool_events,
+            accumulated_reasoning,
+            demo_runtime_id,
+            AppState::get().db());
 
         Json::Value message_done;
         message_done["type"] = "message_done";
         message_done["conversationId"] = static_cast<Json::Int64>(conversation_id);
         message_done["messageId"] = static_cast<Json::Int64>(assistant_id);
         message_done["text"] = accumulated_text;
-        sendSseEvent(stream, message_done);
+        send_sse_event(stream, message_done);
 
         if (stream)
             stream->close();
     }
 
-    void startStreamResponse(
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        const drogon::HttpRequestPtr& req,
+    void start_stream_response(HttpResponseCallback&& callback, const HttpRequestPtr& req,
         int64_t user_id,
         std::optional<int64_t> conversation_id,
         const std::string& text)
@@ -557,10 +615,8 @@ namespace
 
                     if (conversation_id)
                     {
-                        const auto appended = demo_runtime_id.empty()
-                            ? store.appendUserMessage(user_id, *conversation_id, text, error, field)
-                            : demoAppendChatUserMessage(
-                                  demo_runtime_id, user_id, *conversation_id, text, error, client);
+                        const auto appended = AppState::get().runtime().chat().appendUserMessage(
+                            user_id, *conversation_id, text, demo_runtime_id, client, error, field);
                         if (!appended)
                         {
                             if (response)
@@ -568,9 +624,8 @@ namespace
                             return;
                         }
 
-                        auto conversation = demo_runtime_id.empty()
-                            ? store.getConversation(user_id, *conversation_id)
-                            : demoGetChatConversation(demo_runtime_id, user_id, *conversation_id, client);
+                        auto conversation = AppState::get().runtime().chat().getConversation(
+                            user_id, *conversation_id, demo_runtime_id, client);
                         if (!conversation)
                         {
                             if (response)
@@ -578,7 +633,7 @@ namespace
                             return;
                         }
 
-                        runStreamingTurn(
+                        run_streaming_turn(
                             response,
                             user_id,
                             *conversation_id,
@@ -589,9 +644,8 @@ namespace
                         return;
                     }
 
-                    const auto created = demo_runtime_id.empty()
-                        ? store.createConversationWithUserMessage(text, user_id, error, field)
-                        : demoCreateChatWithUserMessage(demo_runtime_id, user_id, text, error, client);
+                    const auto created = AppState::get().runtime().chat().createWithUserMessage(
+                        user_id, text, demo_runtime_id, client, error, field);
                     if (!created)
                     {
                         if (response)
@@ -599,7 +653,7 @@ namespace
                         return;
                     }
 
-                    runStreamingTurn(
+                    run_streaming_turn(
                         response,
                         user_id,
                         (*created)["id"].asInt64(),
@@ -619,141 +673,28 @@ namespace
         callback(resp);
     }
 
-    void startEphemeralStreamResponse(
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        const drogon::HttpRequestPtr& req,
-        int64_t user_id,
-        int64_t conversation_id,
-        int64_t assistant_message_id,
-        const Json::Value& messages_json)
-    {
-        const auto agent_messages = buildAgentMessagesFromJson(messages_json);
-        if (agent_messages.empty())
-        {
-            respondError(callback, 400, "INVALID_MESSAGE", "메시지 기록이 비어 있습니다.", "messages");
-            return;
-        }
-
-        const auto demo_runtime_id = demoVirtualDevicesEnabled()
-            ? resolveDemoRuntimeId(req, nullptr)
-            : std::string{};
-
-        auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-            [user_id, conversation_id, assistant_message_id, agent_messages, demo_runtime_id](
-                drogon::ResponseStreamPtr response_stream)
-            {
-                std::thread([user_id, conversation_id, assistant_message_id, agent_messages, demo_runtime_id, response = std::shared_ptr<drogon::ResponseStream>{
-                                 std::move(response_stream)}]() mutable
-                {
-                    std::string accumulated_text;
-                    std::string accumulated_reasoning;
-                    Json::Value tool_events(Json::arrayValue);
-
-                    runAgentStreamCore(
-                        response,
-                        user_id,
-                        conversation_id,
-                        assistant_message_id,
-                        agent_messages,
-                        accumulated_text,
-                        accumulated_reasoning,
-                        tool_events,
-                        demo_runtime_id);
-
-                    Json::Value message_done;
-                    message_done["type"] = "message_done";
-                    message_done["conversationId"] = static_cast<Json::Int64>(conversation_id);
-                    message_done["messageId"] = static_cast<Json::Int64>(assistant_message_id);
-                    message_done["text"] = accumulated_text;
-                    sendSseEvent(response, message_done);
-
-                    if (response)
-                        response->close();
-                }).detach();
-            },
-            true);
-
-        resp->setContentTypeString("text/event-stream");
-        resp->addHeader("Cache-Control", "no-cache, no-store");
-        resp->addHeader("Connection", "keep-alive");
-        if (!demo_runtime_id.empty())
-            attachDemoRuntimeCookieIfNeeded(req, resp, demo_runtime_id);
-        callback(resp);
-    }
-
-    void handleStreamEphemeral(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback)
-    {
-        const auto user_id = resolveUserId(req, callback);
-        if (!user_id)
-            return;
-
-        const auto json = req->getJsonObject();
-        if (!json)
-        {
-            respondError(callback, 400, "INVALID_REQUEST", "요청 본문이 필요합니다.");
-            return;
-        }
-
-        std::string error;
-        const auto conversation_id = parseRequiredInt64(*json, "conversationId", error);
-        if (!conversation_id)
-        {
-            respondError(callback, 400, "INVALID_REQUEST", error);
-            return;
-        }
-
-        const auto assistant_message_id = parseRequiredInt64(*json, "assistantMessageId", error);
-        if (!assistant_message_id)
-        {
-            respondError(callback, 400, "INVALID_REQUEST", error);
-            return;
-        }
-
-        if (!json->isMember("messages") || !(*json)["messages"].isArray())
-        {
-            respondError(callback, 400, "INVALID_REQUEST", "messages 배열이 필요합니다.", "messages");
-            return;
-        }
-
-        startEphemeralStreamResponse(
-            std::move(callback),
-            req,
-            *user_id,
-            *conversation_id,
-            *assistant_message_id,
-            (*json)["messages"]);
-    }
 }
 
-void ChatController::listConversations(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::listConversations(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            demoListChatSummaries(runtime_id, *user_id, AppState::get().db()));
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    const auto body = AppState::get().runtime().chat().listSummaries(
+        *user_id, runtime_id, AppState::get().db());
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+    if (!runtime_id.empty())
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    ChatStore store(AppState::get().db());
-    callback(drogon::HttpResponse::newHttpJsonResponse(store.listSummaries(*user_id)));
+    callback(resp);
 }
 
-void ChatController::createConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::createConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
@@ -767,16 +708,15 @@ void ChatController::createConversation(
     {
         std::string error;
         std::string field;
-        const auto text = extractText(json, error, field);
+        const auto text = extract_text(json, error, field);
         if (text.empty())
         {
             respondError(callback, 400, "INVALID_MESSAGE", error, field);
             return;
         }
 
-        const auto created = demo
-            ? demoCreateChatWithUserMessage(runtime_id, *user_id, text, error, client)
-            : store.createConversationWithUserMessage(text, *user_id, error, field);
+        const auto created = AppState::get().runtime().chat().createWithUserMessage(
+            *user_id, text, runtime_id, client, error, field);
         if (!created)
         {
             respondError(callback, 400, "INVALID_MESSAGE", error, field);
@@ -787,29 +727,33 @@ void ChatController::createConversation(
         std::string assistant_text;
         std::string model;
         std::string agent_error;
-        const auto agent_messages = store.buildAgentMessages((*created)["messages"]);
-        const auto agent_result = callAgentSync(conversation_id, *user_id, agent_messages, assistant_text, model, agent_error);
+        std::string reasoning;
+        Json::Value tool_events(Json::arrayValue);
+        auto agent_messages = store.buildAgentMessages((*created)["messages"]);
+        prepend_personal_prompt(agent_messages, *user_id, runtime_id);
+        const auto agent_result = call_agent_sync(
+            conversation_id,
+            *user_id,
+            agent_messages,
+            assistant_text,
+            model,
+            agent_error,
+            runtime_id,
+            &tool_events,
+            &reasoning);
         if (agent_result != service::AgentClientResult::success)
         {
             respondError(callback, 502, "AI_PROVIDER_ERROR", "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.");
             return;
         }
 
-        const int64_t assistant_id = demo
-            ? demoNextChatMessageId((*created)["messages"])
-            : store.nextMessageId((*created)["messages"]);
-        if (demo)
-        {
-            demoAppendChatAssistantMessage(
-                runtime_id, *user_id, conversation_id, assistant_id, assistant_text);
-        }
-        else
-        {
-            store.appendAssistantMessage(*user_id, conversation_id, assistant_id, assistant_text);
-        }
-        const auto conversation = demo
-            ? demoGetChatConversation(runtime_id, *user_id, conversation_id, client)
-            : store.getConversation(*user_id, conversation_id);
+        const int64_t assistant_id =
+            AppState::get().runtime().chat().nextMessageId((*created)["messages"]);
+        AppState::get().runtime().chat().appendAssistantMessage(
+            *user_id, conversation_id, assistant_id, assistant_text,
+            tool_events, reasoning, runtime_id, client);
+        const auto conversation = AppState::get().runtime().chat().getConversation(
+            *user_id, conversation_id, runtime_id, client);
         if (!conversation)
         {
             respondError(callback, 500, "INTERNAL_ERROR", "대화를 저장하지 못했습니다.");
@@ -834,9 +778,8 @@ void ChatController::createConversation(
         return;
     }
 
-    const auto conversation = demo
-        ? demoCreateChatConversation(runtime_id, *user_id, title, client)
-        : store.createConversation(*user_id, title);
+    const auto conversation = AppState::get().runtime().chat().createConversation(
+        *user_id, title, runtime_id, client);
     if (!conversation)
     {
         respondError(callback, 400, "INVALID_TITLE", "대화 제목 또는 첫 메시지를 입력해주세요.", "title");
@@ -850,59 +793,44 @@ void ChatController::createConversation(
     callback(resp);
 }
 
-void ChatController::getConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::getConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        const auto conversation =
-            demoGetChatConversation(runtime_id, *user_id, *id, AppState::get().db());
-        if (!conversation)
-        {
-            respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(*conversation);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    ChatStore store(AppState::get().db());
-    const auto conversation = store.getConversation(*user_id, *id);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    const auto conversation =
+        AppState::get().runtime().chat().getConversation(*user_id, *id, runtime_id, AppState::get().db());
     if (!conversation)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
         return;
     }
-
-    callback(drogon::HttpResponse::newHttpJsonResponse(*conversation));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(*conversation);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
-void ChatController::renameConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::renameConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
@@ -918,26 +846,11 @@ void ChatController::renameConversation(
 
     std::string error;
     std::string field;
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        const auto summary = demoRenameChatConversation(
-            runtime_id, *user_id, *id, (*json)["title"].asString(), error, AppState::get().db());
-        if (!summary)
-        {
-            const int status = error.find("찾을") != std::string::npos ? 404 : 400;
-            const std::string code = status == 404 ? "NOT_FOUND" : "INVALID_TITLE";
-            respondError(callback, status, code, error, field);
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(*summary);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    ChatStore store(AppState::get().db());
-    const auto summary = store.renameConversation(*user_id, *id, (*json)["title"].asString(), error, field);
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    const auto summary = AppState::get().runtime().chat().rename(
+        *user_id, *id, (*json)["title"].asString(), runtime_id, AppState::get().db(), error, field);
     if (!summary)
     {
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
@@ -945,63 +858,49 @@ void ChatController::renameConversation(
         respondError(callback, status, code, error, field);
         return;
     }
-
-    callback(drogon::HttpResponse::newHttpJsonResponse(*summary));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(*summary);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+    callback(resp);
 }
 
-void ChatController::deleteConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::deleteConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        if (!demoDeleteChatConversation(runtime_id, *user_id, *id, AppState::get().db()))
-        {
-            respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
-            return;
-        }
-        auto resp = drogon::HttpResponse::newHttpResponse();
-        resp->setStatusCode(drogon::k204NoContent);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
-        callback(resp);
-        return;
-    }
-
-    ChatStore store(AppState::get().db());
-    if (!store.deleteConversation(*user_id, *id))
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    if (!AppState::get().runtime().chat().remove(*user_id, *id, runtime_id, AppState::get().db()))
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
         return;
     }
-
     auto resp = drogon::HttpResponse::newHttpResponse();
     resp->setStatusCode(drogon::k204NoContent);
+    if (!runtime_id.empty())
+        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
     callback(resp);
 }
 
-void ChatController::appendMessage(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::appendMessage(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
@@ -1011,7 +910,7 @@ void ChatController::appendMessage(
     const auto json = req->getJsonObject();
     std::string error;
     std::string field;
-    const auto text = extractText(json, error, field);
+    const auto text = extract_text(json, error, field);
     if (text.empty())
     {
         respondError(callback, 400, "INVALID_MESSAGE", error, field);
@@ -1023,9 +922,8 @@ void ChatController::appendMessage(
     const auto runtime_id = demo ? resolveDemoRuntimeId(req, nullptr) : std::string{};
     const auto client = AppState::get().db();
 
-    const auto appended = demo
-        ? demoAppendChatUserMessage(runtime_id, *user_id, *id, text, error, client)
-        : store.appendUserMessage(*user_id, *id, text, error, field);
+    const auto appended = AppState::get().runtime().chat().appendUserMessage(
+        *user_id, *id, text, runtime_id, client, error, field);
     if (!appended)
     {
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
@@ -1037,33 +935,41 @@ void ChatController::appendMessage(
     std::string assistant_text;
     std::string model;
     std::string agent_error;
-    const auto agent_messages = store.buildAgentMessages((*appended)["messages"]);
-    const auto agent_result = callAgentSync(*id, *user_id, agent_messages, assistant_text, model, agent_error);
+    std::string reasoning;
+    Json::Value tool_events(Json::arrayValue);
+    auto agent_messages = store.buildAgentMessages((*appended)["messages"]);
+    prepend_personal_prompt(agent_messages, *user_id, runtime_id);
+    const auto agent_result = call_agent_sync(
+        *id,
+        *user_id,
+        agent_messages,
+        assistant_text,
+        model,
+        agent_error,
+        runtime_id,
+        &tool_events,
+        &reasoning);
     if (agent_result != service::AgentClientResult::success)
     {
         respondError(callback, 502, "AI_PROVIDER_ERROR", "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.");
         return;
     }
 
-    const int64_t assistant_id = demo
-        ? demoNextChatMessageId((*appended)["messages"])
-        : store.nextMessageId((*appended)["messages"]);
-    if (demo)
-    {
-        demoAppendChatAssistantMessage(
-            runtime_id, *user_id, *id, assistant_id, assistant_text);
-    }
-    else
-    {
-        store.appendAssistantMessage(*user_id, *id, assistant_id, assistant_text);
-    }
+    const int64_t assistant_id =
+        AppState::get().runtime().chat().nextMessageId((*appended)["messages"]);
+    AppState::get().runtime().chat().appendAssistantMessage(
+        *user_id, *id, assistant_id, assistant_text,
+        tool_events, reasoning, runtime_id, client);
 
     Json::Value user_message = (*appended)["userMessage"];
     Json::Value assistant_message;
     assistant_message["id"] = static_cast<Json::Int64>(assistant_id);
     assistant_message["role"] = "assistant";
     assistant_message["text"] = assistant_text;
-    assistant_message["createdAt"] = ChatStore::toCreatedAtIso(formatTimestamp());
+    assistant_message["toolEvents"] = tool_events;
+    if (!reasoning.empty())
+        assistant_message["reasoning"] = reasoning;
+    assistant_message["createdAt"] = ChatStore::to_created_at_iso(formatTimestamp());
 
     Json::Value body;
     body["conversationId"] = static_cast<Json::Int64>(*id);
@@ -1074,9 +980,8 @@ void ChatController::appendMessage(
 
     Json::Value conversation;
     conversation["id"] = static_cast<Json::Int64>(*id);
-    const auto current = demo
-        ? demoGetChatConversation(runtime_id, *user_id, *id, client)
-        : store.getConversation(*user_id, *id);
+    const auto current = AppState::get().runtime().chat().getConversation(
+        *user_id, *id, runtime_id, client);
     conversation["title"] = current ? (*current)["title"] : "";
     conversation["updatedAt"] = (*appended)["updatedAt"];
     body["conversation"] = conversation;
@@ -1087,16 +992,14 @@ void ChatController::appendMessage(
     callback(resp);
 }
 
-void ChatController::streamMessage(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void ChatController::streamMessage(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     std::string conversationId)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseConversationId(conversationId);
+    const auto id = parse_conversation_id(conversationId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
@@ -1106,68 +1009,47 @@ void ChatController::streamMessage(
     const auto json = req->getJsonObject();
     std::string error;
     std::string field;
-    const auto text = extractText(json, error, field);
+    const auto text = extract_text(json, error, field);
     if (text.empty())
     {
         respondError(callback, 400, "INVALID_MESSAGE", error, field);
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        if (!demoGetChatConversation(runtime_id, *user_id, *id, AppState::get().db()))
-        {
-            respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
-            return;
-        }
-        startStreamResponse(std::move(callback), req, *user_id, id, text);
-        return;
-    }
-
-    ChatStore store(AppState::get().db());
-    if (!store.getConversation(*user_id, *id))
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    if (!AppState::get().runtime().chat().getConversation(*user_id, *id, runtime_id, AppState::get().db()))
     {
         respondError(callback, 404, "NOT_FOUND", "대화를 찾을 수 없습니다.");
         return;
     }
-
-    startStreamResponse(std::move(callback), req, *user_id, id, text);
+    start_stream_response(std::move(callback), req, *user_id, id, text);
 }
 
-void ChatController::streamNewConversation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::streamNewConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
     const auto json = req->getJsonObject();
     std::string error;
     std::string field;
-    const auto text = extractText(json, error, field);
+    const auto text = extract_text(json, error, field);
     if (text.empty())
     {
         respondError(callback, 400, "INVALID_MESSAGE", error, field);
         return;
     }
 
-    startStreamResponse(std::move(callback), req, *user_id, std::nullopt, text);
+    start_stream_response(std::move(callback), req, *user_id, std::nullopt, text);
 }
 
-void ChatController::streamEphemeral(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
-{
-    handleStreamEphemeral(req, std::move(callback));
-}
 
-void ChatController::getSuggestions(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::getSuggestions(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
@@ -1175,31 +1057,35 @@ void ChatController::getSuggestions(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.defaultSuggestions()));
 }
 
-void ChatController::askInsight(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ChatController::askInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = resolveUserId(req, callback);
+    const auto user_id = resolve_user_id(req, callback);
     if (!user_id)
         return;
 
     const auto json = req->getJsonObject();
     std::string error;
     std::string field;
-    const auto text = extractText(json, error, field);
+    const auto text = extract_text(json, error, field);
     if (text.empty())
     {
         respondError(callback, 400, "INVALID_MESSAGE", error, field);
         return;
     }
 
+    const auto demo_runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string{};
+
     std::vector<service::AgentChatMessage> messages;
     messages.push_back({"user", text});
+    prepend_personal_prompt(messages, *user_id, demo_runtime_id);
 
     std::string reply;
     std::string model;
     std::string agent_error;
-    const auto agent_result = callAgentSync(0, *user_id, messages, reply, model, agent_error);
+    const auto agent_result = call_agent_sync(
+        0, *user_id, messages, reply, model, agent_error, demo_runtime_id);
     if (agent_result != service::AgentClientResult::success)
     {
         respondError(callback, 502, "AI_PROVIDER_ERROR", "AI 응답을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.");

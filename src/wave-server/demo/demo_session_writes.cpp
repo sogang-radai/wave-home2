@@ -1,18 +1,25 @@
 #include "demo_session_writes.h"
+#include "../db/database.h"
 
 #include <algorithm>
 #include <chrono>
 #include <sstream>
+#include <thread>
 
+#include "../core/json.h"
+#include "../core/logger.h"
 #include "../device/device_wire_id.hpp"
+#include "../service/trigger_types.h"
 #include "../web/http/v1/chat_store.h"
+#include "../web/http/v1/settings_store.h"
+#include "demo_device_backend.h"
 #include "demo_session_registry.h"
 
 WAVE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::string nowIso()
+    std::string now_iso()
     {
         const auto now = std::chrono::system_clock::now();
         const std::time_t t = std::chrono::system_clock::to_time_t(now);
@@ -44,7 +51,7 @@ namespace
         return buffer;
     }
 
-    int64_t nextNumericId(const Json::Value& items)
+    int64_t next_numeric_id(const Json::Value& items)
     {
         int64_t max_id = 0;
         if (items.isArray())
@@ -71,7 +78,24 @@ namespace
         return value;
     }
 
-    std::string wireIdForInternalDevice(const drogon::orm::DbClientPtr& client, int64_t internal_id)
+    Json::Value json_cpp_from_nlohmann(const json& value)
+    {
+        Json::CharReaderBuilder reader;
+        Json::Value out;
+        std::string errors;
+        std::istringstream stream(value.dump());
+        Json::parseFromStream(reader, stream, &out, &errors);
+        return out;
+    }
+
+    json nlohmann_from_json_cpp(const Json::Value& value)
+    {
+        Json::StreamWriterBuilder builder;
+        builder["indentation"] = "";
+        return json::parse(Json::writeString(builder, value));
+    }
+
+    std::string wire_id_for_internal_device(const db::DbClientPtr& client, int64_t internal_id)
     {
         if (!client || internal_id <= 0)
             return {};
@@ -81,7 +105,7 @@ namespace
         return dev::wireIdForDbRow(internal_id, rows[0]["name"].as<std::string>());
     }
 
-    Json::Value alarmRowToJson(const drogon::orm::DbClientPtr& client, const drogon::orm::Row& row)
+    Json::Value alarm_row_to_json(const db::DbClientPtr& client, const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
@@ -89,19 +113,20 @@ namespace
         item["name"] = row["name"].as<std::string>();
         item["timeMinute"] = row["time_minute"].as<int>();
         item["daysOfWeek"] = parseJsonText(row["days_of_week"].as<std::string>(), Json::Value(Json::arrayValue));
+        item["repeatWeekly"] = item["daysOfWeek"].isArray() && !item["daysOfWeek"].empty();
         item["smartWake"] = row["smart_wake"].as<int>() != 0;
         if (row["radar_device_id"].isNull())
             item["radarDeviceId"] = Json::nullValue;
         else
         {
-            const auto wire = wireIdForInternalDevice(client, row["radar_device_id"].as<int64_t>());
+            const auto wire = wire_id_for_internal_device(client, row["radar_device_id"].as<int64_t>());
             item["radarDeviceId"] = wire.empty() ? Json::nullValue : Json::Value(wire);
         }
         if (row["device_id"].isNull())
             item["deviceId"] = Json::nullValue;
         else
         {
-            const auto wire = wireIdForInternalDevice(client, row["device_id"].as<int64_t>());
+            const auto wire = wire_id_for_internal_device(client, row["device_id"].as<int64_t>());
             item["deviceId"] = wire.empty() ? Json::nullValue : Json::Value(wire);
         }
         item["method"] = parseJsonText(row["method"].as<std::string>(), Json::Value(Json::objectValue));
@@ -112,7 +137,7 @@ namespace
         return item;
     }
 
-    Json::Value scheduleRowToJson(const drogon::orm::Row& row)
+    Json::Value schedule_row_to_json(const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
@@ -121,7 +146,7 @@ namespace
         if (row["created_at"].isNull())
             item["createdAt"] = Json::nullValue;
         else
-            item["createdAt"] = web::v1::ChatStore::toCreatedAtIso(row["created_at"].as<std::string>());
+            item["createdAt"] = web::v1::ChatStore::to_created_at_iso(row["created_at"].as<std::string>());
         item["createdBy"] = row["created_by"].as<std::string>();
         item["category"] = row["category"].as<std::string>();
         item["scheduleKind"] = row["schedule_kind"].as<std::string>();
@@ -137,7 +162,7 @@ namespace
         return item;
     }
 
-    Json::Value ruleRowToJson(const drogon::orm::Row& row)
+    Json::Value rule_row_to_json(const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = row["external_id"].as<std::string>();
@@ -151,7 +176,7 @@ namespace
             : parseJsonText(row["trigger_json"].as<std::string>());
         item["schedule"] = row["schedule_json"].isNull()
             ? Json::Value()
-            : parseJsonText(row["schedule_json"].as<std::string>());
+            : demoNormalizeRuleSchedule(parseJsonText(row["schedule_json"].as<std::string>()));
 
         const auto actions = parseJsonText(row["actions_json"].as<std::string>(), Json::Value(Json::objectValue));
         if (actions.isObject())
@@ -176,22 +201,23 @@ namespace
         return item;
     }
 
-    Json::Value chatRowToJson(const drogon::orm::Row& row)
+    Json::Value chat_row_to_json(const drogon::orm::Row& row)
     {
         Json::Value item;
         item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
         item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
         item["title"] = row["title"].as<std::string>();
-        item["createdAt"] = web::v1::ChatStore::toCreatedAtIso(row["created_at"].as<std::string>());
-        item["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(row["updated_at"].as<std::string>());
-        item["messages"] = parseJsonText(row["message"].as<std::string>(), Json::Value(Json::arrayValue));
-        if (!item["messages"].isArray())
-            item["messages"] = Json::Value(Json::arrayValue);
+        const auto created = row["created_at"].as<std::string>();
+        item["createdAt"] = web::v1::ChatStore::to_created_at_iso(created);
+        item["updatedAt"] = web::v1::ChatStore::to_created_at_iso(row["updated_at"].as<std::string>());
+        item["messages"] = web::v1::ChatStore::normalize_messages_json(
+            parseJsonText(row["message"].as<std::string>(), Json::Value(Json::arrayValue)),
+            created);
         item["sessionScoped"] = true;
         return item;
     }
 
-    Json::Value chatToSummary(const Json::Value& conversation)
+    Json::Value chat_to_summary(const Json::Value& conversation)
     {
         Json::Value summary;
         summary["id"] = conversation["id"];
@@ -217,11 +243,11 @@ namespace
         message["id"] = static_cast<Json::Int64>(message_id);
         message["role"] = "user";
         message["text"] = text;
-        message["createdAt"] = web::v1::ChatStore::toCreatedAtIso(created_at);
+        message["createdAt"] = web::v1::ChatStore::to_created_at_iso(created_at);
         return message;
     }
 
-    Json::Value* findChatConversation(DemoSessionData& session, int64_t user_id, int64_t conversation_id)
+    Json::Value* find_chat_conversation(DemoSessionData& session, int64_t user_id, int64_t conversation_id)
     {
         for (Json::ArrayIndex i = 0; i < session.chat_histories.size(); ++i)
         {
@@ -236,11 +262,165 @@ namespace
         }
         return nullptr;
     }
+
+    Json::Value notification_row_to_json(const drogon::orm::Row& row)
+    {
+        Json::Value item;
+        item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
+        item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
+        item["type"] = row["type"].as<std::string>();
+        item["message"] = row["message"].as<std::string>();
+        item["read"] = row["read"].as<int>() != 0;
+        const auto created = row["created_at"].as<std::string>();
+        if (created.size() >= 19)
+            item["createdAt"] = created.substr(0, 10) + "T" + created.substr(11, 8) + "+09:00";
+        else
+            item["createdAt"] = created;
+        item["sessionScoped"] = true;
+        return item;
+    }
+
+    Json::Value notification_public_view(const Json::Value& item)
+    {
+        Json::Value view;
+        view["id"] = item["id"];
+        view["type"] = item.get("type", "");
+        view["message"] = item.get("message", "");
+        view["createdAt"] = item.get("createdAt", "");
+        view["read"] = item.get("read", false).asBool();
+        return view;
+    }
+
+    int64_t nowMs()
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    }
+
+    std::string voice_label_for_method(const Json::Value& method)
+    {
+        if (method.isMember("voiceLabel") && method["voiceLabel"].isString()
+            && !method["voiceLabel"].asString().empty())
+        {
+            return method["voiceLabel"].asString();
+        }
+        if (method.isMember("speakerId") && !method["speakerId"].isNull())
+        {
+            if (method["speakerId"].isString() && !method["speakerId"].asString().empty())
+                return method["speakerId"].asString();
+            if (method["speakerId"].isIntegral())
+                return "음성";
+        }
+        return "TTS";
+    }
+
+    void invoke_demo_device_action(
+        const std::string& runtime_id,
+        const std::string& device_id,
+        const std::string& action_name,
+        const Json::Value& params,
+        const db::DbClientPtr& client)
+    {
+        if (!client || device_id.empty() || action_name.empty())
+            return;
+
+        DemoDeviceBackend backend(client);
+        Json::Value body(Json::objectValue);
+        body["params"] = params.isObject() ? params : Json::Value(Json::objectValue);
+        std::string code;
+        backend.invokeAction(runtime_id, device_id, action_name, body, code);
+    }
+
+    void execute_alarm_method(
+        const std::string& runtime_id,
+        const Json::Value& alarm,
+        const db::DbClientPtr& client)
+    {
+        const auto method = alarm.get("method", Json::Value(Json::objectValue));
+        if (!method.isObject())
+            return;
+
+        const std::string type = method.get("type", "").asString();
+        const std::string device_id = alarm.isMember("deviceId") && !alarm["deviceId"].isNull()
+            ? alarm["deviceId"].asString()
+            : std::string();
+
+        if (type.empty() || type == "notification" || device_id.empty())
+            return;
+
+        if (type == "light_on")
+        {
+            const int brightness = std::clamp(method.get("brightness", 70).asInt(), 10, 100);
+            invoke_demo_device_action(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
+            Json::Value params(Json::objectValue);
+            params["value"] = brightness;
+            invoke_demo_device_action(runtime_id, device_id, "brightness", params, client);
+            return;
+        }
+
+        if (type == "light_blink")
+        {
+            const int brightness = std::clamp(method.get("brightness", 70).asInt(), 10, 100);
+            const int interval_sec = std::clamp(method.get("intervalSec", 2).asInt(), 1, 10);
+            invoke_demo_device_action(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
+            Json::Value params(Json::objectValue);
+            params["value"] = brightness;
+            invoke_demo_device_action(runtime_id, device_id, "brightness", params, client);
+            std::thread([runtime_id, device_id, interval_sec, client]()
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(interval_sec));
+                invoke_demo_device_action(runtime_id, device_id, "off", Json::Value(Json::objectValue), client);
+            }).detach();
+            return;
+        }
+
+        if (type == "plug_toggle")
+        {
+            invoke_demo_device_action(runtime_id, device_id, "toggle", Json::Value(Json::objectValue), client);
+            return;
+        }
+        if (type == "plug_on")
+        {
+            invoke_demo_device_action(runtime_id, device_id, "on", Json::Value(Json::objectValue), client);
+            return;
+        }
+        if (type == "plug_off")
+        {
+            invoke_demo_device_action(runtime_id, device_id, "off", Json::Value(Json::objectValue), client);
+            return;
+        }
+
+        if (type == "tts" || type == "sound")
+        {
+            std::string text = method.get("text", "").asString();
+            if (text.empty() && type == "sound")
+                text = method.get("soundId", "알람").asString();
+            if (text.empty())
+                text = alarm.get("name", "알람").asString();
+
+            const int interval_sec = std::clamp(method.get("intervalSec", 5).asInt(), 1, 60);
+            const int repeat_count = std::clamp(method.get("repeatCount", 1).asInt(), 1, 20);
+            const int64_t now = nowMs();
+
+            Json::Value overlay(Json::objectValue);
+            overlay["voiceLabel"] = voice_label_for_method(method);
+            overlay["text"] = text;
+            overlay["expiresAtMs"] = static_cast<Json::Int64>(now + 8000);
+            overlay["intervalSec"] = interval_sec;
+            overlay["nextShowAtMs"] = Json::Value();
+            overlay["alarmId"] = alarm.get("id", Json::Int64(0));
+            overlay["alarmName"] = alarm.get("name", "알람");
+            overlay["showsLeft"] = repeat_count - 1;
+            demoSetSpeechOverlay(runtime_id, device_id, overlay);
+        }
+    }
 }
 
-void ensureDemoSessionSeeded(const std::string& runtime_id, const drogon::orm::DbClientPtr& client)
+void ensureDemoSessionSeeded(const std::string& runtime_id, const db::DbClientPtr& client)
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     if (session.data_seeded || !client)
         return;
 
@@ -249,7 +429,7 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const drogon::orm::D
              "SELECT id, user_id, name, time_minute, days_of_week, smart_wake, radar_device_id,"
              " device_id, method, enabled, created_at, updated_at FROM alarm ORDER BY id"))
     {
-        session.alarms.append(alarmRowToJson(client, row));
+        session.alarms.append(alarm_row_to_json(client, row));
     }
 
     session.schedule_tasks = Json::Value(Json::arrayValue);
@@ -258,7 +438,7 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const drogon::orm::D
              " event_date, start_minute, end_minute, done, source_insight_id"
              " FROM schedule_task ORDER BY id"))
     {
-        session.schedule_tasks.append(scheduleRowToJson(row));
+        session.schedule_tasks.append(schedule_row_to_json(row));
     }
 
     session.rules = Json::Value(Json::arrayValue);
@@ -266,14 +446,57 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const drogon::orm::D
              "SELECT id, user_id, external_id, name, enabled, cooldown_ms, trigger_json, schedule_json, actions_json"
              " FROM automation_rule ORDER BY id"))
     {
-        session.rules.append(ruleRowToJson(row));
+        session.rules.append(rule_row_to_json(row));
     }
 
     session.chat_histories = Json::Value(Json::arrayValue);
     for (const auto& row : client->execSqlSync(
              "SELECT id, user_id, title, created_at, updated_at, message FROM chat_history ORDER BY id"))
     {
-        session.chat_histories.append(chatRowToJson(row));
+        session.chat_histories.append(chat_row_to_json(row));
+    }
+
+    session.notifications = Json::Value(Json::arrayValue);
+    for (const auto& row : client->execSqlSync(
+             "SELECT id, user_id, type, message, read, created_at FROM notification ORDER BY id"))
+    {
+        session.notifications.append(notification_row_to_json(row));
+    }
+
+    if (!session.speech_overlays.isObject())
+        session.speech_overlays = Json::Value(Json::objectValue);
+
+    session.ai_agent_settings = Json::Value(Json::objectValue);
+    try
+    {
+        for (const auto& row : client->execSqlSync(
+                 "SELECT user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, voice_auto_send"
+                 " FROM user_ai_agent_settings"))
+        {
+            Json::Value item(Json::objectValue);
+            item["personalPrompt"] = row["personal_prompt"].as<std::string>();
+            item["selectedModelId"] = row["selected_model_id"].as<std::string>();
+            item["ctrlEnterSend"] = row["ctrl_enter_send"].as<int>() != 0;
+            item["waveAiSound"] = row["wave_ai_sound"].as<int>() != 0;
+            item["voiceAutoSend"] = row["voice_auto_send"].as<int>() != 0;
+            session.ai_agent_settings[std::to_string(row["user_id"].as<int64_t>())] = item;
+        }
+    }
+    catch (const std::exception&)
+    {
+        // Older demo DBs (skip_migrations) may lack voice_auto_send.
+        for (const auto& row : client->execSqlSync(
+                 "SELECT user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound"
+                 " FROM user_ai_agent_settings"))
+        {
+            Json::Value item(Json::objectValue);
+            item["personalPrompt"] = row["personal_prompt"].as<std::string>();
+            item["selectedModelId"] = row["selected_model_id"].as<std::string>();
+            item["ctrlEnterSend"] = row["ctrl_enter_send"].as<int>() != 0;
+            item["waveAiSound"] = row["wave_ai_sound"].as<int>() != 0;
+            item["voiceAutoSend"] = false;
+            session.ai_agent_settings[std::to_string(row["user_id"].as<int64_t>())] = item;
+        }
     }
 
     session.data_seeded = true;
@@ -282,12 +505,12 @@ void ensureDemoSessionSeeded(const std::string& runtime_id, const drogon::orm::D
 Json::Value demoListAlarms(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::optional<bool>& enabled_filter)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     Json::Value items(Json::arrayValue);
-    const auto session = DemoSessionRegistry::instance().get(runtime_id);
+    const auto session = demoSessionRegistry().get(runtime_id);
     if (!session)
         return items;
 
@@ -307,7 +530,7 @@ Json::Value demoListAlarms(
 Json::Value demoCreateAlarm(
     const std::string& runtime_id,
     const Json::Value& body,
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     std::string& error,
     std::string& field)
 {
@@ -325,13 +548,18 @@ Json::Value demoCreateAlarm(
     }
 
     ensureDemoSessionSeeded(runtime_id, client);
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     Json::Value alarm;
-    alarm["id"] = static_cast<Json::Int64>(nextNumericId(session.alarms));
+    alarm["id"] = static_cast<Json::Int64>(next_numeric_id(session.alarms));
     alarm["userId"] = body["userId"];
     alarm["name"] = body.get("name", "알람").asString();
     alarm["timeMinute"] = body["timeMinute"].asInt();
     alarm["daysOfWeek"] = body.isMember("daysOfWeek") ? body["daysOfWeek"] : Json::Value(Json::arrayValue);
+    if (body.isMember("repeatWeekly") && !body["repeatWeekly"].isNull())
+        alarm["repeatWeekly"] = body["repeatWeekly"].asBool();
+    else
+        alarm["repeatWeekly"] = alarm["daysOfWeek"].isArray() && !alarm["daysOfWeek"].empty();
     alarm["smartWake"] = body.get("smartWake", false).asBool();
     alarm["enabled"] = body.get("enabled", true).asBool();
     alarm["method"] = body.isMember("method") ? body["method"] : Json::Value(Json::objectValue);
@@ -351,7 +579,8 @@ Json::Value demoUpdateAlarm(
     std::string& error,
     std::string& /*field*/)
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.alarms.size(); ++i)
     {
         auto& item = session.alarms[i];
@@ -364,6 +593,11 @@ Json::Value demoUpdateAlarm(
             item[key] = body[key];
         }
         item["updatedAt"] = nowStamp();
+        if (body.isMember("enabled") && body["enabled"].asBool())
+        {
+            session.alarm_once_fired.erase(alarm_id);
+            session.alarm_last_fired_date.erase(alarm_id);
+        }
         return item;
     }
     error = "세션 알람을 찾을 수 없습니다.";
@@ -372,7 +606,8 @@ Json::Value demoUpdateAlarm(
 
 bool demoDeleteAlarm(const std::string& runtime_id, const int64_t alarm_id)
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     Json::Value kept(Json::arrayValue);
     bool removed = false;
     for (const auto& item : session.alarms)
@@ -388,16 +623,279 @@ bool demoDeleteAlarm(const std::string& runtime_id, const int64_t alarm_id)
     return removed;
 }
 
+Json::Value demoListNotifications(
+    const std::string& runtime_id,
+    const int64_t user_id,
+    const db::DbClientPtr& client,
+    const int limit,
+    const int64_t before_id)
+{
+    ensureDemoSessionSeeded(runtime_id, client);
+    Json::Value body(Json::objectValue);
+    body["items"] = Json::Value(Json::arrayValue);
+    body["unreadCount"] = 0;
+    body["hasMore"] = false;
+
+    const auto session = demoSessionRegistry().get(runtime_id);
+    if (!session)
+        return body;
+
+    std::vector<Json::Value> matched;
+    int unread = 0;
+    for (const auto& item : session->notifications)
+    {
+        if (!item.isObject())
+            continue;
+        if (item.get("userId", Json::Int64(0)).asInt64() != user_id)
+            continue;
+        if (!item.get("read", false).asBool())
+            ++unread;
+        matched.push_back(notification_public_view(item));
+    }
+    std::sort(matched.begin(), matched.end(), [](const Json::Value& a, const Json::Value& b)
+    {
+        const auto ca = a.get("createdAt", "").asString();
+        const auto cb = b.get("createdAt", "").asString();
+        if (ca != cb)
+            return ca > cb;
+        return a.get("id", Json::Int64(0)).asInt64() > b.get("id", Json::Int64(0)).asInt64();
+    });
+
+    Json::Value items(Json::arrayValue);
+    const int page_size = limit > 0 ? limit : static_cast<int>(matched.size());
+    bool started = before_id <= 0;
+    int taken = 0;
+    for (const auto& item : matched)
+    {
+        const int64_t id = item.get("id", Json::Int64(0)).asInt64();
+        if (!started)
+        {
+            if (id == before_id)
+                started = true;
+            continue;
+        }
+        if (taken >= page_size)
+        {
+            body["hasMore"] = true;
+            break;
+        }
+        items.append(item);
+        ++taken;
+    }
+
+    body["items"] = items;
+    body["unreadCount"] = unread;
+    return body;
+}
+
+Json::Value demoMarkAllNotificationsRead(
+    const std::string& runtime_id,
+    const int64_t user_id,
+    const db::DbClientPtr& client)
+{
+    ensureDemoSessionSeeded(runtime_id, client);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    for (Json::ArrayIndex i = 0; i < session.notifications.size(); ++i)
+    {
+        auto& item = session.notifications[i];
+        if (!item.isObject())
+            continue;
+        if (item.get("userId", Json::Int64(0)).asInt64() != user_id)
+            continue;
+        item["read"] = true;
+    }
+    return demoListNotifications(runtime_id, user_id, nullptr, 0, 0);
+}
+
+Json::Value demoMarkNotificationRead(
+    const std::string& runtime_id,
+    const int64_t user_id,
+    const int64_t notification_id,
+    const db::DbClientPtr& client)
+{
+    ensureDemoSessionSeeded(runtime_id, client);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    for (Json::ArrayIndex i = 0; i < session.notifications.size(); ++i)
+    {
+        auto& item = session.notifications[i];
+        if (!item.isObject())
+            continue;
+        if (item.get("userId", Json::Int64(0)).asInt64() != user_id)
+            continue;
+        if (item.get("id", Json::Int64(0)).asInt64() != notification_id)
+            continue;
+        item["read"] = true;
+        return notification_public_view(item);
+    }
+    return Json::Value();
+}
+
+Json::Value demoAppendNotification(
+    const std::string& runtime_id,
+    const int64_t user_id,
+    const std::string& type,
+    const std::string& message)
+{
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    if (!session.notifications.isArray())
+        session.notifications = Json::Value(Json::arrayValue);
+
+    Json::Value item;
+    item["id"] = static_cast<Json::Int64>(next_numeric_id(session.notifications));
+    item["userId"] = static_cast<Json::Int64>(user_id);
+    item["type"] = type;
+    item["message"] = message;
+    item["read"] = false;
+    const auto stamp = nowStamp();
+    if (stamp.size() >= 19)
+        item["createdAt"] = stamp.substr(0, 10) + "T" + stamp.substr(11, 8) + "+09:00";
+    else
+        item["createdAt"] = stamp;
+    item["sessionScoped"] = true;
+    session.notifications.append(item);
+    return notification_public_view(item);
+}
+
+Json::Value demoListSpeechOverlays(const std::string& runtime_id)
+{
+    const auto session = demoSessionRegistry().get(runtime_id);
+    if (!session || !session->speech_overlays.isObject())
+        return Json::Value(Json::objectValue);
+    return session->speech_overlays;
+}
+
+void demoSetSpeechOverlay(
+    const std::string& runtime_id,
+    const std::string& device_id,
+    const Json::Value& overlay)
+{
+    if (device_id.empty() || !overlay.isObject())
+        return;
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    if (!session.speech_overlays.isObject())
+        session.speech_overlays = Json::Value(Json::objectValue);
+    session.speech_overlays[device_id] = overlay;
+}
+
+void demoClearSpeechOverlay(const std::string& runtime_id, const std::string& device_id)
+{
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    if (!session.speech_overlays.isObject())
+        return;
+    session.speech_overlays.removeMember(device_id);
+}
+
+void demoRefreshSpeechOverlays(const std::string& runtime_id, const int64_t now_ms)
+{
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    if (!session.speech_overlays.isObject())
+        return;
+
+    Json::Value next_map(Json::objectValue);
+    for (const auto& device_id : session.speech_overlays.getMemberNames())
+    {
+        Json::Value overlay = session.speech_overlays[device_id];
+        if (!overlay.isObject())
+            continue;
+
+        const int64_t expires_at = overlay.get("expiresAtMs", Json::Int64(0)).asInt64();
+        const int interval_sec = overlay.get("intervalSec", 0).asInt();
+        const int shows_left = overlay.get("showsLeft", 0).asInt();
+
+        if (now_ms < expires_at)
+        {
+            next_map[device_id] = overlay;
+            continue;
+        }
+
+        // Currently hidden — waiting for next show or finished.
+        if (overlay.isMember("nextShowAtMs") && !overlay["nextShowAtMs"].isNull())
+        {
+            const int64_t next_show = overlay["nextShowAtMs"].asInt64();
+            if (now_ms >= next_show)
+            {
+                overlay["expiresAtMs"] = static_cast<Json::Int64>(now_ms + 8000);
+                overlay["nextShowAtMs"] = Json::Value();
+                overlay["showsLeft"] = std::max(0, shows_left - 1);
+                next_map[device_id] = overlay;
+            }
+            else
+            {
+                next_map[device_id] = overlay;
+            }
+            continue;
+        }
+
+        if (interval_sec > 0 && shows_left > 0)
+        {
+            overlay["nextShowAtMs"] = static_cast<Json::Int64>(now_ms + static_cast<int64_t>(interval_sec) * 1000);
+            next_map[device_id] = overlay;
+            continue;
+        }
+
+        // Expired with no more repeats — drop.
+    }
+    session.speech_overlays = next_map;
+}
+
+void demoDisableAlarm(const std::string& runtime_id, const int64_t alarm_id)
+{
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    for (Json::ArrayIndex i = 0; i < session.alarms.size(); ++i)
+    {
+        auto& item = session.alarms[i];
+        if (!item.isObject() || item.get("id", Json::Int64(0)).asInt64() != alarm_id)
+            continue;
+        item["enabled"] = false;
+        item["updatedAt"] = nowStamp();
+        return;
+    }
+}
+
+void demoFireAlarm(
+    const std::string& runtime_id,
+    const Json::Value& alarm,
+    const db::DbClientPtr& client)
+{
+    if (!alarm.isObject())
+        return;
+
+    const int64_t user_id = alarm.get("userId", Json::Int64(0)).asInt64();
+    const std::string name = alarm.get("name", "알람").asString();
+    if (alarm.get("smartWake", false).asBool())
+    {
+        WLOG_INFO(
+            "Demo alarm {} smart wake (radar={})",
+            alarm.get("id", Json::Int64(0)).asInt64(),
+            alarm.isMember("radarDeviceId") && !alarm["radarDeviceId"].isNull()
+                ? alarm["radarDeviceId"].asString()
+                : "-");
+    }
+    demoAppendNotification(
+        runtime_id,
+        user_id,
+        "alarm",
+        "\"" + name + "\" 알람이 울렸습니다.");
+    execute_alarm_method(runtime_id, alarm, client);
+}
+
 Json::Value demoListScheduleTasks(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     if (client)
         ensureDemoSessionSeeded(runtime_id, client);
 
     Json::Value items(Json::arrayValue);
-    if (const auto session = DemoSessionRegistry::instance().get(runtime_id))
+    if (const auto session = demoSessionRegistry().get(runtime_id))
     {
         for (const auto& item : session->schedule_tasks)
         {
@@ -429,9 +927,10 @@ Json::Value demoCreateScheduleTask(
         return Json::Value();
     }
 
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     Json::Value task;
-    task["id"] = static_cast<Json::Int64>(nextNumericId(session.schedule_tasks));
+    task["id"] = static_cast<Json::Int64>(next_numeric_id(session.schedule_tasks));
     task["userId"] = body["userId"];
     task["title"] = body["title"].asString();
     task["category"] = body.get("category", "general").asString();
@@ -444,7 +943,7 @@ Json::Value demoCreateScheduleTask(
     task["createdBy"] = body.get("createdBy", "user").asString();
     task["sourceInsightId"] = body.isMember("sourceInsightId") ? body["sourceInsightId"] : Json::Value();
     task["sessionScoped"] = true;
-    task["createdAt"] = web::v1::ChatStore::toCreatedAtIso(nowStamp());
+    task["createdAt"] = web::v1::ChatStore::to_created_at_iso(nowStamp());
     session.schedule_tasks.append(task);
     return task;
 }
@@ -456,7 +955,8 @@ Json::Value demoUpdateScheduleTask(
     std::string& error,
     std::string& /*field*/)
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.schedule_tasks.size(); ++i)
     {
         auto& item = session.schedule_tasks[i];
@@ -476,7 +976,8 @@ Json::Value demoUpdateScheduleTask(
 
 bool demoDeleteScheduleTask(const std::string& runtime_id, const int64_t task_id)
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     Json::Value kept(Json::arrayValue);
     bool removed = false;
     for (const auto& item : session.schedule_tasks)
@@ -499,10 +1000,11 @@ Json::Value demoCreateRule(const std::string& runtime_id, const Json::Value& bod
         code = "INVALID_REQUEST";
         return Json::Value();
     }
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     Json::Value rule = body;
     if (!rule.isMember("id") || !rule["id"].isString() || rule["id"].asString().empty())
-        rule["id"] = std::string("demo_rule_") + std::to_string(nextNumericId(session.rules));
+        rule["id"] = std::string("demo_rule_") + std::to_string(next_numeric_id(session.rules));
     rule["enabled"] = body.get("enabled", true);
     rule["sessionScoped"] = true;
     session.rules.append(rule);
@@ -512,7 +1014,7 @@ Json::Value demoCreateRule(const std::string& runtime_id, const Json::Value& bod
 Json::Value demoListRules(const std::string& runtime_id, const int64_t user_id)
 {
     Json::Value items(Json::arrayValue);
-    if (const auto session = DemoSessionRegistry::instance().get(runtime_id))
+    if (const auto session = demoSessionRegistry().get(runtime_id))
     {
         for (const auto& item : session->rules)
         {
@@ -523,10 +1025,34 @@ Json::Value demoListRules(const std::string& runtime_id, const int64_t user_id)
             {
                 continue;
             }
-            items.append(item);
+            Json::Value out = item;
+            if (out.isMember("schedule") && out["schedule"].isObject())
+                out["schedule"] = demoNormalizeRuleSchedule(out["schedule"]);
+            items.append(out);
         }
     }
     return items;
+}
+
+Json::Value demoNormalizeRuleSchedule(const Json::Value& schedule)
+{
+    if (schedule.isNull() || !schedule.isObject() || schedule.empty())
+        return Json::nullValue;
+
+    service::RuleSchedule parsed;
+    std::string error;
+    if (!service::parseRuleScheduleFromJson(nlohmann_from_json_cpp(schedule), parsed, error))
+        return Json::nullValue;
+
+    // wave-home-agent RuleSchedule 과 맞춤: once 는 delayMinutes, daily/weekly 는 time 필수.
+    if (parsed.repeat == "once" && !parsed.delayMinutes)
+        return Json::nullValue;
+    if ((parsed.repeat == "daily" || parsed.repeat == "weekly") && !parsed.time)
+        return Json::nullValue;
+    if (parsed.repeat == "weekly" && parsed.daysOfWeek.empty())
+        return Json::nullValue;
+
+    return json_cpp_from_nlohmann(service::ruleScheduleToJson(parsed));
 }
 
 Json::Value demoUpdateRule(
@@ -535,7 +1061,8 @@ Json::Value demoUpdateRule(
     const Json::Value& body,
     std::string& code)
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     for (Json::ArrayIndex i = 0; i < session.rules.size(); ++i)
     {
         auto& item = session.rules[i];
@@ -555,7 +1082,8 @@ Json::Value demoUpdateRule(
 
 bool demoDeleteRule(const std::string& runtime_id, const std::string& rule_id)
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     Json::Value kept(Json::arrayValue);
     bool removed = false;
     for (const auto& item : session.rules)
@@ -574,11 +1102,11 @@ bool demoDeleteRule(const std::string& runtime_id, const std::string& rule_id)
 Json::Value demoListChatSummaries(
     const std::string& runtime_id,
     const int64_t user_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
     Json::Value items(Json::arrayValue);
-    const auto session = DemoSessionRegistry::instance().get(runtime_id);
+    const auto session = demoSessionRegistry().get(runtime_id);
     if (!session)
         return items;
 
@@ -589,7 +1117,7 @@ Json::Value demoListChatSummaries(
             continue;
         if (item.get("userId", Json::Int64(0)).asInt64() != user_id)
             continue;
-        matched.push_back(chatToSummary(item));
+        matched.push_back(chat_to_summary(item));
     }
     std::sort(matched.begin(), matched.end(), [](const Json::Value& a, const Json::Value& b) {
         return a.get("updatedAt", "").asString() > b.get("updatedAt", "").asString();
@@ -603,11 +1131,12 @@ std::optional<Json::Value> demoGetChatConversation(
     const std::string& runtime_id,
     const int64_t user_id,
     const int64_t conversation_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
-    if (const auto* found = findChatConversation(session, user_id, conversation_id))
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    if (const auto* found = find_chat_conversation(session, user_id, conversation_id))
     {
         Json::Value out = *found;
         out.removeMember("userId");
@@ -621,17 +1150,18 @@ std::optional<Json::Value> demoCreateChatConversation(
     const std::string& runtime_id,
     const int64_t user_id,
     const std::string& title,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     const auto stamp = nowStamp();
     Json::Value conversation;
-    conversation["id"] = static_cast<Json::Int64>(nextNumericId(session.chat_histories));
+    conversation["id"] = static_cast<Json::Int64>(next_numeric_id(session.chat_histories));
     conversation["userId"] = static_cast<Json::Int64>(user_id);
     conversation["title"] = title;
-    conversation["createdAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
-    conversation["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
+    conversation["createdAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
+    conversation["updatedAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
     conversation["messages"] = Json::Value(Json::arrayValue);
     conversation["sessionScoped"] = true;
     session.chat_histories.append(conversation);
@@ -648,29 +1178,31 @@ std::optional<Json::Value> demoRenameChatConversation(
     const int64_t conversation_id,
     const std::string& title,
     std::string& error,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
-    auto* found = findChatConversation(session, user_id, conversation_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
     {
         error = "대화를 찾을 수 없습니다.";
         return std::nullopt;
     }
     (*found)["title"] = title;
-    (*found)["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(nowStamp());
-    return chatToSummary(*found);
+    (*found)["updatedAt"] = web::v1::ChatStore::to_created_at_iso(nowStamp());
+    return chat_to_summary(*found);
 }
 
 bool demoDeleteChatConversation(
     const std::string& runtime_id,
     const int64_t user_id,
     const int64_t conversation_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
     Json::Value kept(Json::arrayValue);
     bool removed = false;
     for (const auto& item : session.chat_histories)
@@ -694,11 +1226,12 @@ std::optional<Json::Value> demoAppendChatUserMessage(
     const int64_t conversation_id,
     const std::string& text,
     std::string& error,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     ensureDemoSessionSeeded(runtime_id, client);
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
-    auto* found = findChatConversation(session, user_id, conversation_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
     {
         error = "대화를 찾을 수 없습니다.";
@@ -712,7 +1245,7 @@ std::optional<Json::Value> demoAppendChatUserMessage(
     const auto message_id = demoNextChatMessageId(messages);
     const auto user_message = makeUserMessage(message_id, text, stamp);
     messages.append(user_message);
-    (*found)["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
+    (*found)["updatedAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
 
     Json::Value out = *found;
     out.removeMember("userId");
@@ -726,14 +1259,14 @@ std::optional<Json::Value> demoCreateChatWithUserMessage(
     const int64_t user_id,
     const std::string& text,
     std::string& error,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     if (text.empty())
     {
         error = "메시지를 입력해주세요.";
         return std::nullopt;
     }
-    const auto title = web::v1::ChatStore::titleFromText(text);
+    const auto title = web::v1::ChatStore::title_from_text(text);
     auto created = demoCreateChatConversation(runtime_id, user_id, title, client);
     if (!created)
         return std::nullopt;
@@ -749,8 +1282,9 @@ bool demoAppendChatAssistantMessage(
     const Json::Value& tool_events,
     const std::string& reasoning)
 {
-    auto& session = DemoSessionRegistry::instance().touch(runtime_id);
-    auto* found = findChatConversation(session, user_id, conversation_id);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    auto* found = find_chat_conversation(session, user_id, conversation_id);
     if (!found)
         return false;
 
@@ -766,9 +1300,9 @@ bool demoAppendChatAssistantMessage(
     message["status"] = "done";
     message["reasoning"] = reasoning.empty() ? Json::Value() : Json::Value(reasoning);
     message["toolEvents"] = tool_events.isArray() ? tool_events : Json::Value(Json::arrayValue);
-    message["createdAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
+    message["createdAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
     messages.append(message);
-    (*found)["updatedAt"] = web::v1::ChatStore::toCreatedAtIso(stamp);
+    (*found)["updatedAt"] = web::v1::ChatStore::to_created_at_iso(stamp);
     return true;
 }
 
@@ -784,6 +1318,134 @@ int64_t demoNextChatMessageId(const Json::Value& messages)
         }
     }
     return max_id + 1;
+}
+
+namespace
+{
+    Json::Value default_ai_agent_settings()
+    {
+        Json::Value value(Json::objectValue);
+        value["personalPrompt"] = "";
+        value["selectedModelId"] = "gemini-flash2.5";
+        value["ctrlEnterSend"] = false;
+        value["waveAiSound"] = true;
+        value["voiceAutoSend"] = false;
+        return value;
+    }
+
+    std::string trim_copy(std::string value)
+    {
+        const auto start = value.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos)
+            return {};
+        const auto end = value.find_last_not_of(" \t\r\n");
+        return value.substr(start, end - start + 1);
+    }
+
+    size_t utf8_sequence_length(unsigned char lead)
+    {
+        if (lead < 0x80)
+            return 1;
+        if ((lead & 0xE0) == 0xC0)
+            return 2;
+        if ((lead & 0xF0) == 0xE0)
+            return 3;
+        if ((lead & 0xF8) == 0xF0)
+            return 4;
+        return 0;
+    }
+
+    size_t utf8_code_point_count(const std::string& text)
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < text.size();)
+        {
+            const auto len = utf8_sequence_length(static_cast<unsigned char>(text[i]));
+            if (len == 0 || i + len > text.size())
+                break;
+            i += len;
+            ++count;
+        }
+        return count;
+    }
+}
+
+Json::Value demoGetAiAgentSettings(
+    const std::string& runtime_id,
+    const int64_t user_id,
+    const db::DbClientPtr& client)
+{
+    ensureDemoSessionSeeded(runtime_id, client);
+    const auto session = demoSessionRegistry().get(runtime_id);
+    Json::Value value = default_ai_agent_settings();
+    if (!session || !session->ai_agent_settings.isObject())
+        return value;
+
+    const auto key = std::to_string(user_id);
+    if (!session->ai_agent_settings.isMember(key) || !session->ai_agent_settings[key].isObject())
+        return value;
+
+    const auto& stored = session->ai_agent_settings[key];
+    for (const auto& member : stored.getMemberNames())
+        value[member] = stored[member];
+    return value;
+}
+
+Json::Value demoPutAiAgentSettings(
+    const std::string& runtime_id,
+    const int64_t user_id,
+    const Json::Value& body,
+    const db::DbClientPtr& client,
+    std::string& error,
+    std::string& field)
+{
+    ensureDemoSessionSeeded(runtime_id, client);
+    auto locked_session = demoSessionRegistry().lockSession(runtime_id);
+    auto& session = *locked_session;
+    if (!session.ai_agent_settings.isObject())
+        session.ai_agent_settings = Json::Value(Json::objectValue);
+
+    Json::Value out = demoGetAiAgentSettings(runtime_id, user_id, nullptr);
+    for (const auto& key : body.getMemberNames())
+    {
+        if (key == "demoRuntimeId")
+            continue;
+        out[key] = body[key];
+    }
+
+    if (body.isMember("personalPrompt"))
+    {
+        if (!body["personalPrompt"].isString())
+        {
+            error = "personalPrompt는 문자열이어야 합니다.";
+            field = "personalPrompt";
+            return Json::Value();
+        }
+        // Always replace from the request body (never concatenate with the previous value).
+        const auto prompt = body["personalPrompt"].asString();
+        if (utf8_code_point_count(prompt) > web::v1::kPersonalPromptMaxChars)
+        {
+            error = "개인 프롬프트는 " + std::to_string(web::v1::kPersonalPromptMaxChars)
+                + "자 이하여야 합니다.";
+            field = "personalPrompt";
+            return Json::Value();
+        }
+        out["personalPrompt"] = trim_copy(prompt);
+    }
+
+    session.ai_agent_settings[std::to_string(user_id)] = out;
+    return out;
+}
+
+std::string demoResolvePersonalPrompt(
+    const std::string& runtime_id,
+    const int64_t user_id,
+    const db::DbClientPtr& client)
+{
+    const auto settings = demoGetAiAgentSettings(runtime_id, user_id, client);
+    if (!settings.isMember("personalPrompt") || !settings["personalPrompt"].isString())
+        return {};
+    return trim_copy(settings["personalPrompt"].asString());
 }
 
 WAVE_NAMESPACE_END

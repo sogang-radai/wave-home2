@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -24,7 +24,7 @@ struct RoomView
 class RoomsStore
 {
 public:
-    explicit RoomsStore(drogon::orm::DbClientPtr client);
+    explicit RoomsStore(db::DbClientPtr client);
 
     Json::Value listRooms() const;
     std::optional<RoomView> findRoom(int64_t room_id) const;
@@ -37,7 +37,7 @@ public:
     std::optional<Json::Value> updateMembers(int64_t room_id, const std::vector<int64_t>& account_ids, std::string& error, std::string& code);
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     int64_t nextRoomId() const;
     Json::Value roomJson(const RoomView& room) const;

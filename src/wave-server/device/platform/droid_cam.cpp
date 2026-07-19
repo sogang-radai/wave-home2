@@ -24,7 +24,7 @@ namespace
 {
     constexpr std::string_view kClass = DroidCam::kClass;
 
-    void validateConfig(const json& config)
+    void validate_config(const json& config)
     {
         if (config.at("class").get<std::string>() != kClass)
             throw std::invalid_argument("droid_cam config field 'class' must be 'droid_cam'");
@@ -37,7 +37,7 @@ namespace
             throw std::invalid_argument("droid_cam interface requires non-empty string 'host'");
     }
 
-    DroidCam::InterfaceConfig parseInterfaceConfig(const json& config)
+    DroidCam::InterfaceConfig parse_interface_config(const json& config)
     {
         const auto& iface = config.at("interface");
         DroidCam::InterfaceConfig out;
@@ -48,7 +48,7 @@ namespace
         return out;
     }
 
-    DroidCam::AudioConfig parseAudioConfig(const json& config)
+    DroidCam::AudioConfig parse_audio_config(const json& config)
     {
         DroidCam::AudioConfig out;
         if (!config.contains("audio") || !config["audio"].is_object())
@@ -65,7 +65,7 @@ namespace
 
   // Verifies the host still maps to the MAC pinned in the config. Returns -7
   // on mismatch, 0 when it matches or when no MAC is pinned / not resolvable.
-    int verifyMac(const json& config, const std::string& host)
+    int verify_mac(const json& config, const std::string& host)
     {
         const std::string expected = config.at("interface").value("mac", "");
         if (expected.empty())
@@ -74,15 +74,15 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("droid_cam: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("droid_cam: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("droid_cam: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("droid_cam: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("droid_cam: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("droid_cam: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
@@ -423,10 +423,10 @@ std::string DroidCam::buildAudioUrl() const
 
 int DroidCam::init(const json& config)
 {
-    validateConfig(config);
+    validate_config(config);
     loadBaseConfig(config);
-    m_interface = parseInterfaceConfig(config);
-    m_audio = parseAudioConfig(config);
+    m_interface = parse_interface_config(config);
+    m_audio = parse_audio_config(config);
 
     m_capabilities.snapshot = true;
     m_capabilities.videoStream = true;
@@ -443,7 +443,7 @@ int DroidCam::init(const json& config)
 
     m_state = DeviceState::Initializing;
 
-    const int mac_rc = verifyMac(config, m_interface.host);
+    const int mac_rc = verify_mac(config, m_interface.host);
     if (mac_rc != 0)
     {
         m_state = DeviceState::Stopped;
@@ -451,7 +451,7 @@ int DroidCam::init(const json& config)
     }
 
     m_state = DeviceState::Running;
-    LOG_INFO("DroidCam initialized: {}:{}", m_interface.host, m_interface.port);
+    WLOG_INFO("DroidCam initialized: {}:{}", m_interface.host, m_interface.port);
 
     m_appAlive.store(probeAppAlive(), std::memory_order_release);
     startHealthMonitor();
@@ -498,7 +498,7 @@ void DroidCam::markPhoneOffline()
     m_streamViewers.store(0, std::memory_order_release);
     const bool was_alive = m_appAlive.exchange(false, std::memory_order_acq_rel);
     if (was_alive)
-        LOG_WARN("DroidCam: phone app offline ({}:{})", m_interface.host, m_interface.port);
+        WLOG_WARN("DroidCam: phone app offline ({}:{})", m_interface.host, m_interface.port);
     AppState::get().iot.resetCameraStreamSession(deviceIDToString(getId()));
     AppState::get().iot.stopDroidMjpegProxy(deviceIDToString(getId()));
 }
@@ -533,7 +533,7 @@ void DroidCam::startHealthMonitor()
                 onAppWentOffline();
             else if (!was_alive && alive)
             {
-                LOG_INFO("DroidCam: phone app online ({}:{})", m_interface.host, m_interface.port);
+                WLOG_INFO("DroidCam: phone app online ({}:{})", m_interface.host, m_interface.port);
             }
         }
     });
@@ -756,6 +756,12 @@ std::future<void> DroidCam::getLatestFrameAsync(AudioFrame& outFrame)
     {
         (void)getLatestFrame(outFrame);
     });
+}
+
+bool DroidCam::popFrame(AudioFrame& outFrame)
+{
+    (void)outFrame;
+    return false;
 }
 
 void DroidCam::registerQueries()

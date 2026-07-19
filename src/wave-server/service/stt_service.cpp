@@ -61,7 +61,7 @@ namespace
         ActiveStream activeStream;
     };
 
-    bool localeEquals(std::string_view lhs, std::string_view rhs)
+    bool locale_equals(std::string_view lhs, std::string_view rhs)
     {
         if (lhs.size() != rhs.size())
             return false;
@@ -77,17 +77,17 @@ namespace
         return true;
     }
 
-    std::string joinPath(const std::filesystem::path& base, std::string_view relative)
+    std::string join_path(const std::filesystem::path& base, std::string_view relative)
     {
         return (base / std::filesystem::path(relative)).string();
     }
 
-    bool fileExists(const std::filesystem::path& path)
+    bool file_exists(const std::filesystem::path& path)
     {
         return std::filesystem::is_regular_file(path);
     }
 
-    bool parseEndpoint(const json& endpoint_json, SherpaOnlineRecognizerConfig& out_config)
+    bool parse_endpoint(const json& endpoint_json, SherpaOnlineRecognizerConfig& out_config)
     {
         if (!endpoint_json.is_object())
             return false;
@@ -102,7 +102,7 @@ namespace
         return true;
     }
 
-    bool buildStreamingZipformerConfig(
+    bool build_streaming_zipformer_config(
         const std::filesystem::path& model_dir,
         const json& language_json,
         int32_t sample_rate,
@@ -116,7 +116,7 @@ namespace
         }
 
         const auto model_path = [&model_dir](const std::string& filename) {
-            return joinPath(model_dir, filename);
+            return join_path(model_dir, filename);
         };
 
         const std::string tokens = language_json["tokens"].get<std::string>();
@@ -124,10 +124,10 @@ namespace
         const std::string decoder = language_json["decoder"].get<std::string>();
         const std::string joiner = language_json["joiner"].get<std::string>();
 
-        if (!fileExists(model_dir / tokens) ||
-            !fileExists(model_dir / encoder) ||
-            !fileExists(model_dir / decoder) ||
-            !fileExists(model_dir / joiner))
+        if (!file_exists(model_dir / tokens) ||
+            !file_exists(model_dir / encoder) ||
+            !file_exists(model_dir / decoder) ||
+            !file_exists(model_dir / joiner))
         {
             return false;
         }
@@ -144,7 +144,7 @@ namespace
         if (language_json.contains("bpe_vocab"))
         {
             const std::string bpe_vocab = language_json["bpe_vocab"].get<std::string>();
-            if (!bpe_vocab.empty() && fileExists(model_dir / bpe_vocab))
+            if (!bpe_vocab.empty() && file_exists(model_dir / bpe_vocab))
             {
                 out_config.model_config.bpe_vocab = model_path(bpe_vocab);
                 out_config.model_config.modeling_unit = "bpe";
@@ -155,14 +155,14 @@ namespace
 
         if (language_json.contains("endpoint"))
         {
-            if (!parseEndpoint(language_json["endpoint"], out_config))
+            if (!parse_endpoint(language_json["endpoint"], out_config))
                 return false;
         }
 
         return true;
     }
 
-    Result validateAudioInput(const LanguageRuntime* runtime, const AudioInput& input)
+    Result validate_audio_input(const LanguageRuntime* runtime, const AudioInput& input)
     {
         if (runtime == nullptr)
             return ERROR_INVALID_LOCALE;
@@ -179,13 +179,13 @@ namespace
         return SUCCESS;
     }
 
-    void decodeReadyFrames(LanguageRuntime& runtime, SherpaOnlineStream& stream)
+    void decode_ready_frames(LanguageRuntime& runtime, SherpaOnlineStream& stream)
     {
         while (runtime.recognizer->IsReady(&stream))
             runtime.recognizer->Decode(&stream);
     }
 
-    RecognizeResult makeRecognizeResult(
+    RecognizeResult make_recognize_result(
         LanguageRuntime& runtime,
         SherpaOnlineStream& stream)
     {
@@ -196,12 +196,12 @@ namespace
         return out_result;
     }
 
-    void emitPartialResult(LanguageRuntime& runtime, SherpaOnlineStream& stream)
+    void emit_partial_result(LanguageRuntime& runtime, SherpaOnlineStream& stream)
     {
         if (!runtime.activeStream.callback)
             return;
 
-        runtime.activeStream.callback(makeRecognizeResult(runtime, stream));
+        runtime.activeStream.callback(make_recognize_result(runtime, stream));
     }
 }
 
@@ -253,7 +253,7 @@ struct Service::Impl
             static_cast<uint32_t>(default_sample_rate));
 
         SherpaOnlineRecognizerConfig recognizer_config;
-        if (!buildStreamingZipformerConfig(
+        if (!build_streaming_zipformer_config(
                 model_dir,
                 language_json,
                 static_cast<int32_t>(sample_rate),
@@ -293,7 +293,7 @@ struct Service::Impl
     {
         for (auto& engine : engines)
         {
-            if (localeEquals(engine.locale, locale))
+            if (locale_equals(engine.locale, locale))
                 return &engine;
         }
         return nullptr;
@@ -303,7 +303,7 @@ struct Service::Impl
     {
         for (const auto& engine : engines)
         {
-            if (localeEquals(engine.locale, locale))
+            if (locale_equals(engine.locale, locale))
                 return &engine;
         }
         return nullptr;
@@ -378,7 +378,7 @@ Result Service::recognize(
         return ERROR_NOT_INITIALIZED;
 
     LanguageRuntime* runtime = m_impl->findEngine(locale);
-    const Result validation = validateAudioInput(runtime, input);
+    const Result validation = validate_audio_input(runtime, input);
     if (validation != SUCCESS)
         return validation;
 
@@ -391,8 +391,8 @@ Result Service::recognize(
             static_cast<int32_t>(input.sampleCount));
         stream.InputFinished();
 
-        decodeReadyFrames(*runtime, stream);
-        out_result = makeRecognizeResult(*runtime, stream);
+        decode_ready_frames(*runtime, stream);
+        out_result = make_recognize_result(*runtime, stream);
         return SUCCESS;
     }
     catch (const std::exception&)
@@ -407,7 +407,7 @@ std::future<Result> Service::recognizeAsync(
     RecognizeResult& out_result)
 {
     const std::string locale_copy(locale);
-    return TaskQueue::enqueueAsync([this, locale_copy, input, &out_result]() {
+    return TaskQueue::enqueue_async([this, locale_copy, input, &out_result]() {
         return recognize(locale_copy, input, out_result);
     });
 }
@@ -449,7 +449,7 @@ Result Service::pushAudio(std::string_view locale, const AudioInput& input)
         return ERROR_NOT_INITIALIZED;
 
     LanguageRuntime* runtime = m_impl->findEngine(locale);
-    const Result validation = validateAudioInput(runtime, input);
+    const Result validation = validate_audio_input(runtime, input);
     if (validation != SUCCESS)
         return validation;
 
@@ -464,8 +464,8 @@ Result Service::pushAudio(std::string_view locale, const AudioInput& input)
             input.samples,
             static_cast<int32_t>(input.sampleCount));
 
-        decodeReadyFrames(*runtime, stream);
-        emitPartialResult(*runtime, stream);
+        decode_ready_frames(*runtime, stream);
+        emit_partial_result(*runtime, stream);
 
         if (runtime->recognizer->IsEndpoint(&stream))
         {
@@ -493,8 +493,8 @@ void Service::endRecognizeStream(std::string_view locale)
     {
         SherpaOnlineStream& stream = *runtime->activeStream.stream;
         stream.InputFinished();
-        decodeReadyFrames(*runtime, stream);
-        emitPartialResult(*runtime, stream);
+        decode_ready_frames(*runtime, stream);
+        emit_partial_result(*runtime, stream);
     }
     catch (const std::exception&)
     {

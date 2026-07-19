@@ -1,6 +1,6 @@
 # Power Analysis API
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)** · Base URL: `/power/v1`
+호출 방향: **백엔드(:8500) → 에이전트(:8502)** · Base URL: `/power/v1`
 
 
 에이전트 서버가 제공하는 **전력 리포트 생성 API**다. 백엔드가 DB 에서 조회한 `metrics`·대상
@@ -8,11 +8,11 @@
 추가 데이터가 필요하면 에이전트가 백엔드 DB 조회 API(`/internal/v1/db/query`)를 호출한다.
 저장(`power_report.report_text`, `vec_power_report`)은 백엔드가 응답을 받은 뒤 수행한다.
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)**
+호출 방향: **백엔드(:8500) → 에이전트(:8502)**
 
 ### 공통
 
-- Base URL: `/power/v1` (에이전트 서버, `http://<agent>:8501/power/v1`)
+- Base URL: `/power/v1` (에이전트 서버, `http://<agent>:8502/power/v1`)
 - **SQLite 접근은 백엔드 전담**이다. 에이전트는 `dbUrl`·`energyId` 로 DB 를 열지 않는다.
 - 백엔드는 생성 요청 시 `metrics`**(백엔드 계산) +** `target`**(대상 power_energy 행) +** `children`**(하위 구간,
 옵션)** 을 Body 에 함께 실어 보낸다. 에이전트는 필요 없는 필드는 무시하고, 부족하면 DB 조회 API 로 보강한다.

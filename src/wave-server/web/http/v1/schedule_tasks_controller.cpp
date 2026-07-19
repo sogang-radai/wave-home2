@@ -6,7 +6,7 @@
 #include "../../../app/app_state.h"
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_runtime_id.h"
-#include "../../../demo/demo_session_writes.h"
+#include "../../../facade/schedule_tasks_facade.h"
 #include "../internal/schedule_tasks_internal_store.h"
 #include "action_log_store.h"
 #include "session_store.h"
@@ -17,7 +17,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    std::optional<int64_t> parseInt64(const std::string& raw)
+    std::optional<int64_t> parse_int64(const std::string& raw)
     {
         if (raw.empty())
             return std::nullopt;
@@ -31,7 +31,7 @@ namespace
         }
     }
 
-    std::optional<bool> parseBool(const std::string& raw)
+    std::optional<bool> parse_bool(const std::string& raw)
     {
         if (raw == "true" || raw == "1")
             return true;
@@ -40,9 +40,9 @@ namespace
         return std::nullopt;
     }
 
-    std::optional<int64_t> requireActiveUser(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback)
+    std::optional<int64_t> require_active_user(
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback)
     {
         auto& state = AppState::get();
         if (!state.db())
@@ -62,43 +62,42 @@ namespace
         return user_id;
     }
 
-    Json::Value withoutUserId(const Json::Value& item)
+    Json::Value without_user_id(const Json::Value& item)
     {
         Json::Value view = item;
         view.removeMember("userId");
         return view;
     }
 
-    Json::Value withoutUserIds(const Json::Value& items)
+    Json::Value without_user_ids(const Json::Value& items)
     {
         Json::Value out(Json::arrayValue);
         for (const auto& item : items)
-            out.append(withoutUserId(item));
+            out.append(without_user_id(item));
         return out;
     }
 
-    drogon::HttpResponsePtr demoResponse(
-        const drogon::HttpRequestPtr& req,
+    drogon::HttpResponsePtr json_response(
+        const HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id,
         drogon::HttpStatusCode status = drogon::k200OK)
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
         resp->setStatusCode(status);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        if (!runtime_id.empty())
+            attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
         return resp;
     }
 }
 
-void ScheduleTasksController::listTasks(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ScheduleTasksController::listTasks(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
-    internal::ScheduleTaskListFilter filter;
+    facade::ScheduleTaskListFilter filter;
     filter.user_id = *user_id;
     if (!req->getParameter("dayOfWeek").empty())
         filter.day_of_week = req->getParameter("dayOfWeek");
@@ -110,42 +109,20 @@ void ScheduleTasksController::listTasks(
         filter.from = req->getParameter("from");
     if (!req->getParameter("to").empty())
         filter.to = req->getParameter("to");
-    if (const auto done = parseBool(req->getParameter("done")))
+    if (const auto done = parse_bool(req->getParameter("done")))
         filter.done = *done;
 
-    internal::ScheduleTasksInternalStore store(AppState::get().db());
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        ensureDemoSessionSeeded(runtime_id, AppState::get().db());
-        auto items = demoListScheduleTasks(runtime_id, *user_id, AppState::get().db());
-        // Optional filters applied client-side for session copy.
-        Json::Value filtered(Json::arrayValue);
-        for (const auto& item : items)
-        {
-            if (!item.isObject())
-                continue;
-            if (filter.day_of_week && item.get("dayOfWeek", "").asString() != *filter.day_of_week)
-                continue;
-            if (filter.event_date && item.get("eventDate", "").asString() != *filter.event_date)
-                continue;
-            if (filter.schedule_kind && item.get("scheduleKind", "").asString() != *filter.schedule_kind)
-                continue;
-            if (filter.done && item.get("done", false).asBool() != *filter.done)
-                continue;
-            filtered.append(item);
-        }
-        callback(demoResponse(req, withoutUserIds(filtered), runtime_id));
-        return;
-    }
-    callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserIds(store.list(filter))));
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    const auto items = AppState::get().runtime().scheduleTasks().list(
+        filter, runtime_id, AppState::get().db());
+    callback(json_response(req, without_user_ids(items), runtime_id));
 }
 
-void ScheduleTasksController::createTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void ScheduleTasksController::createTask(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
@@ -163,7 +140,6 @@ void ScheduleTasksController::createTask(
     if (!body.isMember("scheduleKind") && !body.isMember("eventDate"))
         body["scheduleKind"] = "weekly";
 
-    // Front UI may omit title for insight-sourced tasks; use a safe placeholder when needed.
     if ((!body.isMember("title") || !body["title"].isString() || body["title"].asString().empty()) &&
         body.isMember("sourceInsightId") && !body["sourceInsightId"].isNull())
     {
@@ -175,46 +151,35 @@ void ScheduleTasksController::createTask(
     const auto runtime_id = demoVirtualDevicesEnabled()
         ? resolveDemoRuntimeId(req, &body)
         : std::string();
-    Json::Value created;
-    if (demoVirtualDevicesEnabled())
-    {
-        ensureDemoSessionSeeded(runtime_id, AppState::get().db());
-        created = demoCreateScheduleTask(runtime_id, body, error, field);
-    }
-    else if (const auto persisted = internal::ScheduleTasksInternalStore(AppState::get().db()).create(body, error, field))
-        created = *persisted;
-    if (created.isNull())
+    const auto created = AppState::get().runtime().scheduleTasks().create(
+        body, runtime_id, AppState::get().db(), error, field);
+    if (!created)
     {
         respondError(callback, 400, "INVALID_REQUEST", error, field);
         return;
     }
 
-    if (!demoVirtualDevicesEnabled())
+    if (runtime_id.empty())
     {
         ActionLogStore(AppState::get().db())
-            .record(*user_id, "schedule_task_created", "schedule_task", created["id"].asInt64(), created["category"].asString());
+            .record(
+                *user_id,
+                "schedule_task_created",
+                "schedule_task",
+                (*created)["id"].asInt64(),
+                (*created)["category"].asString());
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        callback(demoResponse(req, withoutUserId(created), runtime_id, drogon::k201Created));
-        return;
-    }
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(withoutUserId(created));
-    resp->setStatusCode(drogon::k201Created);
-    callback(resp);
+    callback(json_response(req, without_user_id(*created), runtime_id, drogon::k201Created));
 }
 
-void ScheduleTasksController::updateTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string taskId)
+void ScheduleTasksController::updateTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseInt64(taskId);
+    const auto id = parse_int64(taskId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "일정을 찾을 수 없습니다.");
@@ -235,30 +200,26 @@ void ScheduleTasksController::updateTask(
         : std::string();
 
     std::optional<bool> done_before;
-    if (!demoVirtualDevicesEnabled() && json->isMember("done"))
+    if (runtime_id.empty() && json->isMember("done"))
     {
         internal::ScheduleTasksInternalStore store(AppState::get().db());
         if (const auto existing = store.getById(*user_id, *id))
             done_before = (*existing)["done"].asBool();
     }
 
-    Json::Value updated;
-    if (demoVirtualDevicesEnabled())
-        updated = demoUpdateScheduleTask(runtime_id, *id, *json, error, field);
-    else if (const auto persisted =
-        internal::ScheduleTasksInternalStore(AppState::get().db()).update(*user_id, *id, *json, error, field))
-        updated = *persisted;
-    if (updated.isNull())
+    const auto updated = AppState::get().runtime().scheduleTasks().update(
+        *user_id, *id, *json, runtime_id, AppState::get().db(), error, field);
+    if (!updated)
     {
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
         respondError(callback, status, status == 404 ? "NOT_FOUND" : "INVALID_REQUEST", error, field);
         return;
     }
 
-    if (!demoVirtualDevicesEnabled() && done_before)
+    if (runtime_id.empty() && done_before)
     {
-        const bool done_after = updated["done"].asBool();
-        const std::string category = updated["category"].asString();
+        const bool done_after = (*updated)["done"].asBool();
+        const std::string category = (*updated)["category"].asString();
         if (!*done_before && done_after)
         {
             ActionLogStore(AppState::get().db())
@@ -271,24 +232,16 @@ void ScheduleTasksController::updateTask(
         }
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        callback(demoResponse(req, withoutUserId(updated), runtime_id));
-        return;
-    }
-    callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserId(updated)));
+    callback(json_response(req, without_user_id(*updated), runtime_id));
 }
 
-void ScheduleTasksController::deleteTask(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string taskId)
+void ScheduleTasksController::deleteTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseInt64(taskId);
+    const auto id = parse_int64(taskId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "일정을 찾을 수 없습니다.");
@@ -299,31 +252,15 @@ void ScheduleTasksController::deleteTask(
     const auto runtime_id = demoVirtualDevicesEnabled()
         ? resolveDemoRuntimeId(req, nullptr)
         : std::string();
-    Json::Value removed;
-    if (demoVirtualDevicesEnabled())
-    {
-        if (demoDeleteScheduleTask(runtime_id, *id))
-            removed["id"] = static_cast<Json::Int64>(*id);
-        else
-            error = "세션 일정을 찾을 수 없습니다.";
-    }
-    else if (const auto persisted =
-        internal::ScheduleTasksInternalStore(AppState::get().db()).remove(*user_id, *id, error))
-    {
-        removed = *persisted;
-    }
-    if (removed.isNull())
+    const auto removed = AppState::get().runtime().scheduleTasks().remove(
+        *user_id, *id, runtime_id, AppState::get().db(), error);
+    if (!removed)
     {
         respondError(callback, 404, "NOT_FOUND", error);
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        callback(demoResponse(req, removed, runtime_id));
-        return;
-    }
-    callback(drogon::HttpResponse::newHttpJsonResponse(removed));
+    callback(json_response(req, *removed, runtime_id));
 }
 
 } // namespace v1

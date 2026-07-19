@@ -1,8 +1,9 @@
 #include "goals_store.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
 namespace web {
@@ -25,7 +26,7 @@ namespace
     }
 }
 
-GoalsStore::GoalsStore(drogon::orm::DbClientPtr client) :
+GoalsStore::GoalsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }

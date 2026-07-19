@@ -6,9 +6,7 @@
 #include "../../../app/app_state.h"
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_runtime_id.h"
-#include "../../../demo/demo_session_writes.h"
-#include "../../../service/alarm_manager.h"
-#include "../internal/alarms_internal_store.h"
+#include "../../../facade/alarms_facade.h"
 #include "session_store.h"
 #include "settings_store.h"
 
@@ -17,7 +15,7 @@ WEB_NAMESPACE_BEGIN
 namespace v1 {
 namespace
 {
-    std::optional<int64_t> parseInt64(const std::string& raw)
+    std::optional<int64_t> parse_int64(const std::string& raw)
     {
         if (raw.empty())
             return std::nullopt;
@@ -31,9 +29,9 @@ namespace
         }
     }
 
-    std::optional<int64_t> requireActiveUser(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback)
+    std::optional<int64_t> require_active_user(
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback)
     {
         auto& state = AppState::get();
         if (!state.db())
@@ -53,69 +51,52 @@ namespace
         return user_id;
     }
 
-    Json::Value withoutUserId(const Json::Value& item)
+    Json::Value without_user_id(const Json::Value& item)
     {
         Json::Value view = item;
         view.removeMember("userId");
         return view;
     }
 
-    Json::Value withoutUserIds(const Json::Value& items)
+    Json::Value without_user_ids(const Json::Value& items)
     {
         Json::Value out(Json::arrayValue);
         for (const auto& item : items)
-            out.append(withoutUserId(item));
+            out.append(without_user_id(item));
         return out;
     }
 
-    void notifyAlarmManager()
-    {
-        service::AlarmManager::get().reconcile();
-    }
-
-    drogon::HttpResponsePtr demoResponse(
-        const drogon::HttpRequestPtr& req,
+    drogon::HttpResponsePtr json_response(
+        const HttpRequestPtr& req,
         const Json::Value& body,
         const std::string& runtime_id,
         drogon::HttpStatusCode status = drogon::k200OK)
     {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
         resp->setStatusCode(status);
-        attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        if (!runtime_id.empty())
+            attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
         return resp;
     }
 }
 
-void AlarmsController::listAlarms(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void AlarmsController::listAlarms(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
-    if (demoVirtualDevicesEnabled())
-    {
-        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
-        callback(demoResponse(
-            req,
-            withoutUserIds(demoListAlarms(runtime_id, *user_id, AppState::get().db())),
-            runtime_id));
-        return;
-    }
-
-    internal::AlarmListFilter filter;
-    filter.user_id = *user_id;
-
-    internal::AlarmsInternalStore store(AppState::get().db());
-    callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserIds(store.listAlarms(filter))));
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    const auto items = AppState::get().runtime().alarms().list(
+        *user_id, std::nullopt, runtime_id, AppState::get().db());
+    callback(json_response(req, without_user_ids(items), runtime_id));
 }
 
-void AlarmsController::createAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void AlarmsController::createAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
@@ -138,37 +119,24 @@ void AlarmsController::createAlarm(
     const auto runtime_id = demoVirtualDevicesEnabled()
         ? resolveDemoRuntimeId(req, &body)
         : std::string();
-    const auto created = demoVirtualDevicesEnabled()
-        ? demoCreateAlarm(runtime_id, body, AppState::get().db(), error, field)
-        : internal::AlarmsInternalStore(AppState::get().db()).createAlarm(body, error, field);
+    const auto created = AppState::get().runtime().alarms().create(
+        body, runtime_id, AppState::get().db(), error, field);
     if (created.isNull())
     {
         respondError(callback, 400, "VALIDATION_ERROR", error, field);
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        callback(demoResponse(req, withoutUserId(created), runtime_id, drogon::k201Created));
-        return;
-    }
-
-    notifyAlarmManager();
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(withoutUserId(created));
-    resp->setStatusCode(drogon::k201Created);
-    callback(resp);
+    callback(json_response(req, without_user_id(created), runtime_id, drogon::k201Created));
 }
 
-void AlarmsController::updateAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string alarmId)
+void AlarmsController::updateAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string alarmId)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseInt64(alarmId);
+    const auto id = parse_int64(alarmId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "알람을 찾을 수 없습니다.");
@@ -187,9 +155,8 @@ void AlarmsController::updateAlarm(
     const auto runtime_id = demoVirtualDevicesEnabled()
         ? resolveDemoRuntimeId(req, json.get())
         : std::string();
-    const auto updated = demoVirtualDevicesEnabled()
-        ? demoUpdateAlarm(runtime_id, *id, *json, error, field)
-        : internal::AlarmsInternalStore(AppState::get().db()).updateAlarm(*user_id, *id, *json, error, field);
+    const auto updated = AppState::get().runtime().alarms().update(
+        *user_id, *id, *json, runtime_id, AppState::get().db(), error, field);
     if (updated.isNull())
     {
         const int status = error.find("찾을") != std::string::npos ? 404 : 400;
@@ -197,26 +164,16 @@ void AlarmsController::updateAlarm(
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        callback(demoResponse(req, withoutUserId(updated), runtime_id));
-        return;
-    }
-
-    notifyAlarmManager();
-    callback(drogon::HttpResponse::newHttpJsonResponse(withoutUserId(updated)));
+    callback(json_response(req, without_user_id(updated), runtime_id));
 }
 
-void AlarmsController::deleteAlarm(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string alarmId)
+void AlarmsController::deleteAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string alarmId)
 {
-    const auto user_id = requireActiveUser(req, callback);
+    const auto user_id = require_active_user(req, callback);
     if (!user_id)
         return;
 
-    const auto id = parseInt64(alarmId);
+    const auto id = parse_int64(alarmId);
     if (!id)
     {
         respondError(callback, 404, "NOT_FOUND", "알람을 찾을 수 없습니다.");
@@ -227,32 +184,15 @@ void AlarmsController::deleteAlarm(
     const auto runtime_id = demoVirtualDevicesEnabled()
         ? resolveDemoRuntimeId(req, nullptr)
         : std::string();
-    Json::Value removed;
-    if (demoVirtualDevicesEnabled())
-    {
-        if (demoDeleteAlarm(runtime_id, *id))
-            removed["id"] = static_cast<Json::Int64>(*id);
-        else
-            error = "세션 알람을 찾을 수 없습니다.";
-    }
-    else
-    {
-        removed = internal::AlarmsInternalStore(AppState::get().db()).deleteAlarm(*user_id, *id, error);
-    }
+    const auto removed = AppState::get().runtime().alarms().remove(
+        *user_id, *id, runtime_id, AppState::get().db(), error);
     if (removed.isNull())
     {
         respondError(callback, 404, "NOT_FOUND", error);
         return;
     }
 
-    if (demoVirtualDevicesEnabled())
-    {
-        callback(demoResponse(req, removed, runtime_id));
-        return;
-    }
-
-    notifyAlarmManager();
-    callback(drogon::HttpResponse::newHttpJsonResponse(removed));
+    callback(json_response(req, removed, runtime_id));
 }
 
 } // namespace v1

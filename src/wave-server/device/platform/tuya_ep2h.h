@@ -55,6 +55,8 @@ private:
     json fetchDatapoints(bool force = false);
     void invalidateDatapointCache();
     int setSwitch(bool on);
+    /** Unplug / host-down: stop polling noise and let DeviceManager retry. */
+    void markOffline(std::string_view reason);
 
     std::unique_ptr<Impl> m_impl;
     Config m_config;

@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -16,7 +16,7 @@ namespace v1 {
 class SleepStore
 {
 public:
-    explicit SleepStore(drogon::orm::DbClientPtr client);
+    explicit SleepStore(db::DbClientPtr client);
 
     Json::Value getTodaySummary(int64_t user_id) const;
     Json::Value getTodayPlan(int64_t user_id) const;
@@ -27,11 +27,11 @@ public:
     Json::Value getWeeklyReport(int64_t user_id, const std::string& week_start) const;
 
 private:
-    static std::string toIsoKst(const std::string& timestamp);
-    static int computeScore(double efficiency);
+    static std::string to_iso_kst(const std::string& timestamp);
+    static int compute_score(double efficiency);
     Json::Value buildHypnogram(const drogon::orm::Result& stats, const std::string& start, const std::string& end) const;
 
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 };
 
 } // namespace v1

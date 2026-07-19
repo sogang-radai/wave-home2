@@ -14,7 +14,7 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    json loadIrList()
+    json load_ir_list()
     {
         const auto path = AppState::get().resolvePath("device/ir_list.json");
         std::ifstream in(path);
@@ -23,7 +23,7 @@ namespace
         return root;
     }
 
-    double timingDistance(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b)
+    double timing_distance(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b)
     {
         const size_t count = std::min(a.size(), b.size());
         if (count == 0)
@@ -45,7 +45,7 @@ std::string matchIrCommandId(const std::vector<uint16_t>& received_timings)
 
     try
     {
-        const json root = loadIrList();
+        const json root = load_ir_list();
         if (!root.contains("commands") || !root["commands"].is_array())
             return {};
 
@@ -64,7 +64,7 @@ std::string matchIrCommandId(const std::vector<uint16_t>& received_timings)
                     timings.push_back(value.get<uint16_t>());
             }
 
-            const double distance = timingDistance(received_timings, timings);
+            const double distance = timing_distance(received_timings, timings);
             if (distance < best_distance)
             {
                 best_distance = distance;
@@ -77,7 +77,7 @@ std::string matchIrCommandId(const std::vector<uint16_t>& received_timings)
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("IR matcher failed: {}", e.what());
+        WLOG_WARN("IR matcher failed: {}", e.what());
     }
 
     return {};
@@ -94,7 +94,7 @@ void notifyIrReceived(const std::string& device_id, const std::vector<uint16_t>&
         return;
 
     app.triggerManager().onIrReceived(device_id, command_id);
-    LOG_INFO("IR trigger: device={} command={}", device_id, command_id);
+    WLOG_INFO("IR trigger: device={} command={}", device_id, command_id);
 }
 
 SERVICE_NAMESPACE_END

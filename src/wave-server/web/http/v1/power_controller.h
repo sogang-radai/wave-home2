@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -19,21 +21,10 @@ public:
     ADD_METHOD_TO(PowerController::powerReport, "/api/v1/power/reports", drogon::Get);
     METHOD_LIST_END
 
-    void listPlugs(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void comboTrend(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void periodTrend(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void powerReport(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void listPlugs(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void comboTrend(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void periodTrend(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void powerReport(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 } // namespace v1

@@ -1,4 +1,5 @@
 #include "alarms_internal_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <chrono>
@@ -15,7 +16,7 @@ namespace
 {
     static const char* kDays[] = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"};
 
-    bool isValidDay(const std::string& day)
+    bool is_valid_day(const std::string& day)
     {
         return std::any_of(std::begin(kDays), std::end(kDays), [&](const char* candidate) {
             return day == candidate;
@@ -34,14 +35,14 @@ namespace
         return value;
     }
 
-    std::string daysToString(const Json::Value& days)
+    std::string days_to_string(const Json::Value& days)
     {
         Json::StreamWriterBuilder builder;
         builder["indentation"] = "";
         return Json::writeString(builder, days.isArray() ? days : Json::Value(Json::arrayValue));
     }
 
-    Json::Value normalizeAlarmMethod(const Json::Value& method)
+    Json::Value normalize_alarm_method(const Json::Value& method)
     {
         if (!method.isObject() || !method.isMember("type") || !method["type"].isString())
             return method;
@@ -61,12 +62,12 @@ namespace
     }
 }
 
-AlarmsInternalStore::AlarmsInternalStore(drogon::orm::DbClientPtr client) :
+AlarmsInternalStore::AlarmsInternalStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
 
-std::string AlarmsInternalStore::nowStamp()
+std::string AlarmsInternalStore::now_stamp()
 {
     const auto now = std::chrono::system_clock::now();
     const auto time = std::chrono::system_clock::to_time_t(now);
@@ -105,6 +106,7 @@ Json::Value AlarmsInternalStore::rowToJson(const drogon::orm::Row& row) const
     item["name"] = row["name"].as<std::string>();
     item["timeMinute"] = row["time_minute"].as<int>();
     item["daysOfWeek"] = parseDaysJson(row["days_of_week"].as<std::string>());
+    item["repeatWeekly"] = item["daysOfWeek"].isArray() && !item["daysOfWeek"].empty();
     item["smartWake"] = row["smart_wake"].as<int>() != 0;
     if (row["radar_device_id"].isNull())
         item["radarDeviceId"] = Json::nullValue;
@@ -126,7 +128,7 @@ Json::Value AlarmsInternalStore::rowToJson(const drogon::orm::Row& row) const
     std::string errors;
     std::istringstream stream(row["method"].as<std::string>());
     if (Json::parseFromStream(reader, stream, &method, &errors) && !method.isNull())
-        item["method"] = normalizeAlarmMethod(method);
+        item["method"] = normalize_alarm_method(method);
     else
         item["method"] = Json::nullValue;
 
@@ -136,7 +138,7 @@ Json::Value AlarmsInternalStore::rowToJson(const drogon::orm::Row& row) const
     return item;
 }
 
-bool AlarmsInternalStore::validatePayload(
+bool AlarmsInternalStore::validate_payload(
     const Json::Value& body,
     bool partial,
     std::string& error,
@@ -169,7 +171,7 @@ bool AlarmsInternalStore::validatePayload(
     {
         for (const auto& day : body["daysOfWeek"])
         {
-            if (!day.isString() || !isValidDay(day.asString()))
+            if (!day.isString() || !is_valid_day(day.asString()))
             {
                 error = "daysOfWeek는 mon~sun 중 하나여야 합니다.";
                 field = "daysOfWeek";
@@ -223,13 +225,13 @@ Json::Value AlarmsInternalStore::createAlarm(
         field = "userId";
         return Json::Value();
     }
-    if (!validatePayload(body, false, error, field))
+    if (!validate_payload(body, false, error, field))
         return Json::Value();
 
     const int64_t user_id = body["userId"].isInt64()
         ? body["userId"].asInt64()
         : static_cast<int64_t>(body["userId"].asInt());
-    const auto stamp = nowStamp();
+    const auto stamp = now_stamp();
     const Json::Value days = body.isMember("daysOfWeek") ? body["daysOfWeek"] : Json::Value(Json::arrayValue);
     const bool smart_wake = body.get("smartWake", false).asBool();
 
@@ -262,7 +264,7 @@ INSERT INTO alarm (
         user_id,
         body.isMember("name") ? body["name"].asString() : "알람",
         body["timeMinute"].asInt(),
-        daysToString(days),
+        days_to_string(days),
         smart_wake ? 1 : 0,
         radar_id ? *radar_id : std::optional<int64_t>{},
         device_id ? *device_id : std::optional<int64_t>{},
@@ -287,7 +289,7 @@ Json::Value AlarmsInternalStore::updateAlarm(
     std::string& error,
     std::string& field) const
 {
-    if (!validatePayload(body, true, error, field))
+    if (!validate_payload(body, true, error, field))
         return Json::Value();
 
     auto rows = m_client->execSqlSync(
@@ -301,7 +303,7 @@ Json::Value AlarmsInternalStore::updateAlarm(
     }
 
     const auto& existing = rows[0];
-    const std::string stamp = nowStamp();
+    const std::string stamp = now_stamp();
     const std::string name = body.isMember("name") ? body["name"].asString() : existing["name"].as<std::string>();
     const int time_minute = body.isMember("timeMinute") ? body["timeMinute"].asInt() : existing["time_minute"].as<int>();
     const Json::Value days = body.isMember("daysOfWeek")
@@ -349,7 +351,7 @@ WHERE id = ? AND user_id = ?
 )SQL",
         name,
         time_minute,
-        daysToString(days),
+        days_to_string(days),
         smart_wake ? 1 : 0,
         radar_id ? *radar_id : std::optional<int64_t>{},
         device_id ? *device_id : std::optional<int64_t>{},

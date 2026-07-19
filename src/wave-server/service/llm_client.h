@@ -52,9 +52,9 @@ public:
         High,
     };
 
-    static std::shared_ptr<Image> fromBase64(std::string_view base64, Detail detail = Medium);
-    static std::shared_ptr<Image> fromFile(std::string_view path, Detail detail = Medium);
-    static std::shared_ptr<Image> fromUrl(std::string_view url, Detail detail = Medium);
+    static std::shared_ptr<Image> from_base64(std::string_view base64, Detail detail = Medium);
+    static std::shared_ptr<Image> from_file(std::string_view path, Detail detail = Medium);
+    static std::shared_ptr<Image> from_url(std::string_view url, Detail detail = Medium);
     ~Image() override = default;
 
     Kind kind() const override;
@@ -225,8 +225,8 @@ public:
         const std::function<void(const std::string&)>& on_thinking = {});
 
 private:
-    static std::string_view textForApi(const Text& text);
-    static std::shared_ptr<Text> makeAssistantText(std::string thinking, std::string answer);
+    static std::string_view text_for_api(const Text& text);
+    static std::shared_ptr<Text> make_assistant_text(std::string thinking, std::string answer);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;

@@ -16,6 +16,7 @@
 #include "../../nn/sleep_pipeline.h"
 
 #include "sleep_aggregator.h"
+#include "sleep_audio.h"
 #include "sleep_session_fsm.h"
 #include "sleep_stage_synth.h"
 #include "sleep_vitals.h"
@@ -54,8 +55,16 @@ struct SleepRuntime
     VitalTargetPicker vitalPicker;
     VitalSignsProcessor vitalProcessor;
     VitalEstimate lastVitals;
+    SnoreAudioAnalyzer snoreAudio;
+    bool micSubscribed = false;
     int32_t asleepMinutesBeforeWindow = 0;
+    int32_t asleepMinutesAtWindowStart = 0;
+    std::vector<StageSynthResult> minuteStagesInWindow;
     std::vector<StageSynthResult> sessionStageWindows;
+    std::vector<StageSynthResult> sessionMinuteStages;
+    double windowSnoreSum = 0.0;
+    double windowNoiseSum = 0.0;
+    int32_t windowAudioMinutes = 0;
 };
 
 enum class SleepJobKind
@@ -87,10 +96,13 @@ public:
     void stop();
     void reconcile();
 
+    /** True while a sleep session is subscribed to this station's mic_opus. */
+    bool isStationMicInUse(const std::string& station_external_id) const;
+
     /** plan_date(YYYY-MM-DD) 밤의 "오늘 밤 추천 수면 시간"을 에이전트에 비동기로 생성 요청한다
      * (job worker 스레드에서 처리되므로 호출부를 막지 않는다). 실제 라디오 파이프라인은
-     * handleSessionClose() 에서 자동으로 호출하고, 데모 모드는 세션 시딩 지점에서 별도로
-     * 호출한다(demo_session_writes.cpp). */
+     * handleSessionClose() 에서 자동으로 호출하고, 데모 모드는 DemoProfileRuntime 이 자체
+     * 자동화(DemoAutomationRuntime)를 쓰지만 이 job worker 는 별도로 시작해 활용한다. */
     void requestSleepPlan(int32_t user_id, const std::string& plan_date);
 
 private:
@@ -116,7 +128,9 @@ private:
     bool initPipeline(SleepRuntime& runtime, std::string& out_error);
     std::vector<SleepRoomConfig> loadRoomConfigs();
     void tickVitals(SleepRuntime& runtime);
-    static bool isSleepEnabledRadar(const std::string& external_id);
+    void tickAudio(SleepRuntime& runtime);
+    void ensureMicSubscription(SleepRuntime& runtime, bool want_subscribed);
+    static bool is_sleep_enabled_radar(const std::string& external_id);
     std::optional<double> queryStationEnv(const std::string& external_id, const char* field);
     void storeAgentEmbeddings(SleepJobKind kind, int64_t row_id, const std::vector<float>& embedding);
 

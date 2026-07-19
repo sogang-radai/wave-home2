@@ -2,7 +2,7 @@
 
 #include "../core/json.h"
 #include "../core/logger.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 #include "agent_client.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -25,7 +25,7 @@ namespace
 
     // app/schemas/sleep_analysis.py 의 SleepSessionRow 와 동일한 camelCase 필드로 채운다 -
     // 에이전트가 sleep/reports 에서 이미 이 모양을 소비하고 있어 재사용한다.
-    json fetchRecentSessions(const drogon::orm::DbClientPtr& client, int64_t user_id, int limit)
+    json fetchRecentSessions(const db::DbClientPtr& client, int64_t user_id, int limit)
     {
         json out = json::array();
         const auto rows = client->execSqlSync(
@@ -82,7 +82,7 @@ namespace
     // app/tools/schedule_tasks_internal.py 의 ScheduleTask 와 동일한 camelCase 필드.
     // sleep_store.cpp(구 rule-based 로직)와 동일한 규칙으로 once/weekly 일정을 함께 조회한다:
     // schedule_kind='once'면 event_date 일치, 'weekly'면 그 날짜의 요일이 day_of_week 와 일치.
-    json fetchScheduleForDate(const drogon::orm::DbClientPtr& client, int64_t user_id, const std::string& date)
+    json fetchScheduleForDate(const db::DbClientPtr& client, int64_t user_id, const std::string& date)
     {
         const auto wday_rows = client->execSqlSync("SELECT CAST(strftime('%w', ?) AS INTEGER) AS w", date);
         const int wday_index = wday_rows.empty() ? 0 : (((wday_rows[0]["w"].as<int>() % 7) + 7) % 7);
@@ -133,7 +133,7 @@ ORDER BY start_minute ASC
 }
 
 bool generateAndPersistSleepPlan(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& agent_base_url,
     int64_t user_id,
     const std::string& plan_date,
@@ -153,7 +153,7 @@ bool generateAndPersistSleepPlan(
     AgentSleepJobResult result;
     if (runSleepJobSync(agent_base_url, "/sleep/v1/plans", body, result, out_error) != AgentClientResult::success)
     {
-        LOG_WARN("sleep plan job failed (user {}, date {}): {}", user_id, plan_date, out_error);
+        WLOG_WARN("sleep plan job failed (user {}, date {}): {}", user_id, plan_date, out_error);
         return false;
     }
 
@@ -167,7 +167,7 @@ bool generateAndPersistSleepPlan(
     catch (const std::exception& e)
     {
         out_error = std::string("invalid plan JSON: ") + e.what();
-        LOG_WARN("sleep plan parse failed (user {}, date {}): {}", user_id, plan_date, out_error);
+        WLOG_WARN("sleep plan parse failed (user {}, date {}): {}", user_id, plan_date, out_error);
         return false;
     }
 
@@ -177,7 +177,7 @@ bool generateAndPersistSleepPlan(
         || !content.contains("rationale") || !content["rationale"].is_string())
     {
         out_error = "plan missing required fields";
-        LOG_WARN("sleep plan validation failed (user {}, date {}): {}", user_id, plan_date, out_error);
+        WLOG_WARN("sleep plan validation failed (user {}, date {}): {}", user_id, plan_date, out_error);
         return false;
     }
 
@@ -186,7 +186,7 @@ bool generateAndPersistSleepPlan(
     if (!isValidMinuteOfDay(bedtime_min) || !isValidMinuteOfDay(wake_min))
     {
         out_error = "plan minute-of-day out of range";
-        LOG_WARN("sleep plan validation failed (user {}, date {}): {}", user_id, plan_date, out_error);
+        WLOG_WARN("sleep plan validation failed (user {}, date {}): {}", user_id, plan_date, out_error);
         return false;
     }
 
@@ -231,11 +231,11 @@ INSERT INTO sleep_plan (
     catch (const std::exception& e)
     {
         out_error = e.what();
-        LOG_WARN("sleep plan persist failed (user {}, date {}): {}", user_id, plan_date, out_error);
+        WLOG_WARN("sleep plan persist failed (user {}, date {}): {}", user_id, plan_date, out_error);
         return false;
     }
 
-    LOG_INFO("sleep plan generated (user {}, date {})", user_id, plan_date);
+    WLOG_INFO("sleep plan generated (user {}, date {})", user_id, plan_date);
     return true;
 }
 

@@ -1,0 +1,279 @@
+{
+    "device_list": [
+        {
+            "class": "srs_r4sn",
+            "description": "SRS R4SN mmWave 레이더",
+            "enabled": true,
+            "id": "0000000000000001",
+            "interface": {
+                "host": "192.168.0.33",
+                "iq": {
+                    "enabled": true,
+                    "port": 29171
+                },
+                "mac": "68:96:6A:4C:69:D4",
+                "point_cloud": {
+                    "enabled": true,
+                    "port": 29172
+                }
+            },
+            "model": "Retina-4SN",
+            "name": "침실 하방 레이더",
+            "room_id": "0000000000000002",
+            "settings": {
+                "sleep": true,
+                "angle_y": 0.0,
+                "angle_z": 0.0,
+                "max_x": 5.0,
+                "max_y": 10.0,
+                "max_z": 2.0,
+                "min_x": -5.0,
+                "min_y": 0.0,
+                "min_z": -2.0
+            },
+            "vendor": "SRS"
+        },
+        {
+            "class": "srs_r4sn",
+            "description": "SRS R4SN mmWave 레이더 (책상, 제스처 감지용)",
+            "enabled": true,
+            "id": "0000000000000002",
+            "interface": {
+                "host": "192.168.0.163",
+                "iq": {
+                    "enabled": true,
+                    "port": 29171
+                },
+                "mac": "68:96:6A:4C:6B:12",
+                "point_cloud": {
+                    "enabled": true,
+                    "port": 29172
+                }
+            },
+            "model": "Retina-4SN",
+            "name": "침실 책상 레이더",
+            "room_id": "0000000000000002",
+            "settings": {
+                "sleep": false,
+                "gesture_set": "set",
+                "angle_y": 0.0,
+                "angle_z": 0.0,
+                "max_x": 3.0,
+                "max_y": 3.0,
+                "max_z": 1.5,
+                "min_x": -3.0,
+                "min_y": 0.0,
+                "min_z": -1.5
+            },
+            "vendor": "SRS"
+        },
+        {
+            "class": "wave_station",
+            "description": "침실 Wave Station",
+            "enabled": true,
+            "id": "0000000000000003",
+            "interface": {
+                "host": "192.168.0.56",
+                "port": 41737
+            },
+            "model": "Wave Station",
+            "name": "Wave Station",
+            "settings": {
+                "channels": 1,
+                "sample_rate": 16000,
+                "sample_size": 16,
+                "capabilities": {
+                    "mic_pcm": true,
+                    "mic_opus": true,
+                    "speaker_pcm": false,
+                    "speaker_opus": true,
+                    "ir_receive": true,
+                    "ir_transmit": true,
+                    "ambient_light": true,
+                    "temperature": true,
+                    "humidity": true
+                }
+            },
+            "vendor": "RADAI",
+            "room_id": "0000000000000002"
+        },
+        {
+            "class": "droid_cam",
+            "description": "DroidCam 폰 카메라",
+            "enabled": true,
+            "id": "0000000000000004",
+            "interface": {
+                "host": "192.168.0.23",
+                "mac": "6A:49:10:A2:0C:EC",
+                "port": 4747
+            },
+            "model": "DroidCam WiFi",
+            "name": "폰 카메라",
+            "vendor": "Dev47Apps",
+            "room_id": "0000000000000001"
+        },
+        {
+            "class": "reolink_e1_pro",
+            "description": "거실 IoT 카메라",
+            "enabled": true,
+            "id": "0000000000000005",
+            "interface": {
+                "go2rtc": true,
+                "host": "192.168.0.50",
+                "mac": "94:8C:D7:A2:6A:97",
+                "password": "enc:0500120444595d5e51",
+                "rtsp_port": 554,
+                "user": "enc:0500120444"
+            },
+            "model": "E1 Pro",
+            "name": "거실 카메라",
+            "vendor": "Reolink",
+            "room_id": "0000000000000001"
+        },
+        {
+            "class": "tuya_ep2h",
+            "description": "거실 선풍기 스마트 플러그",
+            "enabled": true,
+            "id": "0000000000000006",
+            "interface": {
+                "device_id": "eb61aa6ce49add5d80yfcj",
+                "host": "192.168.0.37",
+                "local_key": "s^q2?;Ur|q{SlG(>",
+                "mac": "50:8B:B9:9F:6E:83",
+                "version": "3.3"
+            },
+            "model": "EP2-H",
+            "name": "플러그1 - 선풍기",
+            "vendor": "Tenpl",
+            "room_id": "0000000000000001"
+        },
+        {
+            "class": "tuya_ep2h",
+            "description": "침실 컴퓨터 스마트 플러그",
+            "enabled": true,
+            "id": "0000000000000007",
+            "interface": {
+                "device_id": "ebf361525181a5fe4e6rcp",
+                "host": "192.168.0.54",
+                "local_key": "fVvBspSXY5oEhtJE",
+                "mac": "50:8B:B9:9E:88:3C",
+                "version": "3.3"
+            },
+            "model": "EP2-H",
+            "name": "플러그2 - 컴퓨터",
+            "vendor": "Tenpl",
+            "room_id": "0000000000000002"
+        },
+        {
+            "class": "tuya_ep2h",
+            "description": "침실 에어컨 스마트 플러그",
+            "enabled": true,
+            "id": "0000000000000008",
+            "interface": {
+                "device_id": "eb3646ff62e21274bbee9v",
+                "host": "192.168.0.53",
+                "local_key": "/2W'DMzaGa?1&e>L",
+                "mac": "50:8B:B9:A2:7B:A6",
+                "version": "3.3"
+            },
+            "model": "EP2-H",
+            "name": "플러그3 - 에어컨",
+            "vendor": "Tenpl",
+            "room_id": "0000000000000002"
+        },
+        {
+            "class": "tuya_ep2h",
+            "description": "부엌 인덕션 스마트 플러그",
+            "enabled": true,
+            "id": "0000000000000009",
+            "interface": {
+                "device_id": "eb81849da1465e6d64luja",
+                "host": "192.168.0.52",
+                "local_key": "Ua|r'`.u=]>$pIqP",
+                "mac": "50:8B:B9:A6:42:5F",
+                "version": "3.3"
+            },
+            "model": "EP2-H",
+            "name": "플러그4 - 인덕션",
+            "vendor": "Tenpl",
+            "room_id": "0000000000000003"
+        },
+        {
+            "class": "samsung_g7",
+            "description": "침실 책상 - 삼성 32인치 TV",
+            "enabled": true,
+            "id": "000000000000000a",
+            "interface": {
+                "host": "192.168.0.24",
+                "mac": "04:E4:B6:A9:8D:0A",
+                "token": "13135473"
+            },
+            "model": "G7 G70D S32DG700",
+            "name": "침실 TV",
+            "room_id": "0000000000000002",
+            "vendor": "Samsung"
+        },
+        {
+            "class": "philips_wiz_e29_color",
+            "description": "침실 조명 - 컬러",
+            "enabled": true,
+            "id": "000000000000000b",
+            "interface": {
+                "host": "192.168.0.51",
+                "mac": "98:77:D5:D0:B4:42",
+                "port": 38899
+            },
+            "model": "WiZ Color E29",
+            "name": "침실 조명",
+            "vendor": "Philips",
+            "room_id": "0000000000000002"
+        },
+        {
+            "class": "philips_wiz_e29_white",
+            "description": "거실 조명 - 화이트",
+            "enabled": true,
+            "id": "000000000000000c",
+            "interface": {
+                "host": "192.168.0.55",
+                "mac": "98:77:D5:E6:BF:72",
+                "port": 38899
+            },
+            "model": "WiZ White E29",
+            "name": "거실 조명",
+            "vendor": "Philips",
+            "room_id": "0000000000000001"
+        },
+        {
+            "class": "philips_wiz_e29_white",
+            "description": "부엌 조명 - 화이트",
+            "enabled": true,
+            "id": "000000000000000d",
+            "interface": {
+                "host": "192.168.0.83",
+                "mac": "98:77:D5:D0:B4:42",
+                "port": 38899
+            },
+            "model": "WiZ White E29",
+            "name": "부엌 조명",
+            "vendor": "Philips",
+            "room_id": "0000000000000003"
+        },
+        {
+            "class": "tuya_ep2h",
+            "description": "부엌 전자레인지 스마트 플러그",
+            "enabled": true,
+            "id": "000000000000000e",
+            "interface": {
+                "device_id": "eb9c2f71a0d84e3b12mw01",
+                "host": "192.168.0.61",
+                "local_key": "MwPlugKey#demo01!",
+                "mac": "50:8B:B9:B1:0E:14",
+                "version": "3.3"
+            },
+            "model": "EP2-H",
+            "name": "플러그5 - 전자레인지",
+            "vendor": "Tenpl",
+            "room_id": "0000000000000003"
+        }
+    ]
+}

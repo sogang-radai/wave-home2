@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -14,18 +15,18 @@
 #include "../device/device_manager.h"
 #include "../web/server.h"
 #include "app_config.h"
-#include "app_setting.h"
 #include "launch_options.h"
+#include "runtime/profile_runtime.h"
+#include "../db/database.h"
 #include "../service/action_queue.h"
 #include "../service/rule_store.h"
 #include "../service/trigger_manager.h"
 #include "../web/http/v1/gesture_store.h"
 #include "../web/http/v1/ir_store.h"
 
-#include <drogon/orm/DbClient.h>
-
 #ifdef WAVE_BUILD_TTS
 #include "../service/tts_service.h"
+#include "../service/stt_service.h"
 #endif
 
 WAVE_NAMESPACE_BEGIN
@@ -54,6 +55,52 @@ private:
     std::unique_ptr<tts::Service> m_service;
     std::atomic<bool> m_ready{false};
     bool m_taskQueueReady = false;
+#endif
+};
+
+class STTState
+{
+public:
+    explicit STTState(AppState& app);
+
+    bool warmUp(std::string& error);
+    bool isReady() const;
+#ifdef WAVE_BUILD_TTS
+    stt::Service* service(std::string& code);
+
+    bool createSession(const std::string& locale, std::string& session_id, std::string& code);
+    bool pushAudio(
+        const std::string& session_id,
+        const float* samples,
+        size_t sample_count,
+        uint32_t sample_rate,
+        std::string& code);
+    bool endSession(const std::string& session_id, std::string& code);
+    bool abortSession(const std::string& session_id, std::string& code);
+    bool popEvent(
+        const std::string& session_id,
+        Json::Value& out_event,
+        bool& session_closed,
+        std::chrono::milliseconds timeout,
+        std::string& code);
+#endif
+    void shutdown();
+
+private:
+#ifdef WAVE_BUILD_TTS
+    struct Session;
+    void clear_session_locked();
+#endif
+
+    AppState& m_app;
+
+#ifdef WAVE_BUILD_TTS
+    std::mutex m_mutex;
+    std::mutex m_streamMutex;
+    std::unique_ptr<stt::Service> m_service;
+    std::atomic<bool> m_ready{false};
+    bool m_taskQueueReady = false;
+    std::shared_ptr<Session> m_activeSession;
 #endif
 };
 
@@ -88,7 +135,7 @@ public:
     void shutdown();
 
 private:
-    static std::string isoNowKst();
+    static std::string iso_now_kst();
 
     AppState& m_app;
 
@@ -117,12 +164,14 @@ public:
 
     std::filesystem::path resolvePath(const std::string& relative) const;
 
-    drogon::orm::DbClientPtr db() const;
+    db::DbClientPtr db() const;
+
+    IProfileRuntime& runtime();
+    const IProfileRuntime& runtime() const;
 
     service::ActionQueue& actionQueue();
     service::RuleStore& ruleStore();
     service::TriggerManager& triggerManager();
-    // Alarm scheduling runtime: service::AlarmManager::get()
     web::v1::GestureStore& gestureStore();
     web::v1::IrStore& irStore();
 
@@ -131,7 +180,15 @@ public:
     bool hasGestureStore() const;
     bool hasIrStore() const;
 
-    void onDatabaseReady(const drogon::orm::DbClientPtr& client);
+    void onDatabaseReady(const db::DbClientPtr& client);
+
+    /** Profile runtimes: automation / device helpers. */
+    void startAutomationServices();
+    void stopAutomationServices();
+    void startTriggerRuntime();
+    void bindAutomationDatabase(const db::DbClientPtr& client);
+    bool loadDeviceManifests(const db::DbClientPtr& client);
+    void markDatabaseReady();
 
     // App
     std::atomic<bool> running{false};
@@ -140,7 +197,6 @@ public:
     bool no_devices = false;
     std::string anchor_date;
     AppConfig config;
-    AppSetting settings;
     std::filesystem::path config_dir;
 
     // Network
@@ -149,17 +205,15 @@ public:
     // Devices
     dev::DeviceManager deviceManager;
 
-    // TTS
+    // TTS / STT
     TTSState tts;
+    STTState stt;
 
     // IoT runtime (event log, camera stream sessions, DroidCam MJPEG proxies)
     IotRuntime iot;
 
 private:
-    bool loadDeviceManifests(const drogon::orm::DbClientPtr& client);
-    void startAutomationServices();
-    void stopAutomationServices();
-    void startTriggerRuntime();
+    std::unique_ptr<IProfileRuntime> m_runtime;
 
     std::unique_ptr<service::ActionQueue> m_actionQueue;
     std::unique_ptr<service::RuleStore> m_ruleStore;

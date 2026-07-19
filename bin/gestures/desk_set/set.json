@@ -6,6 +6,7 @@
     "classes": [
         {
             "class_id": 0,
+            "type": "status",
             "name": "부재중",
             "thumbnail": "thumbnails/7-0.png",
             "trigger": {
@@ -18,6 +19,7 @@
         },
         {
             "class_id": 1,
+            "type": "status",
             "name": "앉음",
             "thumbnail": "thumbnails/7-1.png",
             "trigger": {
@@ -30,6 +32,7 @@
         },
         {
             "class_id": 2,
+            "type": "status",
             "name": "엎드림",
             "thumbnail": "thumbnails/7-2.png",
             "trigger": {
@@ -42,6 +45,7 @@
         },
         {
             "class_id": 3,
+            "type": "continuous",
             "name": "손 앞으로 구르기",
             "thumbnail": "thumbnails/7-3.png",
             "trigger": {
@@ -54,6 +58,7 @@
         },
         {
             "class_id": 4,
+            "type": "continuous",
             "name": "손 뒤로 구르기",
             "thumbnail": "thumbnails/7-4.png",
             "trigger": {
@@ -66,6 +71,7 @@
         },
         {
             "class_id": 5,
+            "type": "discrete",
             "name": "왼쪽 스와이프",
             "thumbnail": "thumbnails/7-5.png",
             "trigger": {
@@ -78,6 +84,7 @@
         },
         {
             "class_id": 6,
+            "type": "discrete",
             "name": "오른쪽 스와이프",
             "thumbnail": "thumbnails/7-6.png",
             "trigger": {
@@ -90,6 +97,7 @@
         },
         {
             "class_id": 7,
+            "type": "continuous",
             "name": "오른손 반짝",
             "thumbnail": "thumbnails/7-7.png",
             "trigger": {
@@ -102,6 +110,7 @@
         },
         {
             "class_id": 8,
+            "type": "continuous",
             "name": "왼손 반짝",
             "thumbnail": "thumbnails/7-8.png",
             "trigger": {
@@ -114,6 +123,7 @@
         },
         {
             "class_id": 9,
+            "type": "continuous",
             "name": "양손 반짝",
             "thumbnail": "thumbnails/7-9.png",
             "trigger": {
@@ -126,6 +136,7 @@
         },
         {
             "class_id": 10,
+            "type": "continuous",
             "name": "오른손 시계방향",
             "thumbnail": "thumbnails/7-10.png",
             "trigger": {
@@ -138,6 +149,7 @@
         },
         {
             "class_id": 11,
+            "type": "continuous",
             "name": "왼손 반시계방향",
             "thumbnail": "thumbnails/7-11.png",
             "trigger": {

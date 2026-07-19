@@ -1,6 +1,6 @@
 # Alarms API (에이전트 → 백엔드)
 
-호출 방향: **에이전트(:8501) → 백엔드(:8500)**
+호출 방향: **에이전트(:8502) → 백엔드 agent-api(:8501)**
 
 > **프론트 API와 분리**: 웹 UI는 `/api/v1/alarms` ([`wave-home-front/docs/api/alarm.md`](../../wave-home-front/docs/api/alarm.md)). 세션 `activeAccount` 기준.
 > 이 문서는 에이전트가 **명시적 `userId`** 로 알람 설정을 조회·변경할 때 쓴다.

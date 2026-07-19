@@ -7,10 +7,11 @@
 
 #include "../../app/app_state.h"
 #include "../../core/logger.h"
-#include "../../core/time_util.h"
+#include "util/time_util.h"
 #include "../../device/device.h"
 #include "../../device/device_wire_id.hpp"
 #include "../../device/device_manager.h"
+#include "../../device/interface/audio.h"
 #include "../../device/interface/radar.h"
 #include "../../device/platform/radai_ws.h"
 #include "../../device/platform/srs_r4sn.h"
@@ -25,7 +26,7 @@ SERVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    dev::Device* findDeviceByExternalId(const std::string& external_id)
+    dev::Device* find_device_by_external_id(const std::string& external_id)
     {
         const auto id = dev::parseDeviceID(external_id);
         if (id == 0)
@@ -33,7 +34,7 @@ namespace
         return AppState::get().deviceManager.findDevice(id);
     }
 
-    json rowToCamelStat(
+    json row_to_camel_stat(
         const drogon::orm::Result& rows,
         size_t index)
     {
@@ -70,7 +71,7 @@ namespace
         return out;
     }
 
-    json rowToCamelSession(const drogon::orm::Result& rows, size_t index)
+    json row_to_camel_session(const drogon::orm::Result& rows, size_t index)
     {
         const auto& row = rows[index];
         json out;
@@ -96,7 +97,7 @@ namespace
         return out;
     }
 
-    bool isSleepRadarManifestEntry(const dev::DeviceManifestEntry& entry)
+    bool is_sleep_radar_manifest_entry(const dev::DeviceManifestEntry& entry)
     {
         if (entry.config.value("class", "") != "srs_r4sn")
             return false;
@@ -177,6 +178,27 @@ void SleepManager::start()
     });
 }
 
+bool SleepManager::isStationMicInUse(const std::string& station_external_id) const
+{
+    if (station_external_id.empty())
+        return false;
+
+    // try_lock: sleep tick holds m_mutex across device I/O; companion must not block on it.
+    std::unique_lock lock(m_mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+
+    for (const auto& [room_id, runtime] : m_runtimes)
+    {
+        (void)room_id;
+        if (!runtime.micSubscribed || !runtime.config.stationExternalId)
+            continue;
+        if (*runtime.config.stationExternalId == station_external_id)
+            return true;
+    }
+    return false;
+}
+
 void SleepManager::stop()
 {
     if (!m_running.exchange(false))
@@ -208,11 +230,11 @@ void SleepManager::reconcile()
             std::string error;
             if (!initPipeline(runtime, error))
             {
-                LOG_WARN("Sleep pipeline init failed for room {}: {}", config.roomId, error);
+                WLOG_WARN("Sleep pipeline init failed for room {}: {}", config.roomId, error);
                 continue;
             }
             m_runtimes.emplace(config.roomId, std::move(runtime));
-            LOG_INFO(
+            WLOG_INFO(
                 "Sleep runtime added (room={}, user={}, radar={})",
                 config.roomId,
                 config.userId,
@@ -233,13 +255,13 @@ void SleepManager::reconcile()
     }
 }
 
-bool SleepManager::isSleepEnabledRadar(const std::string& external_id)
+bool SleepManager::is_sleep_enabled_radar(const std::string& external_id)
 {
     for (const auto& entry : AppState::get().deviceManager.manifestEntries())
     {
         if (entry.config.value("id", "") != external_id)
             continue;
-        return isSleepRadarManifestEntry(entry);
+        return is_sleep_radar_manifest_entry(entry);
     }
     return false;
 }
@@ -249,7 +271,7 @@ void SleepManager::tickVitals(SleepRuntime& runtime)
     if (runtime.sessionFsm.phase() != SessionPhase::Sleeping)
         return;
 
-    auto* device = findDeviceByExternalId(runtime.config.radarExternalId);
+    auto* device = find_device_by_external_id(runtime.config.radarExternalId);
     auto* pc_provider = dynamic_cast<dev::IRadarPointCloudProvider*>(device);
     if (pc_provider && device && device->getState() == dev::DeviceState::Running)
     {
@@ -288,6 +310,61 @@ void SleepManager::tickVitals(SleepRuntime& runtime)
 
     runtime.vitalProcessor.pushSample(responses[0].iq);
     runtime.lastVitals = runtime.vitalProcessor.estimate();
+}
+
+void SleepManager::ensureMicSubscription(SleepRuntime& runtime, bool want_subscribed)
+{
+    if (!runtime.config.stationExternalId)
+        return;
+
+    auto* device = find_device_by_external_id(*runtime.config.stationExternalId);
+    auto* station = dynamic_cast<dev::RadaiWs*>(device);
+    if (!station || device->getState() != dev::DeviceState::Running)
+        return;
+
+    if (want_subscribed && !runtime.micSubscribed)
+    {
+        const int rc = station->invoke(
+            "subscribe",
+            json{{"target", "mic_opus"}, {"intervalMs", 0}});
+        if (rc == 0)
+        {
+            runtime.micSubscribed = true;
+            runtime.snoreAudio.beginMinute();
+        }
+        else
+        {
+            WLOG_WARN("sleep mic subscribe failed: rc={}", rc);
+        }
+    }
+    else if (!want_subscribed && runtime.micSubscribed)
+    {
+        (void)station->invoke("unsubscribe", json{{"target", "mic_opus"}});
+        runtime.micSubscribed = false;
+    }
+}
+
+void SleepManager::tickAudio(SleepRuntime& runtime)
+{
+    const bool sleeping = runtime.sessionFsm.phase() == SessionPhase::Sleeping;
+    ensureMicSubscription(runtime, sleeping && runtime.config.stationExternalId.has_value());
+    if (!sleeping || !runtime.config.stationExternalId)
+        return;
+
+    auto* device = find_device_by_external_id(*runtime.config.stationExternalId);
+    auto* audio = dynamic_cast<dev::IAudioInput*>(device);
+    if (!audio || device->getState() != dev::DeviceState::Running)
+        return;
+
+    const auto fmt = audio->getSourceFormat();
+    const uint32_t sample_rate = fmt.sampleRate > 0 ? fmt.sampleRate : 16000;
+    dev::AudioFrame frame;
+    int pulled = 0;
+    while (pulled < 32 && audio->popFrame(frame))
+    {
+        runtime.snoreAudio.pushFrame(frame, sample_rate);
+        ++pulled;
+    }
 }
 
 std::vector<SleepRoomConfig> SleepManager::loadRoomConfigs()
@@ -334,7 +411,7 @@ ORDER BY r.id, ru.user_id, d.id
 
             if (device_class == "srs_r4sn")
             {
-                if (!isSleepEnabledRadar(wire_id))
+                if (!is_sleep_enabled_radar(wire_id))
                     continue;
                 config.radarDbId = device_id;
                 config.radarExternalId = wire_id;
@@ -356,7 +433,7 @@ ORDER BY r.id, ru.user_id, d.id
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("Sleep room config load failed: {}", e.what());
+        WLOG_WARN("Sleep room config load failed: {}", e.what());
     }
 
     return configs;
@@ -389,7 +466,7 @@ bool SleepManager::initPipeline(SleepRuntime& runtime, std::string& out_error)
     if (!runtime.pipeline->init(app.config_dir.string(), config_json, out_error))
         return false;
 
-    auto* device = findDeviceByExternalId(runtime.config.radarExternalId);
+    auto* device = find_device_by_external_id(runtime.config.radarExternalId);
     if (auto* provider = dynamic_cast<dev::IRadarPointCloudProvider*>(device))
     {
         const uint32_t seq = std::max(runtime.pipeline->getBedWindow(), runtime.pipeline->getTossWindow());
@@ -412,6 +489,7 @@ void SleepManager::tickRuntime(SleepRuntime& runtime)
 {
     consumePointCloud(runtime);
     tickVitals(runtime);
+    tickAudio(runtime);
 
     const std::string now_ts = formatTimestamp();
     flushSecondBoundary(runtime, now_ts);
@@ -424,7 +502,7 @@ void SleepManager::consumePointCloud(SleepRuntime& runtime)
     if (!runtime.pipeline)
         return;
 
-    auto* device = findDeviceByExternalId(runtime.config.radarExternalId);
+    auto* device = find_device_by_external_id(runtime.config.radarExternalId);
     auto* provider = dynamic_cast<dev::IRadarPointCloudProvider*>(device);
     if (!provider || !device || device->getState() != dev::DeviceState::Running)
         return;
@@ -577,6 +655,53 @@ void SleepManager::persistMinuteStat(SleepRuntime& runtime, const MinuteStat& st
     if (!client)
         return;
 
+    std::optional<double> env_lux;
+    if (runtime.config.stationExternalId)
+        env_lux = queryStationEnv(*runtime.config.stationExternalId, "lux");
+
+    StageSynthHints hints;
+    hints.envLux = env_lux;
+    if (runtime.lastVitals.brConfidence > 0.0)
+        hints.brStability = runtime.lastVitals.brStability;
+    if (runtime.lastVitals.hrConfidence > 0.0)
+        hints.hrConfidence = runtime.lastVitals.hrConfidence;
+
+    const int32_t asleep_before = runtime.asleepMinutesBeforeWindow;
+    if (runtime.minuteStagesInWindow.empty())
+        runtime.asleepMinutesAtWindowStart = asleep_before;
+
+    const StageSynthResult stage = synthesizeMinuteStage(stat, asleep_before, hints);
+
+    if (stat.statusRatio.is_object() && stat.statusRatio.value("asleep", 0.0) >= 0.5)
+        runtime.asleepMinutesBeforeWindow += 1;
+
+    runtime.minuteStagesInWindow.push_back(stage);
+    if (runtime.sessionFsm.state().onset)
+        runtime.sessionMinuteStages.push_back(stage);
+
+    std::optional<double> snore_ratio;
+    std::optional<double> env_noise;
+    if (runtime.micSubscribed && runtime.snoreAudio.hasData())
+    {
+        const SnoreAudioSample audio = runtime.snoreAudio.flushMinute();
+        snore_ratio = audio.snoreScore;
+        env_noise = audio.noiseDb;
+        runtime.windowSnoreSum += *snore_ratio;
+        runtime.windowNoiseSum += *env_noise;
+        runtime.windowAudioMinutes += 1;
+    }
+
+    std::optional<double> hr_mean;
+    std::optional<double> br_mean;
+    std::optional<double> hr_confidence;
+    if (runtime.lastVitals.hrBpm && runtime.lastVitals.hrConfidence > 0.0)
+    {
+        hr_mean = *runtime.lastVitals.hrBpm;
+        hr_confidence = runtime.lastVitals.hrConfidence;
+    }
+    if (runtime.lastVitals.brRpm && runtime.lastVitals.brConfidence > 0.0)
+        br_mean = *runtime.lastVitals.brRpm;
+
     try
     {
         const auto& session_id = runtime.sessionFsm.state().sessionId;
@@ -586,19 +711,30 @@ void SleepManager::persistMinuteStat(SleepRuntime& runtime, const MinuteStat& st
                 R"SQL(
 INSERT INTO sleep_stat (
     user_id, room_id, session_id, granularity, time_start, time_end, coverage,
-    status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio
-) VALUES (?, ?, ?, '1m', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    stage_label, stage_ratio, stage_confidence,
+    status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio,
+    hr_mean, hr_confidence, br_mean, snore_ratio, env_lux, env_noise
+) VALUES (?, ?, ?, '1m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     room_id = excluded.room_id,
     session_id = excluded.session_id,
     time_end = excluded.time_end,
     coverage = excluded.coverage,
+    stage_label = excluded.stage_label,
+    stage_ratio = excluded.stage_ratio,
+    stage_confidence = excluded.stage_confidence,
     status_ratio = excluded.status_ratio,
     toss_mean = excluded.toss_mean,
     toss_max = excluded.toss_max,
     toss_p90 = excluded.toss_p90,
     toss_events = excluded.toss_events,
-    toss_ratio = excluded.toss_ratio
+    toss_ratio = excluded.toss_ratio,
+    hr_mean = excluded.hr_mean,
+    hr_confidence = excluded.hr_confidence,
+    br_mean = excluded.br_mean,
+    snore_ratio = excluded.snore_ratio,
+    env_lux = excluded.env_lux,
+    env_noise = excluded.env_noise
 )SQL",
                 runtime.config.userId,
                 runtime.config.roomId,
@@ -606,12 +742,21 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
                 stat.timeStart,
                 stat.timeEnd,
                 stat.coverage,
+                stage.stageLabel,
+                stage.stageRatio.dump(),
+                stage.confidence,
                 stat.statusRatio.dump(),
                 stat.tossMean,
                 stat.tossMax,
                 stat.tossP90,
                 stat.tossEvents,
-                stat.tossRatio.dump());
+                stat.tossRatio.dump(),
+                hr_mean,
+                hr_confidence,
+                br_mean,
+                snore_ratio,
+                env_lux,
+                env_noise);
         }
         else
         {
@@ -619,36 +764,56 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
                 R"SQL(
 INSERT INTO sleep_stat (
     user_id, room_id, session_id, granularity, time_start, time_end, coverage,
-    status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio
-) VALUES (?, ?, NULL, '1m', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    stage_label, stage_ratio, stage_confidence,
+    status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio,
+    hr_mean, hr_confidence, br_mean, snore_ratio, env_lux, env_noise
+) VALUES (?, ?, NULL, '1m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     room_id = excluded.room_id,
     session_id = excluded.session_id,
     time_end = excluded.time_end,
     coverage = excluded.coverage,
+    stage_label = excluded.stage_label,
+    stage_ratio = excluded.stage_ratio,
+    stage_confidence = excluded.stage_confidence,
     status_ratio = excluded.status_ratio,
     toss_mean = excluded.toss_mean,
     toss_max = excluded.toss_max,
     toss_p90 = excluded.toss_p90,
     toss_events = excluded.toss_events,
-    toss_ratio = excluded.toss_ratio
+    toss_ratio = excluded.toss_ratio,
+    hr_mean = excluded.hr_mean,
+    hr_confidence = excluded.hr_confidence,
+    br_mean = excluded.br_mean,
+    snore_ratio = excluded.snore_ratio,
+    env_lux = excluded.env_lux,
+    env_noise = excluded.env_noise
 )SQL",
                 runtime.config.userId,
                 runtime.config.roomId,
                 stat.timeStart,
                 stat.timeEnd,
                 stat.coverage,
+                stage.stageLabel,
+                stage.stageRatio.dump(),
+                stage.confidence,
                 stat.statusRatio.dump(),
                 stat.tossMean,
                 stat.tossMax,
                 stat.tossP90,
                 stat.tossEvents,
-                stat.tossRatio.dump());
+                stat.tossRatio.dump(),
+                hr_mean,
+                hr_confidence,
+                br_mean,
+                snore_ratio,
+                env_lux,
+                env_noise);
         }
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_stat 1m write failed: {}", e.what());
+        WLOG_WARN("sleep_stat 1m write failed: {}", e.what());
     }
 }
 
@@ -666,16 +831,40 @@ void SleepManager::persistThirtyMinStat(SleepRuntime& runtime, const ThirtyMinSt
         env_lux = queryStationEnv(*runtime.config.stationExternalId, "lux");
     }
 
-    const StageSynthResult stage = synthesizeThirtyMinStage(stat, runtime.asleepMinutesBeforeWindow);
-    if (stat.statusRatio.is_object())
-    {
-        runtime.asleepMinutesBeforeWindow += static_cast<int32_t>(
-            30.0 * stat.statusRatio.value("asleep", 0.0));
-    }
+    StageSynthHints hints;
+    hints.envLux = env_lux;
+    if (runtime.lastVitals.brConfidence > 0.0)
+        hints.brStability = runtime.lastVitals.brStability;
+    if (runtime.lastVitals.hrConfidence > 0.0)
+        hints.hrConfidence = runtime.lastVitals.hrConfidence;
+
+    // Prefer aggregate of 1m stages collected in this window; fall back to 30m heuristic.
+    StageSynthResult stage;
+    if (!runtime.minuteStagesInWindow.empty())
+        stage = aggregateMinuteStages(runtime.minuteStagesInWindow);
+    else
+        stage = synthesizeThirtyMinStage(stat, runtime.asleepMinutesAtWindowStart, hints);
+
+    runtime.minuteStagesInWindow.clear();
+    runtime.asleepMinutesAtWindowStart = runtime.asleepMinutesBeforeWindow;
     if (runtime.sessionFsm.state().onset)
         runtime.sessionStageWindows.push_back(stage);
 
-    const double snore_ratio = estimateSnoreRatio(stat, env_temp);
+    double snore_ratio = 0.0;
+    std::optional<double> env_noise;
+    if (runtime.windowAudioMinutes > 0)
+    {
+        snore_ratio = runtime.windowSnoreSum / static_cast<double>(runtime.windowAudioMinutes);
+        env_noise = runtime.windowNoiseSum / static_cast<double>(runtime.windowAudioMinutes);
+    }
+    else
+    {
+        snore_ratio = estimateSnoreRatio(stat, env_temp);
+    }
+    runtime.windowSnoreSum = 0.0;
+    runtime.windowNoiseSum = 0.0;
+    runtime.windowAudioMinutes = 0;
+
     std::optional<double> hr_mean;
     std::optional<double> br_mean;
     std::optional<double> hr_confidence;
@@ -703,8 +892,8 @@ INSERT INTO sleep_stat (
     stage_label, stage_ratio, stage_confidence,
     status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio,
     hr_mean, hr_confidence, br_mean, snore_ratio,
-    summary_text, env_temp, env_lux
-) VALUES (?, ?, ?, '30m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    summary_text, env_temp, env_lux, env_noise
+) VALUES (?, ?, ?, '30m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     room_id = excluded.room_id,
     session_id = excluded.session_id,
@@ -725,7 +914,8 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     snore_ratio = excluded.snore_ratio,
     summary_text = excluded.summary_text,
     env_temp = excluded.env_temp,
-    env_lux = excluded.env_lux
+    env_lux = excluded.env_lux,
+    env_noise = excluded.env_noise
 )SQL",
                 runtime.config.userId,
                 runtime.config.roomId,
@@ -748,7 +938,8 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
                 snore_ratio,
                 summary_text,
                 env_temp,
-                env_lux);
+                env_lux,
+                env_noise);
         }
         else
         {
@@ -759,8 +950,8 @@ INSERT INTO sleep_stat (
     stage_label, stage_ratio, stage_confidence,
     status_ratio, toss_mean, toss_max, toss_p90, toss_events, toss_ratio,
     hr_mean, hr_confidence, br_mean, snore_ratio,
-    summary_text, env_temp, env_lux
-) VALUES (?, ?, NULL, '30m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    summary_text, env_temp, env_lux, env_noise
+) VALUES (?, ?, NULL, '30m', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     room_id = excluded.room_id,
     session_id = excluded.session_id,
@@ -781,7 +972,8 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     snore_ratio = excluded.snore_ratio,
     summary_text = excluded.summary_text,
     env_temp = excluded.env_temp,
-    env_lux = excluded.env_lux
+    env_lux = excluded.env_lux,
+    env_noise = excluded.env_noise
 )SQL",
                 runtime.config.userId,
                 runtime.config.roomId,
@@ -803,7 +995,8 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
                 snore_ratio,
                 summary_text,
                 env_temp,
-                env_lux);
+                env_lux,
+                env_noise);
         }
 
         const auto rows = client->execSqlSync(
@@ -847,13 +1040,13 @@ ON CONFLICT(user_id, granularity, time_start) DO UPDATE SET
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_stat 30m write failed: {}", e.what());
+        WLOG_WARN("sleep_stat 30m write failed: {}", e.what());
     }
 }
 
 std::optional<double> SleepManager::queryStationEnv(const std::string& external_id, const char* field)
 {
-    auto* device = findDeviceByExternalId(external_id);
+    auto* device = find_device_by_external_id(external_id);
     auto* station = dynamic_cast<dev::RadaiWs*>(device);
     if (!station || device->getState() != dev::DeviceState::Running)
         return std::nullopt;
@@ -938,7 +1131,9 @@ INSERT INTO sleep_session (
         backfillSessionId(runtime.config.userId, close.onset, close.finalWake, session_id);
 
         json stage_totals_sec = json::object();
-        const json stage_totals_min = synthesizeStageTotals(runtime.sessionStageWindows);
+        const json stage_totals_min = !runtime.sessionMinuteStages.empty()
+            ? synthesizeStageTotals(runtime.sessionMinuteStages, 1.0)
+            : synthesizeStageTotals(runtime.sessionStageWindows, 30.0);
         for (auto it = stage_totals_min.begin(); it != stage_totals_min.end(); ++it)
             stage_totals_sec[it.key()] = it.value().get<double>() * 60.0;
 
@@ -998,17 +1193,27 @@ WHERE id = ?
         // 오늘 밤(=지난밤의 다음날) "추천 수면 시간"을 지금 미리 생성해둔다 - 기상 직후
         // 최신 수면 기록을 반영해 에이전트가 계산하고, GET /sleep/today/plan 요청 경로에서는
         // 절대 에이전트를 동기 호출하지 않는다(sleep_plan_generator.h 참고).
-        const auto next_night_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", close.nightDate);
-        if (!next_night_rows.empty())
-            requestSleepPlan(runtime.config.userId, next_night_rows[0]["d"].as<std::string>());
+        {
+            const auto next_night_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", close.nightDate);
+            if (!next_night_rows.empty())
+                requestSleepPlan(runtime.config.userId, next_night_rows[0]["d"].as<std::string>());
+        }
 
+        ensureMicSubscription(runtime, false);
         runtime.sessionFsm.reset();
         runtime.sessionStageWindows.clear();
+        runtime.sessionMinuteStages.clear();
+        runtime.minuteStagesInWindow.clear();
         runtime.asleepMinutesBeforeWindow = 0;
+        runtime.asleepMinutesAtWindowStart = 0;
+        runtime.snoreAudio.reset();
+        runtime.windowSnoreSum = 0.0;
+        runtime.windowNoiseSum = 0.0;
+        runtime.windowAudioMinutes = 0;
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_session write failed: {}", e.what());
+        WLOG_WARN("sleep_session write failed: {}", e.what());
     }
 }
 
@@ -1039,7 +1244,7 @@ WHERE user_id = ?
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("sleep_stat session backfill failed: {}", e.what());
+        WLOG_WARN("sleep_stat session backfill failed: {}", e.what());
     }
 }
 
@@ -1071,6 +1276,14 @@ void SleepManager::processJob(const SleepJob& job)
     AgentSleepJobResult agent_result;
     std::string error;
 
+    if (job.kind == SleepJobKind::Plan)
+    {
+        std::string plan_error;
+        if (!generateAndPersistSleepPlan(client, app.config.agent.base_url, job.userId, job.periodStart, plan_error))
+            WLOG_WARN("sleep plan generation failed (user {}, date {}): {}", job.userId, job.periodStart, plan_error);
+        return;
+    }
+
     if (job.kind == SleepJobKind::Summary30m)
     {
         json body;
@@ -1080,7 +1293,7 @@ void SleepManager::processJob(const SleepJob& job)
         if (runSleepJobSync(app.config.agent.base_url, "/sleep/v1/summaries", body, agent_result, error)
             != AgentClientResult::success)
         {
-            LOG_WARN("sleep summary job failed (stat {}): {}", job.statId, error);
+            WLOG_WARN("sleep summary job failed (stat {}): {}", job.statId, error);
             try
             {
                 const std::string fallback = job.payload.value("summaryText", std::string("수면 구간 요약"));
@@ -1091,7 +1304,7 @@ void SleepManager::processJob(const SleepJob& job)
             }
             catch (const std::exception& e)
             {
-                LOG_WARN("sleep summary fallback write failed: {}", e.what());
+                WLOG_WARN("sleep summary fallback write failed: {}", e.what());
             }
             return;
         }
@@ -1106,16 +1319,8 @@ void SleepManager::processJob(const SleepJob& job)
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("sleep summary write failed: {}", e.what());
+            WLOG_WARN("sleep summary write failed: {}", e.what());
         }
-        return;
-    }
-
-    if (job.kind == SleepJobKind::Plan)
-    {
-        std::string plan_error;
-        if (!generateAndPersistSleepPlan(client, app.config.agent.base_url, job.userId, job.periodStart, plan_error))
-            LOG_WARN("sleep plan generation failed (user {}, date {}): {}", job.userId, job.periodStart, plan_error);
         return;
     }
 
@@ -1152,17 +1357,17 @@ void SleepManager::processJob(const SleepJob& job)
         body["period"] = "daily";
         body["periodStart"] = job.periodStart;
         body["metrics"] = metrics;
-        body["sessions"] = json::array({rowToCamelSession(session_rows, 0)});
+        body["sessions"] = json::array({row_to_camel_session(session_rows, 0)});
         json stats30m = json::array();
         for (size_t i = 0; i < stats_rows.size(); ++i)
-            stats30m.push_back(rowToCamelStat(stats_rows, i));
+            stats30m.push_back(row_to_camel_stat(stats_rows, i));
         body["stats30m"] = stats30m;
         body["embed"] = true;
 
         if (runSleepJobSync(app.config.agent.base_url, "/sleep/v1/reports", body, agent_result, error)
             != AgentClientResult::success)
         {
-            LOG_WARN("sleep daily report job failed ({}): {}", job.periodStart, error);
+            WLOG_WARN("sleep daily report job failed ({}): {}", job.periodStart, error);
             return;
         }
 
@@ -1192,7 +1397,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("sleep_report daily write failed: {}", e.what());
+            WLOG_WARN("sleep_report daily write failed: {}", e.what());
         }
 
         {
@@ -1200,7 +1405,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
             if (!generateAndPersistInsights(
                     client, app.config.agent.base_url, job.userId, "sleep_report", job.periodStart, insight_error))
             {
-                LOG_WARN("insight generation (sleep_report daily) failed: {}", insight_error);
+                WLOG_WARN("insight generation (sleep_report daily) failed: {}", insight_error);
             }
         }
         return;
@@ -1273,18 +1478,18 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         body["metrics"] = metrics;
         json sessions = json::array();
         for (size_t i = 0; i < session_rows.size(); ++i)
-            sessions.push_back(rowToCamelSession(session_rows, i));
+            sessions.push_back(row_to_camel_session(session_rows, i));
         body["sessions"] = sessions;
         json stats30m = json::array();
         for (size_t i = 0; i < stats_rows.size(); ++i)
-            stats30m.push_back(rowToCamelStat(stats_rows, i));
+            stats30m.push_back(row_to_camel_stat(stats_rows, i));
         body["stats30m"] = stats30m;
         body["embed"] = true;
 
         if (runSleepJobSync(app.config.agent.base_url, "/sleep/v1/reports", body, agent_result, error)
             != AgentClientResult::success)
         {
-            LOG_WARN("sleep weekly report job failed ({}): {}", job.periodStart, error);
+            WLOG_WARN("sleep weekly report job failed ({}): {}", job.periodStart, error);
             return;
         }
 
@@ -1312,7 +1517,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("sleep_report weekly write failed: {}", e.what());
+            WLOG_WARN("sleep_report weekly write failed: {}", e.what());
         }
 
         {
@@ -1320,7 +1525,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
             if (!generateAndPersistInsights(
                     client, app.config.agent.base_url, job.userId, "sleep_report", job.periodStart, insight_error))
             {
-                LOG_WARN("insight generation (sleep_report weekly) failed: {}", insight_error);
+                WLOG_WARN("insight generation (sleep_report weekly) failed: {}", insight_error);
             }
         }
     }

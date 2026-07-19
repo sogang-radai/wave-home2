@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../../../db/database.h"
 #include <json/json.h>
 
 #include "core/coredefs.h"
@@ -16,9 +16,9 @@ namespace v1 {
 class InsightsStore
 {
 public:
-    explicit InsightsStore(drogon::orm::DbClientPtr client);
+    explicit InsightsStore(db::DbClientPtr client);
 
-    static std::string referenceDate(drogon::orm::DbClientPtr client);
+    static std::string reference_date(db::DbClientPtr client);
 
     Json::Value list(
         int64_t user_id,
@@ -30,20 +30,16 @@ public:
 
     Json::Value getById(int64_t user_id, int64_t insight_id) const;
 
-    /** dashboard_banner → { headline, body } or null */
     Json::Value dashboardDailyMessage(int64_t user_id) const;
 
-    /** approved=1 로 전환. rule_json_override 가 있으면 rule_json 컬럼도 함께 덮어쓴다(생성된 rule id 기록용). */
     bool markApplied(int64_t user_id, int64_t insight_id, const std::optional<Json::Value>& rule_json_override) const;
-
-    /** approved=0 으로 되돌린다 (apply 취소). */
     bool markCanceled(int64_t user_id, int64_t insight_id) const;
 
 private:
-    drogon::orm::DbClientPtr m_client;
+    db::DbClientPtr m_client;
 
     Json::Value rowToJson(const drogon::orm::Row& row) const;
-    static Json::Value parseJsonColumn(const drogon::orm::Field& field);
+    static Json::Value parse_json_column(const drogon::orm::Field& field);
 };
 
 } // namespace v1

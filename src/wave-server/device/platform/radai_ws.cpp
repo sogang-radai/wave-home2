@@ -27,7 +27,7 @@ DEVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    json makeQueryError(int code, std::string_view message = {})
+    json make_query_error(int code, std::string_view message = {})
     {
         json out = json::object();
         out["code"] = code;
@@ -36,12 +36,12 @@ namespace
         return out;
     }
 
-    bool isControlType(uint16_t rawType)
+    bool is_control_type(uint16_t rawType)
     {
         return rawType >= 0xF000;
     }
 
-    float computeRmsLevel(const int16_t* samples, size_t count)
+    float compute_rms_level(const int16_t* samples, size_t count)
     {
         if (count == 0)
             return 0.0f;
@@ -56,7 +56,7 @@ namespace
         return static_cast<float>(std::min(1.0, rms * 4.0));
     }
 
-    std::string connectionStateToString(RadaiWs::ConnectionState state)
+    std::string connection_state_to_string(RadaiWs::ConnectionState state)
     {
         switch (state)
         {
@@ -68,7 +68,7 @@ namespace
         }
     }
 
-    bool parseTargetType(std::string_view name, wsp::Type& outType)
+    bool parse_target_type(std::string_view name, wsp::Type& outType)
     {
         if (name == "mic_pcm")
             outType = wsp::Type::MicPCM;
@@ -76,7 +76,7 @@ namespace
             outType = wsp::Type::MicComp;
         else if (name == "ambient_light" || name == "lux")
             outType = wsp::Type::AmbientLight;
-        else if (name == "temperature")
+        else if (name == "temperature" || name == "temp")
             outType = wsp::Type::Temperature;
         else if (name == "humidity")
             outType = wsp::Type::Humidity;
@@ -87,17 +87,17 @@ namespace
         return true;
     }
 
-    bool ioLoopShouldRun(const RadaiWs& owner)
+    bool io_loop_should_run(const RadaiWs& owner)
     {
         return owner.isIoActive();
     }
 
-    void copyIrTimingFrame(const IrTimingFrame& src, IrTimingFrame& dst)
+    void copy_ir_timing_frame(const IrTimingFrame& src, IrTimingFrame& dst)
     {
         dst = src;
     }
 
-    void validateRadaiWsConfig(const json& config)
+    void validate_radai_ws_config(const json& config)
     {
         if (config.at("class").get<std::string>() != RadaiWs::kClass)
             throw std::invalid_argument("wave_station config field 'class' must be 'wave_station'");
@@ -116,7 +116,7 @@ namespace
             throw std::invalid_argument("wave_station interface field 'mac' must be a string");
     }
 
-    RadaiWs::InterfaceConfig parseInterfaceConfig(const json& config)
+    RadaiWs::InterfaceConfig parse_interface_config(const json& config)
     {
         const auto& iface = config.at("interface");
         RadaiWs::InterfaceConfig out;
@@ -126,7 +126,7 @@ namespace
         return out;
     }
 
-    RadaiWs::AudioConfig parseAudioConfig(const json& config)
+    RadaiWs::AudioConfig parse_audio_config(const json& config)
     {
         RadaiWs::AudioConfig out;
         if (!config.contains("settings") || !config["settings"].is_object())
@@ -147,10 +147,28 @@ namespace
             out.preferCompressedMic = settings["prefer_compressed_mic"].get<bool>();
         if (settings.contains("prefer_compressed_spk"))
             out.preferCompressedSpk = settings["prefer_compressed_spk"].get<bool>();
+        if (settings.contains("mic_gain") && settings["mic_gain"].is_number())
+        {
+            const float gain = settings["mic_gain"].get<float>();
+            if (std::isfinite(gain))
+                out.micGain = std::clamp(gain, 0.1f, 8.0f);
+        }
         return out;
     }
 
-    RadaiWs::SessionConfig parseSessionConfig(const json& config)
+    void apply_pcm_gain(std::vector<int16_t>& samples, float gain)
+    {
+        if (samples.empty() || std::fabs(gain - 1.0f) < 1e-6f)
+            return;
+        for (auto& sample : samples)
+        {
+            const float scaled = static_cast<float>(sample) * gain;
+            const float clipped = std::max(-32768.0f, std::min(32767.0f, scaled));
+            sample = static_cast<int16_t>(clipped);
+        }
+    }
+
+    RadaiWs::SessionConfig parse_session_config(const json& config)
     {
         RadaiWs::SessionConfig out;
         if (!config.contains("settings") || !config["settings"].is_object())
@@ -170,7 +188,7 @@ namespace
         return out;
     }
 
-    RadaiWs::Capabilities parseCapabilities(const json& config)
+    RadaiWs::Capabilities parse_capabilities(const json& config)
     {
         RadaiWs::Capabilities out;
         if (!config.contains("settings") || !config["settings"].is_object())
@@ -202,7 +220,7 @@ namespace
         return out;
     }
 
-    std::string defaultIrListPath()
+    std::string default_ir_list_path()
     {
 #ifdef WAVE_SOURCE_DIR
         return std::string(WAVE_SOURCE_DIR) + "/bin/device/ir_list.json";
@@ -211,7 +229,7 @@ namespace
 #endif
     }
 
-    double timingDistance(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b)
+    double timing_distance(const std::vector<uint16_t>& a, const std::vector<uint16_t>& b)
     {
         const size_t count = std::min(a.size(), b.size());
         if (count == 0)
@@ -225,7 +243,7 @@ namespace
         return sum / static_cast<double>(count);
     }
 
-    int verifyMac(const std::string& expected, const std::string& host)
+    int verify_mac(const std::string& expected, const std::string& host)
     {
         if (expected.empty())
             return 0;
@@ -233,15 +251,15 @@ namespace
         std::string actual;
         if (!net::resolveMacForIp(host, actual))
         {
-            LOG_WARN("RadaiWs: could not resolve MAC for {} (skipping check)", host);
+            WLOG_WARN("RadaiWs: could not resolve MAC for {} (skipping check)", host);
             return 0;
         }
         if (!net::macEquals(expected, actual))
         {
-            LOG_ERROR("RadaiWs: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
+            WLOG_ERROR("RadaiWs: MAC mismatch for {} (expected {}, got {})", host, expected, actual);
             return -7;
         }
-        LOG_INFO("RadaiWs: MAC verified for {} ({})", host, actual);
+        WLOG_INFO("RadaiWs: MAC verified for {} ({})", host, actual);
         return 0;
     }
 
@@ -299,7 +317,7 @@ namespace
                 0);
             if (decoded < 0)
             {
-                LOG_WARN("RadaiWs: opus_decode failed ({})", decoded);
+                WLOG_WARN("RadaiWs: opus_decode failed ({})", decoded);
                 return false;
             }
 
@@ -324,7 +342,7 @@ namespace
                 static_cast<int>(outEncoded.size()));
             if (encoded < 0)
             {
-                LOG_WARN("RadaiWs: opus_encode failed ({})", encoded);
+                WLOG_WARN("RadaiWs: opus_encode failed ({})", encoded);
                 return false;
             }
 
@@ -340,7 +358,7 @@ namespace
     };
 #endif
 
-    bool tryExtractWspPacket(std::vector<uint8_t>& streamBuf, std::vector<uint8_t>& outPacket)
+    bool try_extract_wsp_packet(std::vector<uint8_t>& streamBuf, std::vector<uint8_t>& outPacket)
     {
         while (streamBuf.size() >= 4)
         {
@@ -359,7 +377,7 @@ namespace
         std::memcpy(&payloadSize, streamBuf.data() + 8, sizeof(payloadSize));
         if (payloadSize > wsp::kMaxPayload)
         {
-            LOG_ERROR("RadaiWs: invalid payloadSize {} — resyncing", payloadSize);
+            WLOG_ERROR("RadaiWs: invalid payloadSize {} — resyncing", payloadSize);
             streamBuf.erase(streamBuf.begin());
             return false;
         }
@@ -418,7 +436,7 @@ struct RadaiWs::Impl
         }
         catch (const std::exception& ex)
         {
-            LOG_WARN("RadaiWs: Opus init failed ({}); compressed audio disabled", ex.what());
+            WLOG_WARN("RadaiWs: Opus init failed ({}); compressed audio disabled", ex.what());
             m_opus.reset();
         }
 #endif
@@ -576,7 +594,7 @@ struct RadaiWs::Impl
         const bool waitForAck = waitAck && !onIoThread();
         if (waitAck && !waitForAck)
         {
-            LOG_WARN(
+            WLOG_WARN(
                 "RadaiWs: sending type=0x{:04X} without Ack wait (called from IO thread)",
                 static_cast<unsigned>(static_cast<uint16_t>(type)));
         }
@@ -717,7 +735,7 @@ struct RadaiWs::Impl
         std::ifstream in(m_irListPath);
         if (!in)
         {
-            LOG_ERROR("RadaiWs: cannot open IR list {}", m_irListPath);
+            WLOG_ERROR("RadaiWs: cannot open IR list {}", m_irListPath);
             return false;
         }
 
@@ -725,7 +743,7 @@ struct RadaiWs::Impl
         in >> root;
         if (!root.contains("commands") || !root["commands"].is_array())
         {
-            LOG_ERROR("RadaiWs: IR list missing commands array ({})", m_irListPath);
+            WLOG_ERROR("RadaiWs: IR list missing commands array ({})", m_irListPath);
             return false;
         }
 
@@ -745,7 +763,7 @@ struct RadaiWs::Impl
             return !outRawUs.empty();
         }
 
-        LOG_ERROR("RadaiWs: IR command '{}' not found in {}", commandId, m_irListPath);
+        WLOG_ERROR("RadaiWs: IR command '{}' not found in {}", commandId, m_irListPath);
         return false;
     }
 
@@ -777,7 +795,7 @@ struct RadaiWs::Impl
                     known.push_back(value.get<uint16_t>());
             }
 
-            const double distance = timingDistance(timings, known);
+            const double distance = timing_distance(timings, known);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
@@ -828,6 +846,16 @@ struct RadaiWs::Impl
         return true;
     }
 
+    bool popMicFrame(AudioFrame& outFrame)
+    {
+        std::lock_guard<std::mutex> lock(m_micMutex);
+        if (m_micFrames.empty())
+            return false;
+        outFrame = std::move(m_micFrames.front());
+        m_micFrames.pop_front();
+        return true;
+    }
+
     void handlePacket(const std::vector<uint8_t>& packet)
     {
         if (packet.size() < wsp::kHeaderSize)
@@ -843,7 +871,7 @@ struct RadaiWs::Impl
         const uint32_t payloadSize = *reinterpret_cast<const uint32_t*>(packet.data() + 8);
         const uint8_t* payload = packet.data() + wsp::kHeaderSize;
 
-        if (isControlType(rawType))
+        if (is_control_type(rawType))
             handleControl(rawType, payload, payloadSize);
         else
             handleData(rawType, packet[5], payload, payloadSize);
@@ -889,7 +917,7 @@ struct RadaiWs::Impl
             if (msgLen > 0)
                 message.assign(reinterpret_cast<const char*>(payload + sizeof(body)), msgLen);
 
-            LOG_WARN("RadaiWs: device error requestId={} code={} msg={}", body.requestId, body.code, message);
+            WLOG_WARN("RadaiWs: device error requestId={} code={} msg={}", body.requestId, body.code, message);
 
             std::shared_ptr<std::promise<int>> prom;
             {
@@ -976,6 +1004,14 @@ struct RadaiWs::Impl
                 std::memcpy(&sensor, body, sizeof(sensor));
                 m_owner.onSensor(type, sensor);
             }
+            else
+            {
+                WLOG_WARN(
+                    "RadaiWs: sensor type=0x{:04X} payload too small (bodySize={}, need {})",
+                    rawType,
+                    bodySize,
+                    wsp::kSensorBodySize);
+            }
             break;
 
         default:
@@ -1032,7 +1068,7 @@ struct RadaiWs::Impl
 
     void openConnection()
     {
-        if (!m_work || !ioLoopShouldRun(m_owner))
+        if (!m_work || !io_loop_should_run(m_owner))
             return;
 
         m_connecting.store(true);
@@ -1056,7 +1092,7 @@ struct RadaiWs::Impl
             m_socket.cancel(cancelEc);
             m_socket.close(cancelEc);
             m_connecting.store(false);
-            LOG_WARN("RadaiWs connect timed out after {} ms", m_session.connectTimeoutMs);
+            WLOG_WARN("RadaiWs connect timed out after {} ms", m_session.connectTimeoutMs);
             if (!failInitialConnectIfPending())
                 scheduleReconnect("connect_timeout");
         });
@@ -1075,7 +1111,7 @@ struct RadaiWs::Impl
                 if (resolveEc)
                 {
                     m_connecting.store(false);
-                    LOG_ERROR("RadaiWs resolve failed: {}", resolveEc.message());
+                    WLOG_ERROR("RadaiWs resolve failed: {}", resolveEc.message());
                     if (!failInitialConnectIfPending())
                         scheduleReconnect("resolve_failed");
                     return;
@@ -1108,7 +1144,7 @@ struct RadaiWs::Impl
                         m_connecting.store(false);
                         if (m_reconnectAttempts > 0)
                         {
-                            LOG_INFO(
+                            WLOG_INFO(
                                 "RadaiWs reconnected to {}:{} (backoff reset)",
                                 endpoint.address().to_string(),
                                 endpoint.port());
@@ -1117,7 +1153,7 @@ struct RadaiWs::Impl
                         m_reconnectAttempts = 0;
                         m_streamBuf.clear();
 
-                        LOG_INFO(
+                        WLOG_INFO(
                             "RadaiWs connected to {}:{}",
                             endpoint.address().to_string(),
                             endpoint.port());
@@ -1132,7 +1168,7 @@ struct RadaiWs::Impl
 
     void scheduleReconnect(const char* reason)
     {
-        if (!m_work || !ioLoopShouldRun(m_owner))
+        if (!m_work || !io_loop_should_run(m_owner))
             return;
 
         m_connected.store(false);
@@ -1149,15 +1185,15 @@ struct RadaiWs::Impl
         m_reconnectDelayMs = std::min(m_reconnectDelayMs * 2u, m_session.reconnectMaxMs);
         ++m_reconnectAttempts;
 
-        LOG_WARN("RadaiWs disconnected ({}) — retry #{} in {} ms", reason, m_reconnectAttempts, delay);
+        WLOG_WARN("RadaiWs disconnected ({}) — retry #{} in {} ms", reason, m_reconnectAttempts, delay);
 
         m_reconnectTimer.expires_after(std::chrono::milliseconds(delay));
         m_reconnectTimer.async_wait([this, delay](const std::error_code& timerEc)
         {
-            if (timerEc || !m_work || !ioLoopShouldRun(m_owner))
+            if (timerEc || !m_work || !io_loop_should_run(m_owner))
                 return;
 
-            LOG_INFO("RadaiWs reconnecting (delay was {} ms)", delay);
+            WLOG_INFO("RadaiWs reconnecting (delay was {} ms)", delay);
             openConnection();
         });
     }
@@ -1173,7 +1209,7 @@ struct RadaiWs::Impl
 
                 if (ec)
                 {
-                    LOG_ERROR("RadaiWs read failed: {}", ec.message());
+                    WLOG_ERROR("RadaiWs read failed: {}", ec.message());
                     scheduleReconnect("read_failed");
                     return;
                 }
@@ -1186,7 +1222,7 @@ struct RadaiWs::Impl
                 while (true)
                 {
                     std::vector<uint8_t> packet;
-                    if (!tryExtractWspPacket(m_streamBuf, packet))
+                    if (!try_extract_wsp_packet(m_streamBuf, packet))
                         break;
                     handlePacket(packet);
                 }
@@ -1266,13 +1302,13 @@ bool RadaiWs::isIoActive() const
 
 int RadaiWs::init(const json& config)
 {
-    validateRadaiWsConfig(config);
+    validate_radai_ws_config(config);
     loadBaseConfig(config);
 
-    m_interface = parseInterfaceConfig(config);
-    m_audio = parseAudioConfig(config);
-    m_session = parseSessionConfig(config);
-    m_capabilities = parseCapabilities(config);
+    m_interface = parse_interface_config(config);
+    m_audio = parse_audio_config(config);
+    m_session = parse_session_config(config);
+    m_capabilities = parse_capabilities(config);
 
     if (!isEnabled())
         return -2;
@@ -1285,7 +1321,7 @@ int RadaiWs::init(const json& config)
 
     m_state = DeviceState::Initializing;
 
-    const int macRc = verifyMac(m_interface.mac, m_interface.host);
+    const int macRc = verify_mac(m_interface.mac, m_interface.host);
     if (macRc != 0)
     {
         m_state = DeviceState::Stopped;
@@ -1297,7 +1333,7 @@ int RadaiWs::init(const json& config)
     if (!m_errorJson.contains("-7"))
         m_errorJson["-7"] = "MAC mismatch";
 
-    std::string irListPath = defaultIrListPath();
+    std::string irListPath = default_ir_list_path();
     if (config.contains("settings") && config["settings"].is_object())
         irListPath = config["settings"].value("ir_list_path", irListPath);
 
@@ -1315,7 +1351,7 @@ int RadaiWs::init(const json& config)
     }
 
     m_state = DeviceState::Running;
-    LOG_INFO("RadaiWs initialized for {}:{}", m_interface.host, m_interface.port);
+    WLOG_INFO("RadaiWs initialized for {}:{}", m_interface.host, m_interface.port);
     return 0;
 }
 
@@ -1361,7 +1397,7 @@ json RadaiWs::query(std::string_view name, const json& params)
             {"host", m_interface.host},
             {"port", m_interface.port},
             {"connected", m_impl->isConnected()},
-            {"state", connectionStateToString(m_connectionState)},
+            {"state", connection_state_to_string(m_connectionState)},
             {"sample_rate", m_audio.sampleRate},
             {"channels", m_audio.channels},
             {"frame_duration_ms", m_audio.frameDurationMs},
@@ -1379,7 +1415,7 @@ json RadaiWs::query(std::string_view name, const json& params)
 
         return json{
             {"connected", m_impl->isConnected()},
-            {"state", connectionStateToString(m_connectionState)},
+            {"state", connection_state_to_string(m_connectionState)},
             {"mic_queue", m_impl->getMicFrameCount()},
             {"mic_level", m_micLevel},
             {"subscriptions", {
@@ -1425,7 +1461,7 @@ json RadaiWs::query(std::string_view name, const json& params)
         return out;
     }
 
-    return makeQueryError(-1, "unknown query");
+    return make_query_error(-1, "unknown query");
 }
 
 std::future<json> RadaiWs::queryAsync(std::string_view name, const json& params, uint32_t timeout_ms)
@@ -1459,10 +1495,17 @@ int RadaiWs::invoke(std::string_view name, const json& params)
             return -1;
 
         wsp::Type targetType {};
-        if (!parseTargetType(params["target"].get<std::string>(), targetType))
+        if (!parse_target_type(params["target"].get<std::string>(), targetType))
             return -1;
 
-        const uint16_t intervalMs = static_cast<uint16_t>(params.value("intervalMs", 0));
+        const bool isSensor =
+            targetType == wsp::Type::AmbientLight
+            || targetType == wsp::Type::Temperature
+            || targetType == wsp::Type::Humidity;
+
+        // Sensors default to 1000ms; audio/IR keep 0 (= max rate).
+        const uint16_t defaultIntervalMs = isSensor ? m_subscriptions.sensorIntervalMs : 0;
+        const uint16_t intervalMs = static_cast<uint16_t>(params.value("intervalMs", defaultIntervalMs));
         uint32_t options = wsp::SubscribeOptionFlag_None;
         if (params.value("compressed", false))
             options |= wsp::SubscribeOptionFlag_CompressedBits;
@@ -1478,7 +1521,7 @@ int RadaiWs::invoke(std::string_view name, const json& params)
             return -1;
 
         wsp::Type targetType {};
-        if (!parseTargetType(params["target"].get<std::string>(), targetType))
+        if (!parse_target_type(params["target"].get<std::string>(), targetType))
             return -1;
 
         return unsubscribe(targetType);
@@ -1486,7 +1529,7 @@ int RadaiWs::invoke(std::string_view name, const json& params)
 
     if (name == "speak")
     {
-        LOG_WARN("RadaiWs: speak action not implemented yet");
+        WLOG_WARN("RadaiWs: speak action not implemented yet");
         return -1;
     }
 
@@ -1535,6 +1578,12 @@ std::future<void> RadaiWs::getLatestFrameAsync(AudioFrame& outFrame)
     });
 }
 
+bool RadaiWs::popFrame(AudioFrame& outFrame)
+{
+    ensureMicSubscription();
+    return m_impl->popMicFrame(outFrame);
+}
+
 AudioFormat RadaiWs::getSinkFormat() const
 {
     return getSourceFormat();
@@ -1548,8 +1597,28 @@ bool RadaiWs::playFrame(const AudioFrame& frame)
 #ifdef WAVE_HAS_OPUS
     if (m_audio.preferCompressedSpk && m_capabilities.speakerOpus)
     {
+        const size_t frameSamples =
+            static_cast<size_t>(m_audio.sampleRate) * m_audio.frameDurationMs / 1000 * m_audio.channels;
+        if (frameSamples == 0)
+            return false;
+
+        const int16_t* pcm = frame.samples.data();
+        size_t pcmCount = frame.samples.size();
+        std::vector<int16_t> padded;
+        if (pcmCount != frameSamples)
+        {
+            // Opus requires an exact frame size; pad/truncate to match.
+            padded.assign(frameSamples, 0);
+            std::memcpy(
+                padded.data(),
+                frame.samples.data(),
+                std::min(pcmCount, frameSamples) * sizeof(int16_t));
+            pcm = padded.data();
+            pcmCount = frameSamples;
+        }
+
         std::vector<uint8_t> encoded;
-        if (!m_impl->encodeOpus(frame.samples.data(), frame.samples.size(), encoded, false))
+        if (!m_impl->encodeOpus(pcm, pcmCount, encoded, false))
             return false;
         return sendSpkOpus(encoded.data(), encoded.size(), false) == 0;
     }
@@ -1571,12 +1640,49 @@ std::future<bool> RadaiWs::playFrameAsync(const AudioFrame& frame)
 
 void RadaiWs::stopPlayback()
 {
+    const size_t frameSamples =
+        static_cast<size_t>(m_audio.sampleRate) * m_audio.frameDurationMs / 1000 * m_audio.channels;
+    std::vector<int16_t> silence(frameSamples > 0 ? frameSamples : 1, 0);
+
+#ifdef WAVE_HAS_OPUS
+    if (m_audio.preferCompressedSpk && m_capabilities.speakerOpus)
+    {
+        std::vector<uint8_t> encoded;
+        if (!m_impl->encodeOpus(silence.data(), silence.size(), encoded, false))
+            return;
+
+        wsp::AudioCompBody body {};
+        body.codec = static_cast<uint8_t>(wsp::AudioCodec::Opus);
+        body.sampleRate = m_audio.sampleRate;
+        body.channels = m_audio.channels;
+        body.frameDurationMs = m_audio.frameDurationMs;
+        body.encodedSize = static_cast<uint16_t>(encoded.size());
+        (void)m_impl->sendData(
+            wsp::Type::SpkComp,
+            wsp::HeaderFlag_LastFrameBit,
+            &body,
+            sizeof(body),
+            encoded.data(),
+            encoded.size());
+        return;
+    }
+#endif
+
+    if (!m_capabilities.speakerPcm)
+        return;
+
     wsp::AudioPCMBody body {};
     body.sampleRate = m_audio.sampleRate;
     body.channels = m_audio.channels;
     body.bitsPerSample = m_audio.sampleSize;
-    body.sampleCount = 0;
-    (void)m_impl->sendData(wsp::Type::SpkPCM, wsp::HeaderFlag_LastFrameBit, &body, sizeof(body), nullptr, 0);
+    body.sampleCount = static_cast<uint16_t>(silence.size() / m_audio.channels);
+    (void)m_impl->sendData(
+        wsp::Type::SpkPCM,
+        wsp::HeaderFlag_LastFrameBit,
+        &body,
+        sizeof(body),
+        silence.data(),
+        silence.size() * sizeof(int16_t));
 }
 
 int RadaiWs::transmitTimings(
@@ -1610,7 +1716,7 @@ bool RadaiWs::getLatestIr(IrTimingFrame& outFrame)
     if (!m_lastIr.valid)
         return false;
 
-    copyIrTimingFrame(m_lastIr, outFrame);
+    copy_ir_timing_frame(m_lastIr, outFrame);
     return true;
 }
 
@@ -1632,7 +1738,7 @@ bool RadaiWs::waitForIr(IrTimingFrame& outFrame, uint32_t timeoutMs)
             std::lock_guard<std::mutex> lock(m_mutex);
             if (m_lastIr.valid && m_irGeneration != generationBefore)
             {
-                copyIrTimingFrame(m_lastIr, outFrame);
+                copy_ir_timing_frame(m_lastIr, outFrame);
                 return true;
             }
         }
@@ -1827,7 +1933,8 @@ void RadaiWs::onMicPcm(const wsp::AudioPCMBody& body, const uint8_t* pcmData, ui
     frame.samples.resize(sampleCount);
     std::memcpy(frame.samples.data(), pcmData, pcmBytes);
 
-    updateMicLevel(computeRmsLevel(frame.samples.data(), sampleCount));
+    apply_pcm_gain(frame.samples, getMicGain());
+    updateMicLevel(compute_rms_level(frame.samples.data(), frame.samples.size()));
     enqueueMicFrame(std::move(frame));
 }
 
@@ -1845,20 +1952,34 @@ void RadaiWs::onMicComp(
     AudioFrame frame;
     frame.timestamp = timestampUs;
     frame.samples = std::move(pcm);
-    updateMicLevel(computeRmsLevel(frame.samples.data(), frame.samples.size()));
+    apply_pcm_gain(frame.samples, getMicGain());
+    updateMicLevel(compute_rms_level(frame.samples.data(), frame.samples.size()));
     enqueueMicFrame(std::move(frame));
 #else
     (void)body;
     (void)encodedData;
     (void)timestampUs;
     (void)keyFrame;
-    LOG_WARN("RadaiWs: received MicComp but Opus support is not compiled in");
+    WLOG_WARN("RadaiWs: received MicComp but Opus support is not compiled in");
 #endif
 }
 
 void RadaiWs::enqueueMicFrame(AudioFrame frame)
 {
     m_impl->enqueueMicFrame(std::move(frame));
+}
+
+void RadaiWs::setMicGain(float gain)
+{
+    if (!std::isfinite(gain))
+        return;
+    const float clamped = std::clamp(gain, 0.1f, 8.0f);
+    m_audio.micGain = clamped;
+}
+
+float RadaiWs::getMicGain() const
+{
+    return m_audio.micGain;
 }
 
 void RadaiWs::updateMicLevel(float level)
@@ -1902,8 +2023,24 @@ void RadaiWs::onClientConnected()
 
 void RadaiWs::onSensor(wsp::Type type, const wsp::SensorBody& sensor)
 {
+    const char* name = "unknown";
+    switch (type)
+    {
+    case wsp::Type::AmbientLight: name = "ambient_light"; break;
+    case wsp::Type::Temperature: name = "temperature"; break;
+    case wsp::Type::Humidity: name = "humidity"; break;
+    default: break;
+    }
+
     if (sensor.quality == 0)
+    {
+        WLOG_WARN(
+            "RadaiWs: sensor {} discarded (quality=0, unit={}, value={})",
+            name,
+            static_cast<unsigned>(sensor.unit),
+            sensor.value);
         return;
+    }
 
     EnvSnapshot env;
     {
@@ -1949,11 +2086,11 @@ void RadaiWs::onIrReceived(const wsp::IrReceiveBody& body, const std::vector<uin
     }
 
     if (!snapshot.matchedCommandId.empty())
-        LOG_INFO("RadaiWs: IR received matched command '{}'", snapshot.matchedCommandId);
+        WLOG_INFO("RadaiWs: IR received matched command '{}'", snapshot.matchedCommandId);
     else if (snapshot.overflow)
-        LOG_WARN("RadaiWs: IR received with overflow ({} pulses)", snapshot.timingsUs.size());
+        WLOG_WARN("RadaiWs: IR received with overflow ({} pulses)", snapshot.timingsUs.size());
     else
-        LOG_INFO("RadaiWs: IR received ({} pulses, no ir_list match)", snapshot.timingsUs.size());
+        WLOG_INFO("RadaiWs: IR received ({} pulses, no ir_list match)", snapshot.timingsUs.size());
 
 #ifndef WAVE_STANDALONE_DEVICE_TEST
     service::notifyIrReceived(dev::deviceIDToString(getId()), timings);

@@ -1,9 +1,13 @@
 #include "goals_controller.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
 #include "../../../app/app_state.h"
 #include "../../../core/json.h"
+#include "../../../demo/demo_device_backend.h"
+#include "../../../demo/demo_goals.h"
+#include "../../../demo/demo_runtime_id.h"
 #include "../../../service/goal_coaching_generator.h"
 #include "../../../service/rule_store.h"
 #include "../internal/schedule_tasks_internal_store.h"
@@ -19,25 +23,102 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, drogon::orm::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
         return settings.resolveActiveUserId(sessions, req);
     }
 
-    ws::json jsonFromRequest(const Json::Value& value)
+    ws::json json_from_request(const Json::Value& value)
     {
         Json::StreamWriterBuilder builder;
         builder["indentation"] = "";
         std::istringstream stream(Json::writeString(builder, value));
         return ws::json::parse(stream);
     }
+
+    drogon::HttpResponsePtr json_response(
+        const HttpRequestPtr& req,
+        const Json::Value& body,
+        const std::string& runtime_id,
+        drogon::HttpStatusCode status = drogon::k200OK)
+    {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        resp->setStatusCode(status);
+        if (!runtime_id.empty())
+            attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
+        return resp;
+    }
+
+    bool starts_with(const std::string& raw, const char* prefix)
+    {
+        const size_t n = std::char_traits<char>::length(prefix);
+        return raw.size() >= n && raw.compare(0, n, prefix) == 0;
+    }
+
+    /**
+     * agent_client 오류는 두 형태다.
+     * 1) 알려진 코드 접두: "INVALID_GOAL: …", "GENERATION_FAILED: …"
+     * 2) 자유 텍스트: "Failed to connect to agent at 127.0.0.1:8512"
+     *    → 콜론으로 무조건 자르면 포트(8512)만 message 로 남는다.
+     */
+    void split_agent_error(const std::string& raw, std::string& code, std::string& message)
+    {
+        static const char* kKnownCodes[] = {
+            "INVALID_GOAL",
+            "GENERATION_FAILED",
+            "AGENT_UNAVAILABLE",
+            "NOT_FOUND",
+            "JOB_ALREADY_RUNNING",
+        };
+        for (const char* known : kKnownCodes)
+        {
+            const std::string prefix = std::string(known) + ":";
+            if (!starts_with(raw, prefix.c_str()))
+                continue;
+            code = known;
+            message = raw.substr(prefix.size());
+            while (!message.empty() && (message[0] == ' ' || message[0] == '\t'))
+                message.erase(message.begin());
+            if (message.empty())
+                message = "목표 코칭 생성에 실패했습니다.";
+            return;
+        }
+
+        if (raw.find("Failed to connect to agent") != std::string::npos
+            || raw.find("DNS resolve failed") != std::string::npos
+            || raw.find("Agent HTTP error") != std::string::npos)
+        {
+            code = "AGENT_UNAVAILABLE";
+            message = "목표 코칭 에이전트에 연결하지 못했어요. 데모 에이전트(8512)가 실행 중인지 확인해 주세요.";
+            return;
+        }
+
+        code = "AGENT_UNAVAILABLE";
+        message = raw.empty() ? "목표 코칭 생성에 실패했습니다." : raw;
+    }
+
+    void respond_coaching_error(const HttpResponseCallback& callback, const std::string& raw_error)
+    {
+        std::string code;
+        std::string message;
+        split_agent_error(raw_error, code, message);
+        if (code == "INVALID_GOAL")
+        {
+            respondError(callback, 422, "INVALID_GOAL", message);
+            return;
+        }
+        if (code == "NOT_FOUND" || raw_error.find("찾을") != std::string::npos)
+        {
+            respondError(callback, 404, "NOT_FOUND", message.empty() ? raw_error : message);
+            return;
+        }
+        respondError(callback, 502, code.empty() ? "AGENT_UNAVAILABLE" : code, message);
+    }
 }
 
-void GoalsController::createGoal(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void GoalsController::createGoal(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -46,7 +127,7 @@ void GoalsController::createGoal(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -58,6 +139,27 @@ void GoalsController::createGoal(
         || !json->isMember("category") || !(*json)["category"].isString())
     {
         respondError(callback, 400, "INVALID_BODY", "title, category 가 필요합니다.");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
+        std::string error;
+        std::string field;
+        const auto created = demoCreateGoal(
+            runtime_id,
+            *user_id,
+            (*json)["title"].asString(),
+            (*json)["category"].asString(),
+            error,
+            field);
+        if (!created)
+        {
+            respondError(callback, 400, "INVALID_REQUEST", error, field);
+            return;
+        }
+        callback(json_response(req, *created, runtime_id, drogon::k201Created));
         return;
     }
 
@@ -79,9 +181,7 @@ void GoalsController::createGoal(
     callback(resp);
 }
 
-void GoalsController::listGoals(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void GoalsController::listGoals(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -90,7 +190,7 @@ void GoalsController::listGoals(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -98,15 +198,22 @@ void GoalsController::listGoals(
     }
 
     const auto status = req->getParameter("status");
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        callback(json_response(
+            req,
+            demoListGoals(runtime_id, *user_id, status.empty() ? std::nullopt : std::optional<std::string>(status)),
+            runtime_id));
+        return;
+    }
+
     GoalsStore store(client);
     callback(drogon::HttpResponse::newHttpJsonResponse(
         store.list(*user_id, status.empty() ? std::nullopt : std::optional<std::string>(status))));
 }
 
-void GoalsController::updateGoal(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t goalId)
+void GoalsController::updateGoal(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t goalId)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -115,7 +222,7 @@ void GoalsController::updateGoal(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -126,6 +233,22 @@ void GoalsController::updateGoal(
     if (!json || !json->isObject() || !json->isMember("status") || !(*json)["status"].isString())
     {
         respondError(callback, 400, "INVALID_BODY", "status 가 필요합니다.", "status");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
+        std::string error;
+        const auto updated =
+            demoUpdateGoalStatus(runtime_id, *user_id, goalId, (*json)["status"].asString(), error);
+        if (!updated)
+        {
+            const int status_code = error.find("찾을") != std::string::npos ? 404 : 400;
+            respondError(callback, status_code, status_code == 404 ? "NOT_FOUND" : "INVALID_REQUEST", error);
+            return;
+        }
+        callback(json_response(req, *updated, runtime_id));
         return;
     }
 
@@ -142,10 +265,7 @@ void GoalsController::updateGoal(
     callback(drogon::HttpResponse::newHttpJsonResponse(*updated));
 }
 
-void GoalsController::getCoaching(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    int64_t goalId)
+void GoalsController::getCoaching(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t goalId)
 {
     auto client = AppState::get().db();
     if (!client)
@@ -154,10 +274,29 @@ void GoalsController::getCoaching(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        std::string error;
+        const auto coaching = demoGetGoalCoaching(
+            runtime_id,
+            *user_id,
+            goalId,
+            AppState::get().config.agent.base_url,
+            error);
+        if (!coaching)
+        {
+            respond_coaching_error(callback, error);
+            return;
+        }
+        callback(json_response(req, *coaching, runtime_id));
         return;
     }
 
@@ -169,7 +308,7 @@ void GoalsController::getCoaching(
         return;
     }
 
-    const auto date = InsightsStore::referenceDate(client);
+    const auto date = InsightsStore::reference_date(client);
 
     if (const auto cached = service::readCachedGoalCoaching(client, goalId, date))
     {
@@ -189,16 +328,14 @@ void GoalsController::getCoaching(
         error);
     if (!generated)
     {
-        respondError(callback, 502, "AGENT_UNAVAILABLE", "목표 코칭 생성에 실패했습니다: " + error);
+        respond_coaching_error(callback, error);
         return;
     }
 
     callback(drogon::HttpResponse::newHttpJsonResponse(*generated));
 }
 
-void GoalsController::applyRecommendation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void GoalsController::applyRecommendation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     int64_t goalId,
     int64_t recommendationId)
 {
@@ -209,10 +346,43 @@ void GoalsController::applyRecommendation(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, nullptr);
+        std::string error;
+        std::string field;
+        const auto applied =
+            demoApplyGoalRecommendation(runtime_id, *user_id, goalId, recommendationId, error, field);
+        if (!applied)
+        {
+            int status = 400;
+            const char* code = "INVALID_REQUEST";
+            if (error.find("찾을") != std::string::npos)
+            {
+                status = 404;
+                code = "NOT_FOUND";
+            }
+            else if (error.find("적용 가능") != std::string::npos)
+            {
+                status = 409;
+                code = "NOT_ACTIONABLE";
+            }
+            else if (error.find("이미 적용") != std::string::npos)
+            {
+                status = 409;
+                code = "ALREADY_APPLIED";
+            }
+            respondError(callback, status, code, error, field);
+            return;
+        }
+        callback(json_response(req, *applied, runtime_id));
         return;
     }
 
@@ -301,7 +471,7 @@ void GoalsController::applyRecommendation(
         ws::json payload;
         try
         {
-            payload = jsonFromRequest(rule_json);
+            payload = json_from_request(rule_json);
         }
         catch (...)
         {
@@ -310,7 +480,7 @@ void GoalsController::applyRecommendation(
         }
 
         std::string validate_error;
-        if (!service::RuleStore::validatePayload(payload, validate_error))
+        if (!service::RuleStore::validate_payload(payload, validate_error))
         {
             respondError(callback, 400, "INVALID_RECOMMENDATION", validate_error);
             return;
@@ -349,9 +519,7 @@ void GoalsController::applyRecommendation(
     callback(drogon::HttpResponse::newHttpJsonResponse(response));
 }
 
-void GoalsController::updateRecommendation(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void GoalsController::updateRecommendation(const HttpRequestPtr& req, HttpResponseCallback&& callback,
     int64_t goalId,
     int64_t recommendationId)
 {
@@ -362,7 +530,7 @@ void GoalsController::updateRecommendation(
         return;
     }
 
-    const auto user_id = resolveUserId(req, client);
+    const auto user_id = resolve_user_id(req, client);
     if (!user_id)
     {
         respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -373,6 +541,21 @@ void GoalsController::updateRecommendation(
     if (!json || !json->isObject() || !json->isMember("approved") || !(*json)["approved"].isBool())
     {
         respondError(callback, 400, "INVALID_BODY", "approved 값이 필요합니다.", "approved");
+        return;
+    }
+
+    if (demoVirtualDevicesEnabled())
+    {
+        const auto runtime_id = resolveDemoRuntimeId(req, json.get());
+        std::string error;
+        const auto updated = demoUpdateGoalRecommendation(
+            runtime_id, *user_id, goalId, recommendationId, (*json)["approved"].asBool(), error);
+        if (!updated)
+        {
+            respondError(callback, 404, "NOT_FOUND", error);
+            return;
+        }
+        callback(json_response(req, *updated, runtime_id));
         return;
     }
 

@@ -1,12 +1,12 @@
 # Device Tool API
 
-호출 방향: **에이전트(:8501) → 백엔드(:8500)** · Base URL: `/internal/v1`
+호출 방향: **에이전트(:8502) → 백엔드 agent-api(:8501)** · Base URL: `/internal/v1`
 
 에이전트가 **장치 목록·기능(capability)·실시간 상태 조회**, **동작 실행**, **자동화 룰·예약 관리**를
 백엔드에 위임하는 API.
 
 > **프론트 룰 API와 분리**: 웹 UI 는 `/api/v1/iot/rules` (wave-server `RulesController`).
-> 이 문서는 **에이전트(:8501) → 백엔드(:8500)** 용 `/internal/v1/*` 이다. 스키마(Rule 모델)는 동일.
+> 이 문서는 **에이전트(:8502) → 백엔드 agent-api(:8501)** 용 `/internal/v1/*` 이다. 스키마(Rule 모델)는 동일.
 >
 > **구현 상태 (2026-07-08)**: wave-server 에는 `/api/v1/iot/*` 가 구현되어 있고, `/internal/v1/*` 는 **본 문서 스펙**이다.
 > 장치 조회·제어·쿼리·카메라 보조 API는 프론트 경로와 1:1 대응하며, HTTP 메서드만 다를 수 있다(예: 프론트 query 는 `GET`, internal 은 `POST`).
@@ -35,7 +35,7 @@ DB 배치 조회는 [db-query-api.md](./db-query-api.md), 벡터 검색은 [rag-
 
 ### 공통
 
-- Base URL: `/internal/v1` (`http://<backend>:8500/internal/v1`)
+- Base URL: `/internal/v1` (`http://<backend>:8501/internal/v1`)
 - **문서 표기**: 아래 섹션 제목·예시·요약은 모두 **full path** (`/internal/v1/...`) 를 쓴다.
 - Content-Type: `application/json`
 - 타임아웃 권장: 제어·조회 **5s**, 룰 CRUD **3s**
@@ -1251,7 +1251,7 @@ POST /internal/v1/tools/device.schedule.cancel
 import httpx
 from langchain_core.tools import tool
 
-BACKEND = "http://127.0.0.1:8500/internal/v1"
+BACKEND = "http://127.0.0.1:8501/internal/v1"
 
 @tool
 def list_devices(room_id: int | None = None, user_id: int = 1) -> dict:
@@ -1333,17 +1333,17 @@ llm_with_tools = llm.bind_tools([
 챗 SSE 매핑:
 
 ```text
-data: {"type":"tool.start","name":"control_device","args":{"roomId":2,"device":"조명","action":"on","params":{}}}
+data: {"type":"tool.start","id":"run-control-1","name":"control_device","args":{"roomId":2,"device":"조명","action":"on","params":{}}}
 
-data: {"type":"tool.end","name":"control_device","ok":true,"result":{"deviceName":"거실 조명","state":{"on":true}}}
+data: {"type":"tool.end","id":"run-control-1","name":"control_device","ok":true,"result":{"deviceName":"거실 조명","state":{"on":true}}}
 
-data: {"type":"tool.start","name":"list_schedules","args":{"roomId":3}}
+data: {"type":"tool.start","id":"run-list-1","name":"list_schedules","args":{"roomId":3}}
 
-data: {"type":"tool.end","name":"list_schedules","ok":true,"result":{"items":[...],"count":2}}
+data: {"type":"tool.end","id":"run-list-1","name":"list_schedules","ok":true,"result":{"items":[...],"count":2}}
 
-data: {"type":"tool.start","name":"cancel_schedule","args":{"ruleId":"rule_schedule_tv_off_once"}}
+data: {"type":"tool.start","id":"run-cancel-1","name":"cancel_schedule","args":{"ruleId":"rule_schedule_tv_off_once"}}
 
-data: {"type":"tool.end","name":"cancel_schedule","ok":true,"result":{"ruleId":"rule_schedule_tv_off_once","name":"30분 뒤 TV 끄기"}}
+data: {"type":"tool.end","id":"run-cancel-1","name":"cancel_schedule","ok":true,"result":{"ruleId":"rule_schedule_tv_off_once","name":"30분 뒤 TV 끄기"}}
 ```
 
 ---

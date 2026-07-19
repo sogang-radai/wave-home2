@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -19,21 +21,10 @@ public:
     ADD_METHOD_TO(DashboardController::activeGestureRules, "/api/v1/dashboard/gestures/active", drogon::Get);
     METHOD_LIST_END
 
-    void dailyMessage(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void currentState(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void upcomingAlarms(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    void activeGestureRules(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void dailyMessage(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void currentState(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void upcomingAlarms(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void activeGestureRules(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 } // namespace v1

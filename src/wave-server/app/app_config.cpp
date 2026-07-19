@@ -8,11 +8,11 @@ WAVE_NAMESPACE_BEGIN
 
 namespace
 {
-    bool applyConfigSection(const json& root, AppConfig& out)
+    bool apply_config_section(const json& root, AppConfig& out)
     {
         if (!root.contains("server") || !root["server"].is_object())
         {
-            LOG_ERROR("Config section is missing \"server\" object");
+            WLOG_ERROR("Config section is missing \"server\" object");
             return false;
         }
 
@@ -28,7 +28,6 @@ namespace
                 target = root[key].get<std::string>();
         };
 
-        assignPath("setting_path", out.setting_path);
         assignPath("device_list_path", out.device_list_path);
         assignPath("gesture_sets_path", out.gesture_sets_path);
         assignPath("sleep_model_path", out.sleep_model_path);
@@ -69,7 +68,7 @@ namespace
     }
 }
 
-bool AppConfig::loadFromFile(
+bool AppConfig::load_from_file(
     const std::filesystem::path& path,
     const std::string& profile,
     AppConfig& out)
@@ -77,7 +76,7 @@ bool AppConfig::loadFromFile(
     std::ifstream in(path);
     if (!in.is_open())
     {
-        LOG_ERROR("Failed to open config file: {}", path.string());
+        WLOG_ERROR("Failed to open config file: {}", path.string());
         return false;
     }
 
@@ -88,20 +87,20 @@ bool AppConfig::loadFromFile(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to parse config file {}: {}", path.string(), e.what());
+        WLOG_ERROR("Failed to parse config file {}: {}", path.string(), e.what());
         return false;
     }
 
     if (root.contains(profile) && root[profile].is_object())
-        return applyConfigSection(root[profile], out);
+        return apply_config_section(root[profile], out);
 
     if (root.contains("server") && root["server"].is_object())
     {
-        LOG_INFO("Loading legacy flat config from {}", path.string());
-        return applyConfigSection(root, out);
+        WLOG_INFO("Loading legacy flat config from {}", path.string());
+        return apply_config_section(root, out);
     }
 
-    LOG_ERROR(
+    WLOG_ERROR(
         "Config file {} has no profile \"{}\" and is not a legacy flat config",
         path.string(),
         profile);

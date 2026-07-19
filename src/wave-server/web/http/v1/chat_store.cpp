@@ -1,8 +1,9 @@
 #include "chat_store.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../../../service/agent_client.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -11,7 +12,7 @@ namespace v1 {
 
 namespace
 {
-    std::string trimCopy(const std::string& value)
+    std::string trim_copy(const std::string& value)
     {
         const auto start = value.find_first_not_of(" \t\n\r");
         if (start == std::string::npos)
@@ -20,7 +21,7 @@ namespace
         return value.substr(start, end - start + 1);
     }
 
-    size_t utf8SequenceLength(unsigned char lead)
+    size_t utf8_sequence_length(unsigned char lead)
     {
         if (lead < 0x80)
             return 1;
@@ -33,12 +34,12 @@ namespace
         return 0;
     }
 
-    size_t utf8CodePointCount(const std::string& text)
+    size_t utf8_code_point_count(const std::string& text)
     {
         size_t count = 0;
         for (size_t i = 0; i < text.size();)
         {
-            const auto len = utf8SequenceLength(static_cast<unsigned char>(text[i]));
+            const auto len = utf8_sequence_length(static_cast<unsigned char>(text[i]));
             if (len == 0 || i + len > text.size())
                 break;
             i += len;
@@ -47,13 +48,13 @@ namespace
         return count;
     }
 
-    std::string truncateUtf8(const std::string& text, size_t max_code_points)
+    std::string truncate_utf8(const std::string& text, size_t max_code_points)
     {
         size_t byte_end = 0;
         size_t count = 0;
         while (byte_end < text.size() && count < max_code_points)
         {
-            const auto len = utf8SequenceLength(static_cast<unsigned char>(text[byte_end]));
+            const auto len = utf8_sequence_length(static_cast<unsigned char>(text[byte_end]));
             if (len == 0 || byte_end + len > text.size())
                 break;
             byte_end += len;
@@ -65,27 +66,27 @@ namespace
     }
 }
 
-ChatStore::ChatStore(drogon::orm::DbClientPtr client) :
+ChatStore::ChatStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
 
-std::string ChatStore::toCreatedAtIso(const std::string& db_time)
+std::string ChatStore::to_created_at_iso(const std::string& db_time)
 {
     if (db_time.size() >= 19)
         return db_time.substr(0, 10) + "T" + db_time.substr(11, 8) + "+09:00";
     return db_time;
 }
 
-std::string ChatStore::titleFromText(const std::string& text)
+std::string ChatStore::title_from_text(const std::string& text)
 {
     constexpr size_t kMaxTitleChars = 22;
-    const auto trimmed = trimCopy(text);
+    const auto trimmed = trim_copy(text);
     if (trimmed.empty())
         return "새 대화";
-    if (utf8CodePointCount(trimmed) <= kMaxTitleChars)
+    if (utf8_code_point_count(trimmed) <= kMaxTitleChars)
         return trimmed;
-    return truncateUtf8(trimmed, kMaxTitleChars);
+    return truncate_utf8(trimmed, kMaxTitleChars);
 }
 
 int64_t ChatStore::nextConversationId() const
@@ -110,6 +111,65 @@ int64_t ChatStore::nextMessageId(const Json::Value& messages) const
     return max_id + 1;
 }
 
+Json::Value ChatStore::normalize_messages_json(Json::Value raw, const std::string& fallback_db_time)
+{
+    if (raw.isObject() && raw.isMember("messages"))
+        raw = raw["messages"];
+    if (!raw.isArray())
+        return Json::Value(Json::arrayValue);
+
+    Json::Value out(Json::arrayValue);
+    int64_t next_id = 1;
+    const std::string created_at = fallback_db_time.empty()
+        ? to_created_at_iso("")
+        : to_created_at_iso(fallback_db_time);
+
+    for (const auto& entry : raw)
+    {
+        if (!entry.isObject())
+            continue;
+
+        const std::string role = entry.get("role", "").asString();
+        if (role != "user" && role != "assistant")
+            continue;
+
+        std::string text;
+        if (entry.isMember("text") && entry["text"].isString())
+            text = entry["text"].asString();
+        else if (entry.isMember("content") && entry["content"].isString())
+            text = entry["content"].asString();
+        if (text.empty())
+            continue;
+
+        Json::Value message;
+        if (entry.isMember("id") && entry["id"].isIntegral())
+            message["id"] = entry["id"];
+        else
+            message["id"] = static_cast<Json::Int64>(next_id++);
+        message["role"] = role;
+        message["text"] = text;
+        if (entry.isMember("createdAt") && entry["createdAt"].isString())
+            message["createdAt"] = entry["createdAt"].asString();
+        else
+            message["createdAt"] = created_at;
+        if (role == "assistant")
+        {
+            if (entry.isMember("status"))
+                message["status"] = entry["status"];
+            else
+                message["status"] = "done";
+            if (entry.isMember("toolEvents") && entry["toolEvents"].isArray())
+                message["toolEvents"] = entry["toolEvents"];
+            else
+                message["toolEvents"] = Json::Value(Json::arrayValue);
+            if (entry.isMember("reasoning"))
+                message["reasoning"] = entry["reasoning"];
+        }
+        out.append(message);
+    }
+    return out;
+}
+
 Json::Value ChatStore::parseMessagesColumn(const std::string& raw) const
 {
     if (raw.empty())
@@ -119,9 +179,9 @@ Json::Value ChatStore::parseMessagesColumn(const std::string& raw) const
     Json::CharReaderBuilder builder;
     std::string errors;
     std::istringstream stream(raw);
-    if (!Json::parseFromStream(builder, stream, &out, &errors) || !out.isArray())
+    if (!Json::parseFromStream(builder, stream, &out, &errors))
         return Json::Value(Json::arrayValue);
-    return out;
+    return normalize_messages_json(std::move(out));
 }
 
 std::string ChatStore::serializeMessages(const Json::Value& messages) const
@@ -137,7 +197,7 @@ Json::Value ChatStore::makeUserMessage(int64_t message_id, const std::string& te
     message["id"] = static_cast<Json::Int64>(message_id);
     message["role"] = "user";
     message["text"] = text;
-    message["createdAt"] = toCreatedAtIso(created_at);
+    message["createdAt"] = to_created_at_iso(created_at);
     return message;
 }
 
@@ -150,7 +210,7 @@ Json::Value ChatStore::makeAssistantShell(int64_t message_id, const std::string&
     message["status"] = "streaming";
     message["reasoning"] = Json::nullValue;
     message["toolEvents"] = Json::Value(Json::arrayValue);
-    message["createdAt"] = toCreatedAtIso(created_at);
+    message["createdAt"] = to_created_at_iso(created_at);
     return message;
 }
 
@@ -174,8 +234,8 @@ Json::Value ChatStore::toSummary(
             preview = last["text"].asString();
     }
     summary["lastMessagePreview"] = preview.empty() ? Json::nullValue : Json::Value(preview);
-    summary["createdAt"] = toCreatedAtIso(created_at);
-    summary["updatedAt"] = toCreatedAtIso(updated_at);
+    summary["createdAt"] = to_created_at_iso(created_at);
+    summary["updatedAt"] = to_created_at_iso(updated_at);
     return summary;
 }
 
@@ -197,8 +257,8 @@ WHERE id = ? AND user_id = ?
     Json::Value conversation;
     conversation["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
     conversation["title"] = row["title"].as<std::string>();
-    conversation["createdAt"] = toCreatedAtIso(row["created_at"].as<std::string>());
-    conversation["updatedAt"] = toCreatedAtIso(row["updated_at"].as<std::string>());
+    conversation["createdAt"] = to_created_at_iso(row["created_at"].as<std::string>());
+    conversation["updatedAt"] = to_created_at_iso(row["updated_at"].as<std::string>());
     conversation["messages"] = parseMessagesColumn(row["message"].as<std::string>());
     return conversation;
 }
@@ -248,7 +308,7 @@ std::optional<Json::Value> ChatStore::getConversation(int64_t user_id, int64_t c
 
 std::optional<Json::Value> ChatStore::createConversation(int64_t user_id, const std::string& title) const
 {
-    const auto trimmed = trimCopy(title);
+    const auto trimmed = trim_copy(title);
     if (trimmed.empty())
         return std::nullopt;
 
@@ -269,8 +329,8 @@ VALUES (?, ?, ?, ?, ?, '[]')
     conversation["id"] = static_cast<Json::Int64>(id);
     conversation["title"] = trimmed;
     conversation["messages"] = Json::Value(Json::arrayValue);
-    conversation["createdAt"] = toCreatedAtIso(now);
-    conversation["updatedAt"] = toCreatedAtIso(now);
+    conversation["createdAt"] = to_created_at_iso(now);
+    conversation["updatedAt"] = to_created_at_iso(now);
     return conversation;
 }
 
@@ -281,7 +341,7 @@ std::optional<Json::Value> ChatStore::renameConversation(
     std::string& error,
     std::string& field) const
 {
-    const auto trimmed = trimCopy(title);
+    const auto trimmed = trim_copy(title);
     if (trimmed.empty())
     {
         error = "대화 제목을 입력해주세요.";
@@ -342,7 +402,7 @@ std::optional<Json::Value> ChatStore::appendUserMessage(
     std::string& error,
     std::string& field) const
 {
-    const auto trimmed = trimCopy(text);
+    const auto trimmed = trim_copy(text);
     if (trimmed.empty())
     {
         error = "메시지를 입력해주세요.";
@@ -373,7 +433,7 @@ std::optional<Json::Value> ChatStore::appendUserMessage(
     result["conversationId"] = static_cast<Json::Int64>(conversation_id);
     result["userMessage"] = makeUserMessage(message_id, trimmed, now);
     result["messages"] = messages;
-    result["updatedAt"] = toCreatedAtIso(now);
+    result["updatedAt"] = to_created_at_iso(now);
     return result;
 }
 
@@ -383,7 +443,7 @@ std::optional<Json::Value> ChatStore::createConversationWithUserMessage(
     std::string& error,
     std::string& field) const
 {
-    const auto trimmed = trimCopy(text);
+    const auto trimmed = trim_copy(text);
     if (trimmed.empty())
     {
         error = "메시지를 입력해주세요.";
@@ -399,7 +459,7 @@ std::optional<Json::Value> ChatStore::createConversationWithUserMessage(
 
     const auto id = nextConversationId();
     const auto now = formatTimestamp();
-    const auto title = titleFromText(trimmed);
+    const auto title = title_from_text(trimmed);
     const auto message_id = static_cast<int64_t>(1);
     Json::Value messages(Json::arrayValue);
     messages.append(makeUserMessage(message_id, trimmed, now));
@@ -420,8 +480,8 @@ VALUES (?, ?, ?, ?, ?, ?)
     conversation["id"] = static_cast<Json::Int64>(id);
     conversation["title"] = title;
     conversation["messages"] = messages;
-    conversation["createdAt"] = toCreatedAtIso(now);
-    conversation["updatedAt"] = toCreatedAtIso(now);
+    conversation["createdAt"] = to_created_at_iso(now);
+    conversation["updatedAt"] = to_created_at_iso(now);
     conversation["userMessage"] = makeUserMessage(message_id, trimmed, now);
     return conversation;
 }
@@ -451,7 +511,7 @@ bool ChatStore::appendAssistantMessage(
         assistant["reasoning"] = reasoning;
     else
         assistant["reasoning"] = Json::nullValue;
-    assistant["createdAt"] = toCreatedAtIso(now);
+    assistant["createdAt"] = to_created_at_iso(now);
 
     messages.append(assistant);
     saveMessages(conversation_id, messages, now);
@@ -490,7 +550,7 @@ Json::Value ChatStore::defaultSuggestions() const
     Json::Value insight_suggestions(Json::arrayValue);
     const char* insight_prompts[] = {
         "오늘 수면 인사이트 알려줘",
-        "자세 점수가 왜 낮아졌어?",
+        "이번 주 전력 사용량 어때?",
         "오늘 심박수 어때?",
     };
     for (size_t i = 0; i < sizeof(insight_prompts) / sizeof(insight_prompts[0]); ++i)
@@ -513,7 +573,7 @@ Json::Value ChatStore::defaultSuggestions() const
 
     const SuggestionSeed pool[] = {
         {"sug_welcome_sleep_analysis", "moon", "수면 분석", "어젯밤 수면 점수를 분석해줘"},
-        {"sug_welcome_posture", "posture", "자세 교정", "거북목 개선 스트레칭 루틴 추천해줘"},
+        {"sug_welcome_power", "energy", "전력 점검", "지금 집 전체 전력 사용량 알려줘"},
         {"sug_welcome_heart", "heart", "심박 트렌드", "오늘 심박수가 평소와 다른 이유가 뭐야?"},
         {"sug_welcome_iot", "home", "가전 자동화", "취침 전 가전 자동화 설정 도와줘"},
         {"sug_welcome_health", "plan", "헬스 루틴", "이번 주 건강 목표를 세워줘"},

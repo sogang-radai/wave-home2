@@ -4,6 +4,8 @@
 
 #include "core/coredefs.h"
 
+#include "../http_controller.h"
+
 WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
@@ -22,33 +24,19 @@ public:
     ADD_METHOD_TO(SleepController::weeklyReport, "/api/v1/sleep/reports/weekly", drogon::Get);
     METHOD_LIST_END
 
-    void todaySummary(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void todaySummary(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void todayPlan(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void todayPlan(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void todayPhoneUsage(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void todayPhoneUsage(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void todayAutomationSummary(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void todayAutomationSummary(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void dailySessions(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void dailySessions(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void dailyReport(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void dailyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    void weeklyReport(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+    void weeklyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 
 } // namespace v1

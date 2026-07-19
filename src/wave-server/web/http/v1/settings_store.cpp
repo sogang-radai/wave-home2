@@ -1,9 +1,10 @@
 #include "settings_store.h"
+#include "../../../db/database.h"
 
 #include <sstream>
 
 #include "session_store.h"
-#include "../../../core/time_util.h"
+#include "util/time_util.h"
 #include "../../../core/logger.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -11,7 +12,7 @@ namespace web {
 namespace v1 {
 namespace
 {
-    bool isValidTime(const std::string& value)
+    bool is_valid_time(const std::string& value)
     {
         if (value.size() != 5 || value[2] != ':')
             return false;
@@ -20,9 +21,36 @@ namespace
         return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
     }
 
-    int minutesOf(const std::string& time)
+    int minutes_of(const std::string& time)
     {
         return std::stoi(time.substr(0, 2)) * 60 + std::stoi(time.substr(3, 2));
+    }
+
+    size_t utf8_sequence_length(unsigned char lead)
+    {
+        if (lead < 0x80)
+            return 1;
+        if ((lead & 0xE0) == 0xC0)
+            return 2;
+        if ((lead & 0xF0) == 0xE0)
+            return 3;
+        if ((lead & 0xF8) == 0xF0)
+            return 4;
+        return 0;
+    }
+
+    size_t utf8_code_point_count(const std::string& text)
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < text.size();)
+        {
+            const auto len = utf8_sequence_length(static_cast<unsigned char>(text[i]));
+            if (len == 0 || i + len > text.size())
+                break;
+            i += len;
+            ++count;
+        }
+        return count;
     }
 
     bool parseJsonText(const std::string& text, Json::Value& out)
@@ -40,17 +68,17 @@ namespace
         return Json::writeString(builder, value);
     }
 
-    bool soundExists(const std::string& id)
+    bool sound_exists(const std::string& id)
     {
         return id == "sign-of-the-times" || id == "love-yourself";
     }
 
-    bool speakerExists(int id)
+    bool speaker_exists(int id)
     {
         return id >= 0 && id <= 9;
     }
 
-    bool modelExists(const Json::Value& models, const std::string& id)
+    bool model_exists(const Json::Value& models, const std::string& id)
     {
         for (const auto& model : models)
         {
@@ -61,7 +89,7 @@ namespace
     }
 }
 
-SettingsStore::SettingsStore(drogon::orm::DbClientPtr client) :
+SettingsStore::SettingsStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
@@ -191,14 +219,14 @@ bool SettingsStore::putGeneralSettings(
         }
     }
 
-    if (out.isMember("ttsSpeakerId") && !speakerExists(out["ttsSpeakerId"].asInt()))
+    if (out.isMember("ttsSpeakerId") && !speaker_exists(out["ttsSpeakerId"].asInt()))
     {
         error = "존재하지 않는 TTS 스피커입니다.";
         field = "ttsSpeakerId";
         return false;
     }
 
-    if (out.isMember("notificationSound") && !soundExists(out["notificationSound"].asString()))
+    if (out.isMember("notificationSound") && !sound_exists(out["notificationSound"].asString()))
     {
         error = "존재하지 않는 알림음입니다.";
         field = "notificationSound";
@@ -223,7 +251,7 @@ bool SettingsStore::putGeneralSettings(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to save general settings: {}", e.what());
+        WLOG_ERROR("Failed to save general settings: {}", e.what());
         error = "설정 저장에 실패했습니다.";
         return false;
     }
@@ -250,8 +278,8 @@ bool SettingsStore::putSleepConfig(
         out[key] = body[key];
 
     if (!out.isMember("bedtime") || !out.isMember("wakeTime")
-        || !isValidTime(out["bedtime"].asString()) || !isValidTime(out["wakeTime"].asString())
-        || minutesOf(out["bedtime"].asString()) == minutesOf(out["wakeTime"].asString()))
+        || !is_valid_time(out["bedtime"].asString()) || !is_valid_time(out["wakeTime"].asString())
+        || minutes_of(out["bedtime"].asString()) == minutes_of(out["wakeTime"].asString()))
     {
         error = "취침 시간과 기상 시간을 확인해주세요.";
         field = "bedtime";
@@ -291,7 +319,7 @@ bool SettingsStore::putSleepConfig(
         }
     }
 
-    if (out.isMember("wakeUpSound") && !soundExists(out["wakeUpSound"].asString()))
+    if (out.isMember("wakeUpSound") && !sound_exists(out["wakeUpSound"].asString()))
     {
         error = "존재하지 않는 알람음입니다.";
         field = "wakeUpSound";
@@ -316,7 +344,7 @@ bool SettingsStore::putSleepConfig(
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to save sleep config: {}", e.what());
+        WLOG_ERROR("Failed to save sleep config: {}", e.what());
         error = "설정 저장에 실패했습니다.";
         return false;
     }
@@ -387,9 +415,11 @@ Json::Value SettingsStore::getAiAgentSettings(int64_t user_id) const
     value["selectedModelId"] = "gemini-flash2.5";
     value["ctrlEnterSend"] = false;
     value["waveAiSound"] = true;
+    value["voiceAutoSend"] = false;
 
     auto rows = m_client->execSqlSync(
-        "SELECT personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound FROM user_ai_agent_settings WHERE user_id = ? LIMIT 1",
+        "SELECT personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, voice_auto_send"
+        " FROM user_ai_agent_settings WHERE user_id = ? LIMIT 1",
         user_id);
     if (rows.empty())
         return value;
@@ -398,6 +428,7 @@ Json::Value SettingsStore::getAiAgentSettings(int64_t user_id) const
     value["selectedModelId"] = rows[0]["selected_model_id"].as<std::string>();
     value["ctrlEnterSend"] = rows[0]["ctrl_enter_send"].as<int>() != 0;
     value["waveAiSound"] = rows[0]["wave_ai_sound"].as<int>() != 0;
+    value["voiceAutoSend"] = rows[0]["voice_auto_send"].as<int>() != 0;
     return value;
 }
 
@@ -412,7 +443,33 @@ bool SettingsStore::putAiAgentSettings(
     for (const auto& key : body.getMemberNames())
         out[key] = body[key];
 
-    if (out.isMember("selectedModelId") && !modelExists(listAiModels(), out["selectedModelId"].asString()))
+    if (body.isMember("personalPrompt"))
+    {
+        if (!body["personalPrompt"].isString())
+        {
+            error = "personalPrompt는 문자열이어야 합니다.";
+            field = "personalPrompt";
+            return false;
+        }
+        // Always replace from the request body (never concatenate with the previous value).
+        const auto prompt = body["personalPrompt"].asString();
+        if (utf8_code_point_count(prompt) > kPersonalPromptMaxChars)
+        {
+            error = "개인 프롬프트는 " + std::to_string(kPersonalPromptMaxChars) + "자 이하여야 합니다.";
+            field = "personalPrompt";
+            return false;
+        }
+        const auto start = prompt.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos)
+            out["personalPrompt"] = "";
+        else
+        {
+            const auto end = prompt.find_last_not_of(" \t\r\n");
+            out["personalPrompt"] = prompt.substr(start, end - start + 1);
+        }
+    }
+
+    if (out.isMember("selectedModelId") && !model_exists(listAiModels(), out["selectedModelId"].asString()))
     {
         error = "존재하지 않는 AI 모델입니다.";
         field = "selectedModelId";
@@ -430,14 +487,15 @@ bool SettingsStore::putAiAgentSettings(
             m_client->execSqlSync(
                 R"SQL(
 INSERT INTO user_ai_agent_settings
-    (user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)
+    (user_id, personal_prompt, selected_model_id, ctrl_enter_send, wave_ai_sound, voice_auto_send, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 )SQL",
                 user_id,
                 out["personalPrompt"].asString(),
                 out["selectedModelId"].asString(),
                 out["ctrlEnterSend"].asBool() ? 1 : 0,
                 out["waveAiSound"].asBool() ? 1 : 0,
+                out["voiceAutoSend"].asBool() ? 1 : 0,
                 now);
         }
         else
@@ -445,13 +503,14 @@ VALUES (?, ?, ?, ?, ?, ?)
             m_client->execSqlSync(
                 R"SQL(
 UPDATE user_ai_agent_settings
-SET personal_prompt = ?, selected_model_id = ?, ctrl_enter_send = ?, wave_ai_sound = ?, updated_at = ?
+SET personal_prompt = ?, selected_model_id = ?, ctrl_enter_send = ?, wave_ai_sound = ?, voice_auto_send = ?, updated_at = ?
 WHERE user_id = ?
 )SQL",
                 out["personalPrompt"].asString(),
                 out["selectedModelId"].asString(),
                 out["ctrlEnterSend"].asBool() ? 1 : 0,
                 out["waveAiSound"].asBool() ? 1 : 0,
+                out["voiceAutoSend"].asBool() ? 1 : 0,
                 now,
                 user_id);
         }
@@ -459,7 +518,7 @@ WHERE user_id = ?
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Failed to save AI agent settings: {}", e.what());
+        WLOG_ERROR("Failed to save AI agent settings: {}", e.what());
         error = "설정 저장에 실패했습니다.";
         return false;
     }

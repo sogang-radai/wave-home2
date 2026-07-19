@@ -8,13 +8,12 @@ import sys
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
-from pathlib import Path
 from typing import Literal
 
 import numpy as np
 
 try:
-    from PySide6.QtCore import Qt, QThread, Signal, Slot, QRectF
+    from PySide6.QtCore import Qt, QThread, Signal, Slot, QRectF, QPointF, QEvent
     from PySide6.QtGui import QColor, QFont, QPainter, QPen
     from PySide6.QtWidgets import (
         QApplication,
@@ -43,7 +42,7 @@ try:
 
     QT_API = "PySide6"
 except ImportError:
-    from PyQt6.QtCore import Qt, QThread, pyqtSignal as Signal, pyqtSlot as Slot, QRectF
+    from PyQt6.QtCore import Qt, QThread, pyqtSignal as Signal, pyqtSlot as Slot, QRectF, QPointF, QEvent
     from PyQt6.QtGui import QColor, QFont, QPainter, QPen
     from PyQt6.QtWidgets import (
         QApplication,
@@ -103,11 +102,7 @@ from iq_client import (
     snap_vital_pick_distance,
     va_label,
 )
-
-_VITAL_DIR = Path(__file__).resolve().parent.parent / "test-vital"
-if str(_VITAL_DIR) not in sys.path:
-    sys.path.insert(0, str(_VITAL_DIR))
-from vital_signs import (  # noqa: E402
+from vital_signs import (
     DEFAULT_BUFFER_FRAMES,
     DEFAULT_FFT_SIZE,
     VitalSignsProcessor,
@@ -128,11 +123,16 @@ DEFAULT_TARGET_TEXT = "\n".join(
 PROFILE_PAD_BINS = 2
 PROFILE_Y_DEFAULT = (0.0, 7000.0)
 PHASE_DIAL_DIAMETER_DEFAULT = 36
-PHASE_DIAL_ROW_HEIGHT = PHASE_DIAL_DIAMETER_DEFAULT + 20
+PHASE_DIAL_LABEL_HEIGHT = 16
+PHASE_DIAL_ROW_HEIGHT = PHASE_DIAL_DIAMETER_DEFAULT + PHASE_DIAL_LABEL_HEIGHT + 12
 VITAL_CHIRP_MODE = 1  # Average — coherent integration preserves phase (research.md §4)
 VITAL_RANGE_HALF_WIDTH = 2
 VITAL_DIAL_DIAMETER = 30
-VITAL_DIAL_ROW_HEIGHT = VITAL_DIAL_DIAMETER + 18
+VITAL_DIAL_ROW_HEIGHT = VITAL_DIAL_DIAMETER + PHASE_DIAL_LABEL_HEIGHT + 14
+# Typical physiological display windows (BPM / brpm).
+VITAL_BREATH_X_RANGE = (0.0, 45.0)
+VITAL_HEART_X_RANGE = (40.0, 160.0)
+VITAL_SPEC_DISPLAY_UPSAMPLE = 8
 COLORMAPS = ["viridis", "inferno", "plasma", "magma", "cividis", "turbo"]
 PHASE_COLORMAPS = ["coolwarm", "twilight", "hsv", "PiYG", "RdBu", "seismic", "turbo"]
 # Peak |IQ| below this value is normalized against the floor (noise stays dark).
@@ -277,7 +277,7 @@ class PhaseDial(QWidget):
         self.update()
 
     def _apply_diameter(self, diameter: int) -> None:
-        self.setFixedSize(diameter + 4, diameter + 18)
+        self.setFixedSize(diameter + 8, diameter + PHASE_DIAL_LABEL_HEIGHT + 10)
 
     def set_sample(self, distance_m: float, phase_rad: float) -> None:
         self._distance_m = distance_m
@@ -289,9 +289,10 @@ class PhaseDial(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         w = self.width()
-        dial = min(w - 4, self.height() - 16)
+        label_h = PHASE_DIAL_LABEL_HEIGHT
+        dial = min(w - 4, self.height() - label_h - 4)
         cx = w / 2.0
-        cy = dial / 2.0 + 2.0
+        cy = dial / 2.0 + 1.0
         radius = dial / 2.0 - 2.0
 
         painter.setPen(QPen(QColor("#666666"), 1.5))
@@ -304,8 +305,93 @@ class PhaseDial(QWidget):
         painter.setPen(QPen(QColor("#ffeb3b"), 2.0))
         painter.drawLine(int(cx), int(cy), int(hx), int(hy))
 
+        font = QFont(painter.font())
+        font.setPointSize(max(8, font.pointSize() - 1))
+        painter.setFont(font)
         painter.setPen(QColor("#aaaaaa"))
-        painter.drawText(QRectF(0, dial + 2, w, 14), Qt.AlignmentFlag.AlignHCenter, f"{self._distance_m:.2f}m")
+        painter.drawText(
+            QRectF(0, dial + 1, w, label_h),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+            f"{self._distance_m:.2f}",
+        )
+
+
+class RangeAlignedDialStrip(QWidget):
+    """Phase dials whose centers align with range-bin X positions on a PlotWidget."""
+
+    def __init__(self, plot: pg.PlotWidget, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._plot = plot
+        self._dials: list[PhaseDial] = []
+        self._distances: list[float] = []
+        self.setFixedHeight(VITAL_DIAL_ROW_HEIGHT)
+        self.setMinimumWidth(80)
+        vb = plot.getViewBox()
+        vb.sigRangeChanged.connect(lambda *_: self.relayout())
+        plot.installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if obj is self._plot and event.type() in (
+            QEvent.Type.Resize,
+            QEvent.Type.Show,
+            QEvent.Type.Move,
+        ):
+            self.relayout()
+        return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self.relayout()
+
+    def set_samples(self, distances: list[float], phases: list[float]) -> None:
+        count = min(len(distances), len(phases))
+        distances = list(distances[:count])
+        phases = list(phases[:count])
+        while len(self._dials) < count:
+            dial = PhaseDial(diameter=VITAL_DIAL_DIAMETER, parent=self)
+            dial.show()
+            self._dials.append(dial)
+        while len(self._dials) > count:
+            dial = self._dials.pop()
+            dial.hide()
+            dial.deleteLater()
+        self._distances = distances
+        for dial, dist, phase in zip(self._dials, distances, phases):
+            dial.set_sample(dist, phase)
+        self.relayout()
+
+    def clear_samples(self) -> None:
+        self.set_samples([], [])
+
+    def _map_distance_to_x(self, distance_m: float) -> float | None:
+        vb = self._plot.getViewBox()
+        scene_pt = vb.mapViewToScene(QPointF(distance_m, 0.0))
+        plot_pt = self._plot.mapFromScene(scene_pt)
+        if plot_pt is None:
+            return None
+        global_pt = self._plot.mapToGlobal(plot_pt)
+        local = self.mapFromGlobal(global_pt)
+        return float(local.x())
+
+    def relayout(self) -> None:
+        if not self._dials or not self._distances:
+            return
+        xs: list[float] = []
+        for dist in self._distances:
+            x = self._map_distance_to_x(dist)
+            if x is None:
+                return
+            xs.append(x)
+        if len(xs) >= 2:
+            gaps = [abs(xs[i + 1] - xs[i]) for i in range(len(xs) - 1)]
+            spacing = min(gaps) if gaps else float(VITAL_DIAL_DIAMETER)
+            diameter = max(14, min(VITAL_DIAL_DIAMETER, int(spacing) - 2))
+        else:
+            diameter = VITAL_DIAL_DIAMETER
+        for dial, x in zip(self._dials, xs):
+            dial.set_diameter(diameter)
+            dial.move(int(round(x - dial.width() / 2.0)), 0)
+            dial.raise_()
 
 
 def make_colormap_lut(name: str) -> np.ndarray:
@@ -501,7 +587,6 @@ class MainWindow(QMainWindow):
         self._last_rdm_response: RdmResponse | None = None
         self._rdm_pick_range_m: float | None = None
         self._vital_pick_range_m: float | None = None
-        self._vital_phase_dials: list[PhaseDial] = []
         self._vital_processor = VitalSignsProcessor(
             frame_rate_hz=1.0 / DEFAULT_POLL_INTERVAL_S,
             buffer_frames=DEFAULT_BUFFER_FRAMES,
@@ -710,7 +795,7 @@ class MainWindow(QMainWindow):
 
         self.phase_dial_host = QWidget()
         self.phase_dial_row = QHBoxLayout(self.phase_dial_host)
-        self.phase_dial_row.setContentsMargins(4, 0, 4, 0)
+        self.phase_dial_row.setContentsMargins(4, 2, 4, 2)
         self.phase_dial_row.setSpacing(6)
 
         scroll = QScrollArea()
@@ -719,6 +804,7 @@ class MainWindow(QMainWindow):
         scroll.setFixedHeight(PHASE_DIAL_ROW_HEIGHT)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         layout.addWidget(scroll)
         self._profile_phase_scroll = scroll
         self._sync_profile_antenna_controls()
@@ -982,17 +1068,8 @@ class MainWindow(QMainWindow):
         self.vital_profile_plot.addItem(self.vital_pick_line)
         layout.addWidget(self.vital_profile_plot, stretch=2)
 
-        self.vital_phase_dial_host = QWidget()
-        self.vital_phase_dial_row = QHBoxLayout(self.vital_phase_dial_host)
-        self.vital_phase_dial_row.setContentsMargins(4, 0, 4, 0)
-        self.vital_phase_dial_row.setSpacing(4)
-        vital_dial_scroll = QScrollArea()
-        vital_dial_scroll.setWidgetResizable(True)
-        vital_dial_scroll.setWidget(self.vital_phase_dial_host)
-        vital_dial_scroll.setFixedHeight(VITAL_DIAL_ROW_HEIGHT)
-        vital_dial_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        vital_dial_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        layout.addWidget(vital_dial_scroll)
+        self.vital_phase_dial_strip = RangeAlignedDialStrip(self.vital_profile_plot)
+        layout.addWidget(self.vital_phase_dial_strip)
 
         plots = QSplitter(Qt.Orientation.Vertical)
         self.vital_disp_plot = pg.PlotWidget(title="Chest displacement (centre range bin, live)")
@@ -1003,40 +1080,54 @@ class MainWindow(QMainWindow):
         self.vital_disp_curve = self.vital_disp_plot.plot(pen=pg.mkPen("#81c784", width=1.5))
         self._compact_vital_plot_chrome(self.vital_disp_plot)
 
-        self.vital_spec_plot = VitalSpectrumPlotWidget(title="Slow-time spectrum (BPM, live)")
-        self.vital_spec_plot.setLabel("bottom", "BPM")
-        self.vital_spec_plot.setLabel("left", "|FFT|²")
-        self.vital_spec_plot.showGrid(x=True, y=True, alpha=0.3)
-        self.vital_spec_plot.setXRange(0, 60, padding=0)
-        self.vital_spec_plot.setYRange(0, 1.0, padding=0)
-        self.vital_breath_spec_curve = self.vital_spec_plot.plot(pen=pg.mkPen("#64b5f6", width=1.2))
-        self.vital_heart_spec_curve = self.vital_spec_plot.plot(pen=pg.mkPen("#ef5350", width=1.2))
-        self._compact_vital_plot_chrome(self.vital_spec_plot)
         _init_bins = analysis_bins(20.0, DEFAULT_FFT_SIZE, DEFAULT_BUFFER_FRAMES)
         _init_scale = spectrum_scale(20.0, DEFAULT_FFT_SIZE)
+
+        self.vital_breath_spec_plot = VitalSpectrumPlotWidget(title="Breathing spectrum (brpm)")
+        self.vital_breath_spec_plot.setLabel("bottom", "brpm")
+        self.vital_breath_spec_plot.setLabel("left", "|FFT|²")
+        self.vital_breath_spec_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.vital_breath_spec_plot.setXRange(*VITAL_BREATH_X_RANGE, padding=0)
+        self.vital_breath_spec_plot.setYRange(0, 1.0, padding=0)
+        self.vital_breath_spec_curve = self.vital_breath_spec_plot.plot(pen=pg.mkPen("#64b5f6", width=1.2))
+        self._compact_vital_plot_chrome(self.vital_breath_spec_plot)
         self.vital_breath_region = pg.LinearRegionItem(
             values=(_init_bins.breath_start * _init_scale, _init_bins.breath_end * _init_scale),
             brush=pg.mkBrush(100, 181, 246, 40),
             movable=False,
         )
+        self.vital_breath_peak_line = pg.InfiniteLine(
+            angle=90, movable=False, pen=pg.mkPen("#42a5f5", width=1, style=Qt.PenStyle.DashLine)
+        )
+        self.vital_breath_spec_plot.addItem(self.vital_breath_region)
+        self.vital_breath_spec_plot.addItem(self.vital_breath_peak_line)
+
+        self.vital_heart_spec_plot = VitalSpectrumPlotWidget(title="Heart spectrum (bpm)")
+        self.vital_heart_spec_plot.setLabel("bottom", "bpm")
+        self.vital_heart_spec_plot.setLabel("left", "|FFT|²")
+        self.vital_heart_spec_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.vital_heart_spec_plot.setXRange(*VITAL_HEART_X_RANGE, padding=0)
+        self.vital_heart_spec_plot.setYRange(0, 1.0, padding=0)
+        self.vital_heart_spec_curve = self.vital_heart_spec_plot.plot(pen=pg.mkPen("#ef5350", width=1.2))
+        self._compact_vital_plot_chrome(self.vital_heart_spec_plot)
         self.vital_heart_region = pg.LinearRegionItem(
             values=(_init_bins.heart_search_start * _init_scale, _init_bins.heart_search_end * _init_scale),
             brush=pg.mkBrush(239, 83, 80, 40),
             movable=False,
         )
-        self.vital_spec_plot.addItem(self.vital_breath_region)
-        self.vital_spec_plot.addItem(self.vital_heart_region)
-        self.vital_breath_peak_line = pg.InfiniteLine(
-            angle=90, movable=False, pen=pg.mkPen("#42a5f5", width=1, style=Qt.PenStyle.DashLine)
-        )
         self.vital_heart_peak_line = pg.InfiniteLine(
             angle=90, movable=False, pen=pg.mkPen("#e53935", width=1, style=Qt.PenStyle.DashLine)
         )
-        self.vital_spec_plot.addItem(self.vital_breath_peak_line)
-        self.vital_spec_plot.addItem(self.vital_heart_peak_line)
+        self.vital_heart_spec_plot.addItem(self.vital_heart_region)
+        self.vital_heart_spec_plot.addItem(self.vital_heart_peak_line)
+
+        spec_row = QSplitter(Qt.Orientation.Horizontal)
+        spec_row.addWidget(self.vital_breath_spec_plot)
+        spec_row.addWidget(self.vital_heart_spec_plot)
+        spec_row.setSizes([1, 1])
 
         plots.addWidget(self.vital_disp_plot)
-        plots.addWidget(self.vital_spec_plot)
+        plots.addWidget(spec_row)
         plots.setSizes([3, 2])
         layout.addWidget(plots, stretch=3)
 
@@ -1247,19 +1338,6 @@ class MainWindow(QMainWindow):
 
     def _vital_disp_window(self) -> int:
         return min(self.vital_buffer_frames.value(), 512)
-
-    def _ensure_vital_phase_dials(self, count: int) -> None:
-        diameter = VITAL_DIAL_DIAMETER if count <= 12 else max(24, VITAL_DIAL_DIAMETER - 4)
-        while len(self._vital_phase_dials) < count:
-            dial = PhaseDial(diameter=diameter)
-            self._vital_phase_dials.append(dial)
-            self.vital_phase_dial_row.addWidget(dial)
-        while len(self._vital_phase_dials) > count:
-            dial = self._vital_phase_dials.pop()
-            self.vital_phase_dial_row.removeWidget(dial)
-            dial.deleteLater()
-        for dial in self._vital_phase_dials:
-            dial.set_diameter(diameter)
 
     def _on_vital_buffer_changed(self) -> None:
         if self._vital_pick_range_m is not None or self._vital_processor.min_buffer_fill > 0:
@@ -1870,9 +1948,10 @@ class MainWindow(QMainWindow):
             self.vital_pick_line.setValue(self._vital_pick_range_m)
             self.vital_pick_line.setVisible(True)
 
-        self._ensure_vital_phase_dials(len(targets))
-        for dial, target, samples in zip(self._vital_phase_dials, targets, response.targets):
-            dial.set_sample(target.distance_m, samples[0].phase_rad)
+        phases = [samples[0].phase_rad for samples in response.targets[: len(targets)]]
+        self.vital_phase_dial_strip.set_samples(distances, phases)
+        # Re-align after plot geometry settles.
+        self.vital_phase_dial_strip.relayout()
 
     def _reset_vital_processor(self, frame_rate_hz: float) -> None:
         self._vital_processor = VitalSignsProcessor(
@@ -1931,25 +2010,60 @@ class MainWindow(QMainWindow):
     def _update_vital_spectrum_plot(
         self,
         breath_spectrum: np.ndarray,
-        heart_product: np.ndarray,
+        heart_spectrum: np.ndarray,
         breath_peak_bin: int,
         heart_peak_bin: int,
     ) -> None:
-        fft_half = DEFAULT_FFT_SIZE // 2
+        fft_half = self._vital_processor.fft_size // 2
         half = min(fft_half, breath_spectrum.size)
         bpm_scale = self._vital_processor.scale
         bpm_axis = np.arange(half, dtype=np.float64) * bpm_scale
-        self.vital_breath_spec_curve.setData(bpm_axis, breath_spectrum[:half])
-        heart_half = min(fft_half, heart_product.size)
-        heart_bpm = np.arange(heart_half, dtype=np.float64) * bpm_scale
-        self.vital_heart_spec_curve.setData(heart_bpm, heart_product[:heart_half])
-        self.vital_breath_peak_line.setValue(breath_peak_bin * bpm_scale)
-        self.vital_heart_peak_line.setValue(heart_peak_bin * bpm_scale)
+        breath_x, breath_y = self._upsample_spectrum(bpm_axis, breath_spectrum[:half])
+        self.vital_breath_spec_curve.setData(breath_x, breath_y)
+        heart_half = min(fft_half, heart_spectrum.size)
+        heart_axis = np.arange(heart_half, dtype=np.float64) * bpm_scale
+        heart_x, heart_y = self._upsample_spectrum(heart_axis, heart_spectrum[:heart_half])
+        self.vital_heart_spec_curve.setData(heart_x, heart_y)
         br_bpm = breath_peak_bin * bpm_scale
         hr_bpm = heart_peak_bin * bpm_scale
-        self.vital_spec_plot.setTitle(
-            f"Slow-time spectrum (BPM) — breath {br_bpm:.1f} brpm, heart {hr_bpm:.1f} bpm"
+        self.vital_breath_peak_line.setValue(br_bpm)
+        self.vital_heart_peak_line.setValue(hr_bpm)
+        self.vital_breath_spec_plot.setTitle(f"Breathing spectrum — {br_bpm:.1f} brpm")
+        self.vital_heart_spec_plot.setTitle(f"Heart spectrum — {hr_bpm:.1f} bpm")
+        self._autoscale_vital_spectrum_y(
+            self.vital_breath_spec_plot, breath_x, breath_y, *VITAL_BREATH_X_RANGE
         )
+        self._autoscale_vital_spectrum_y(
+            self.vital_heart_spec_plot, heart_x, heart_y, *VITAL_HEART_X_RANGE
+        )
+
+    @staticmethod
+    def _upsample_spectrum(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        if y.size < 2 or VITAL_SPEC_DISPLAY_UPSAMPLE <= 1:
+            return x, y
+        n = (y.size - 1) * VITAL_SPEC_DISPLAY_UPSAMPLE + 1
+        x_fine = np.linspace(float(x[0]), float(x[-1]), n)
+        y_fine = np.interp(x_fine, x, y)
+        return x_fine, y_fine
+
+    @staticmethod
+    def _autoscale_vital_spectrum_y(
+        plot: pg.PlotWidget,
+        x: np.ndarray,
+        y: np.ndarray,
+        x0: float,
+        x1: float,
+    ) -> None:
+        if y.size == 0 or x.size == 0:
+            return
+        mask = (x >= x0) & (x <= x1)
+        window = y[mask] if np.any(mask) else y
+        if window.size == 0:
+            return
+        peak = float(np.percentile(window, 99.5))
+        if peak <= 0:
+            peak = float(np.max(window))
+        plot.setYRange(0.0, max(peak * 1.2, 1e-12), padding=0)
 
     def _process_vital_samples(
         self,
@@ -1983,11 +2097,11 @@ class MainWindow(QMainWindow):
         if (
             preview is not None
             and preview.breath_spectrum is not None
-            and preview.heart_product is not None
+            and preview.heart_spectrum is not None
         ):
             self._update_vital_spectrum_plot(
                 preview.breath_spectrum,
-                preview.heart_product,
+                preview.heart_spectrum,
                 preview.breath_peak_bin,
                 preview.heart_peak_bin,
             )
@@ -2012,10 +2126,10 @@ class MainWindow(QMainWindow):
         self.vital_dev_label.setText(f"{result.breathing_deviation:.5f}")
 
         detail = result.detail
-        if detail is not None and detail.breath_spectrum.size and detail.heart_product.size:
+        if detail is not None and detail.breath_spectrum.size and detail.heart_spectrum.size:
             self._update_vital_spectrum_plot(
                 detail.breath_spectrum,
-                detail.heart_product,
+                detail.heart_spectrum,
                 detail.breath_peak_bin,
                 detail.heart_peak_bin,
             )
@@ -2025,7 +2139,7 @@ class MainWindow(QMainWindow):
         self._vital_last_pick = None
         self._vital_repush_bin = None
         self.vital_pick_line.setVisible(False)
-        self._ensure_vital_phase_dials(0)
+        self.vital_phase_dial_strip.clear_samples()
         self._vital_processor.reset()
         self.vital_hr_label.setText("— bpm")
         self.vital_br_label.setText("— brpm")

@@ -1,4 +1,5 @@
 #include "dashboard_controller.h"
+#include "../../../db/database.h"
 
 #include "../../../app/app_state.h"
 #include "../../../demo/demo_device_backend.h"
@@ -15,16 +16,16 @@ namespace v1 {
 
 namespace
 {
-    std::optional<int64_t> resolveUserId(const drogon::HttpRequestPtr& req, drogon::orm::DbClientPtr client)
+    std::optional<int64_t> resolve_user_id(const HttpRequestPtr& req, db::DbClientPtr client)
     {
         SessionStore sessions(client);
         SettingsStore settings(client);
         return settings.resolveActiveUserId(sessions, req);
     }
 
-    bool requireDb(
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
-        drogon::orm::DbClientPtr& client_out)
+    bool require_db(
+        const HttpResponseCallback& callback,
+        db::DbClientPtr& client_out)
     {
         client_out = AppState::get().db();
         if (!client_out)
@@ -35,12 +36,12 @@ namespace
         return true;
     }
 
-    std::optional<int64_t> requireActiveUser(
-        const drogon::HttpRequestPtr& req,
-        const std::function<void(const drogon::HttpResponsePtr&)>& callback,
-        drogon::orm::DbClientPtr client)
+    std::optional<int64_t> require_active_user(
+        const HttpRequestPtr& req,
+        const HttpResponseCallback& callback,
+        db::DbClientPtr client)
     {
-        const auto user_id = resolveUserId(req, client);
+        const auto user_id = resolve_user_id(req, client);
         if (!user_id)
         {
             respondError(callback, 409, "ACTIVE_ACCOUNT_REQUIRED", "활성 구성원을 먼저 선택해주세요.");
@@ -50,15 +51,13 @@ namespace
     }
 }
 
-void DashboardController::dailyMessage(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DashboardController::dailyMessage(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    drogon::orm::DbClientPtr client;
-    if (!requireDb(callback, client))
+    db::DbClientPtr client;
+    if (!require_db(callback, client))
         return;
 
-    const auto user_id = requireActiveUser(req, callback, client);
+    const auto user_id = require_active_user(req, callback, client);
     if (!user_id)
         return;
 
@@ -73,30 +72,26 @@ void DashboardController::dailyMessage(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void DashboardController::currentState(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DashboardController::currentState(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    drogon::orm::DbClientPtr client;
-    if (!requireDb(callback, client))
+    db::DbClientPtr client;
+    if (!require_db(callback, client))
         return;
 
-    if (!requireActiveUser(req, callback, client))
+    if (!require_active_user(req, callback, client))
         return;
 
     DashboardStore store(client);
     callback(drogon::HttpResponse::newHttpJsonResponse(store.currentState()));
 }
 
-void DashboardController::upcomingAlarms(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DashboardController::upcomingAlarms(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    drogon::orm::DbClientPtr client;
-    if (!requireDb(callback, client))
+    db::DbClientPtr client;
+    if (!require_db(callback, client))
         return;
 
-    const auto user_id = requireActiveUser(req, callback, client);
+    const auto user_id = require_active_user(req, callback, client);
     if (!user_id)
         return;
 
@@ -116,15 +111,13 @@ void DashboardController::upcomingAlarms(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.upcomingAlarms(*user_id)));
 }
 
-void DashboardController::activeGestureRules(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DashboardController::activeGestureRules(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
-    drogon::orm::DbClientPtr client;
-    if (!requireDb(callback, client))
+    db::DbClientPtr client;
+    if (!require_db(callback, client))
         return;
 
-    const auto user_id = requireActiveUser(req, callback, client);
+    const auto user_id = require_active_user(req, callback, client);
     if (!user_id)
         return;
 

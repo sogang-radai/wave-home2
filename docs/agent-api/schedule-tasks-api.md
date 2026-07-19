@@ -1,6 +1,6 @@
 # Schedule Tasks API (에이전트 → 백엔드)
 
-호출 방향: **에이전트(:8501) → 백엔드(:8500)**
+호출 방향: **에이전트(:8502) → 백엔드 agent-api(:8501)**
 
 > **프론트 API와 분리**: 웹 UI는 `/api/v1/schedule-tasks` ([`wave-home-front/docs/api/schedule-tasks.md`](../../wave-home-front/docs/api/schedule-tasks.md)). 세션 `activeAccount` 기준.
 > 이 문서는 에이전트가 챗·일정 변경 툴에서 **명시적 `userId`** 로 CRUD할 때 쓴다.
@@ -124,7 +124,7 @@ DELETE /internal/v1/schedule-tasks/{id}?userId={userId}
 ```python
 import httpx
 
-BACKEND = "http://127.0.0.1:8500/internal/v1"
+BACKEND = "http://127.0.0.1:8501/internal/v1"
 
 async def update_schedule_task(user_id: int, task_id: int, **fields) -> dict:
     async with httpx.AsyncClient() as client:

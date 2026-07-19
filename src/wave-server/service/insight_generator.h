@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#include <drogon/orm/DbClient.h>
+#include "../db/database.h"
 
 #include "core/coredefs.h"
 
@@ -16,12 +16,10 @@ SERVICE_NAMESPACE_BEGIN
  * "백엔드 저장 규칙": 동일 userId+surface+date 기존 행은 삭제 후 insert,
  * approved 는 항상 0).
  *
- * embed=false 로 요청한다 — 문서상 embed=true 면 백엔드가 vec_insight_* 에
- * upsert 하게 되어 있지만 그 저장 파이프라인이 아직 없어서, 지금 embedding을
- * 받아도 버려질 뿐이다. RAG 저장을 붙이면 true로 바꾼다.
+ * embed=true 로 요청하고, 각 item.embedding 을 surface 별 vec_insight_* 에 upsert 한다.
  */
 bool generateAndPersistInsights(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& agent_base_url,
     int64_t user_id,
     const std::string& surface,

@@ -1,5 +1,5 @@
 # bin/ — ignore built binaries and downloadable TTS weights only
-#   TTS: scripts/download-tts-model.sh
+#   TTS: scripts/download/tts-model.sh
 bin/wave-server
 bin/test/
 bin/models/tts/ko-kr/
@@ -7,19 +7,19 @@ bin/models/stt/ko-kr/
 bin/models/pose/
 bin/uploads/
 bin/cache/
-bin/data/*.db
-bin/data/*.db-shm
-bin/data/*.db-wal
-bin/data/*.db.backup
-bin/data/*.db.backup*
-bin/data/*.backup
-bin/database.db
-bin/database.db-*
+bin/data/database.db
 bin/*.db
 bin/*.db-shm
 bin/*.db-wal
+bin/**/*.db-shm
+bin/**/*.db-wal
+*.db-shm
+*.db-wal
 
-# Mock DB pipeline (regenerate: mock/scripts/, see mock/mock.md)
+# Demo DB pipeline (regenerate: demo/scripts/, see demo/demo.md)
+demo/data/
+demo/ai_reports/
+demo/ai_manual/
 mock/data/
 mock/ai_reports/
 mock/ai_manual/
@@ -27,12 +27,20 @@ mock/ai_manual/
 # Runtime logs
 logs/
 
-# Dataset (too large)
+# Local Ollama thinking toggle state
+scripts/ollama/.think
+
+# SleepNet / GestureNet — large local artifacts
 sleep-net/dataset/
-sleep-net/training/
 sleep-net/samples/
 sleep-net/models/
-sleep-net/test/
+sleep-net/training/
+sleep-net/test/**/*.csv
+sleep-net/test/plots/
+gesture-net/dataset/
+gesture-net/samples/
+gesture-net/models/
+gesture-net/training/
 
 # Plan files (may contain credentials)
 [pP]lan.md
@@ -62,6 +70,8 @@ src/r4sn/disassembly/
 .venv/
 venv/
 **/.venv/
+**/.venv-plot/
+sleep-net/.venv-plot/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -100,7 +110,9 @@ Thumbs.db
 
 docs/videos/
 docs/papers/
+docs/ppt/
 docs/vapid.txt
 *.webm
 
 .deps
+.cursorrules

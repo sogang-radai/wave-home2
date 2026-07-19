@@ -1,6 +1,6 @@
 # DB 조회 API
 
-호출 방향: **에이전트(:8501) → 백엔드(:8500)** · **POST** `/internal/v1/db/query`
+호출 방향: **에이전트(:8502) → 백엔드 agent-api(:8501)** · **POST** `/internal/v1/db/query`
 
 에이전트가 SQLite 에 직접 접근하지 않고, **백엔드에 배치 조회를 위임**한다.
 한 HTTP 요청에 여러 테이블 조회를 `queries[]` 로 묶어 보내고, `results[]` 로 1:1 받는다.
@@ -109,7 +109,7 @@ type DbQueryResult = {
       "count": 24,
       "items": [
         {
-          "id": 20401, "deviceId": null, "granularity": "1h",
+          "id": 20401, "deviceId": null, "deviceName": null, "granularity": "1h",
           "timeStart": "2026-07-01 22:00:00", "energyWh": 1180.4, "coverage": 0.98, "sampleCount": 12
         }
       ]
@@ -407,6 +407,8 @@ type DbQueryResult = {
   "limit": 24
 }
 ```
+
+응답 행에는 `deviceId`와 함께 `deviceName`(장치 표시 이름)이 포함됩니다. 합산행(`deviceId: null`)은 `deviceName`도 null입니다.
 
 
 
@@ -758,7 +760,7 @@ POST /internal/v1/db/query
 import httpx
 from langchain_core.tools import tool
 
-BACKEND = "http://127.0.0.1:8500/internal/v1"
+BACKEND = "http://127.0.0.1:8501/internal/v1"
 
 @tool
 def query_db(queries: list[dict]) -> list[dict]:

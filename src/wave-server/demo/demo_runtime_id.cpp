@@ -12,7 +12,7 @@ namespace
     std::mutex g_preferredRuntimeMutex;
     std::string g_preferredRuntimeId;
 
-    std::string randomHex(size_t bytes)
+    std::string random_hex(size_t bytes)
     {
         static thread_local std::mt19937 rng{std::random_device{}()};
         std::uniform_int_distribution<int> dist(0, 255);
@@ -24,7 +24,7 @@ namespace
         return stream.str();
     }
 
-    std::optional<std::string> parseCookieValue(const std::string& cookie_header, const char* name)
+    std::optional<std::string> parse_cookie_value(const std::string& cookie_header, const char* name)
     {
         const std::string key = std::string(name) + "=";
         size_t pos = 0;
@@ -49,7 +49,7 @@ namespace
 
 std::string generateDemoRuntimeId()
 {
-    return randomHex(16);
+    return random_hex(16);
 }
 
 void rememberPreferredDemoRuntimeId(const std::string& runtime_id)
@@ -84,7 +84,7 @@ std::optional<std::string> demoRuntimeIdFromCookie(const drogon::HttpRequestPtr&
     const auto cookie = req->getHeader("Cookie");
     if (cookie.empty())
         return std::nullopt;
-    auto value = parseCookieValue(cookie, kDemoRuntimeCookieName);
+    auto value = parse_cookie_value(cookie, kDemoRuntimeCookieName);
     if (!value || value->size() < 8)
         return std::nullopt;
     return value;

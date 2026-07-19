@@ -1,11 +1,14 @@
 #include "demo_power_meter.h"
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <random>
 
+#include "../app/app_state.h"
+#include "../db/database.h"
 #include "../device/device_wire_id.hpp"
 
 WAVE_NAMESPACE_BEGIN
@@ -34,35 +37,40 @@ namespace
             return "-" + std::to_string(seconds_ago) + "s";
         return "-" + std::to_string((seconds_ago + 59) / 60) + "분";
     }
-
-    double ratedPowerForDevice(const std::string& device_id)
-    {
-        if (device_id == "0000000000000006")
-            return 20.0;
-        if (device_id == "0000000000000007")
-            return 100.0;
-        if (device_id == "0000000000000008")
-            return 600.0;
-        if (device_id == "0000000000000009")
-            return 2400.0;
-        return 0.0;
-    }
 }
 
-DemoPowerMeter& DemoPowerMeter::instance()
+DemoPowerMeter& demoPowerMeter()
 {
-    static DemoPowerMeter meter;
-    return meter;
+    auto* meter = AppState::get().runtime().demoPowerMeter();
+    assert(meter != nullptr);
+    return *meter;
 }
 
-int64_t DemoPowerMeter::nowMs()
+double DemoPowerMeter::rated_power_for_device(const std::string& device_id)
+{
+    // Demo plug baselines (wire id). Keep in sync with UI expectations for
+    // power page + query_device(power); session state should not freeze an old value.
+    if (device_id == "0000000000000006")
+        return 20.0;    // fan
+    if (device_id == "0000000000000007")
+        return 350.0;   // pc
+    if (device_id == "0000000000000008")
+        return 600.0;   // aircon
+    if (device_id == "0000000000000009")
+        return 2400.0;  // induction
+    if (device_id == "000000000000000e")
+        return 1100.0;  // microwave
+    return 0.0;
+}
+
+int64_t DemoPowerMeter::now_ms()
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch())
         .count();
 }
 
-double DemoPowerMeter::jitterFactor()
+double DemoPowerMeter::jitter_factor()
 {
     static thread_local std::mt19937 rng{std::random_device{}()};
     std::uniform_real_distribution<double> dist(-0.045, 0.045);
@@ -94,12 +102,15 @@ DemoPowerReading DemoPowerMeter::refreshLocked(
     const double voltage_v,
     const bool force)
 {
-    const int64_t now = nowMs();
+    const int64_t now = now_ms();
+    const double prev_rated = slot.reading.rated_w;
     slot.reading.switch_on = switch_on;
     slot.reading.rated_w = rated_w;
     slot.reading.voltage_v = voltage_v > 0 ? voltage_v : 235.0;
 
-    const bool due = force || slot.last_jitter_ms == 0 ||
+    const bool rated_changed =
+        prev_rated > 0.0 && std::abs(prev_rated - rated_w) > 0.5;
+    const bool due = force || rated_changed || slot.last_jitter_ms == 0 ||
         (now - slot.last_jitter_ms) >= kJitterIntervalMs;
 
     if (!switch_on)
@@ -115,7 +126,7 @@ DemoPowerReading DemoPowerMeter::refreshLocked(
 
     if (due)
     {
-        const double factor = jitterFactor();
+        const double factor = jitter_factor();
         const double voltage = slot.reading.voltage_v * (1.0 + (factor - 1.0) * 0.15);
         const double power = std::max(0.0, rated_w * factor);
         slot.reading.voltage_v = std::round(voltage * 10.0) / 10.0;
@@ -171,7 +182,7 @@ DemoPowerReading DemoPowerMeter::samplePlug(
 
 Json::Value DemoPowerMeter::listPlugs(
     const std::string& runtime_id,
-    const drogon::orm::DbClientPtr& client)
+    const db::DbClientPtr& client)
 {
     Json::Value body(Json::arrayValue);
     Json::Value aggregate;
@@ -212,16 +223,18 @@ ORDER BY d.id
     for (const auto& row : rows)
     {
         const auto wire_id = dev::wireIdForDbRow(row["id"].as<int64_t>(), row["name"].as<std::string>());
-        const double rated = ratedPowerForDevice(wire_id);
-        const bool default_on = wire_id != "0000000000000009";
+        const double rated = rated_power_for_device(wire_id);
+        const bool default_on =
+            wire_id != "0000000000000009" && wire_id != "000000000000000e";
 
         DemoPowerReading reading;
         {
             std::lock_guard lock(m_mutex);
             auto& slot = m_sessions[runtime_id].plugs[wire_id];
             const bool switch_on = slot.reading.ts_ms > 0 ? slot.reading.switch_on : default_on;
-            const double rated_w = slot.reading.rated_w > 0 ? slot.reading.rated_w : rated;
-            reading = refreshLocked(slot, switch_on, rated_w, 235.0, false);
+            // Always use the code table so rebuilding with a new rated W takes
+            // effect immediately (do not freeze the first sample's rated_w).
+            reading = refreshLocked(slot, switch_on, rated, 235.0, false);
         }
 
         Json::Value plug;
@@ -265,7 +278,7 @@ Json::Value DemoPowerMeter::comboTrend(
 {
     const int step_seconds = stepSecondsForRange(range);
     constexpr int points = 60;
-    const int64_t now = nowMs();
+    const int64_t now = now_ms();
 
     std::lock_guard lock(m_mutex);
     auto session_it = m_sessions.find(runtime_id);

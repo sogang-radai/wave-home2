@@ -1,4 +1,5 @@
 #include "sleep_store.h"
+#include "../../../db/database.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,8 +7,8 @@
 #include <sstream>
 
 #include "../../../app/app_state.h"
-#include "../../../core/time_util.h"
 #include "../../../service/sleep/sleep_manager.h"
+#include "util/time_util.h"
 #include "insights_store.h"
 #include "settings_store.h"
 
@@ -17,14 +18,14 @@ namespace v1 {
 
 namespace
 {
-    std::string padTime(const std::string& hhmm)
+    std::string pad_time(const std::string& hhmm)
     {
         if (hhmm.size() >= 5)
             return hhmm.substr(0, 5);
         return hhmm;
     }
 
-    int64_t parseSessionId(const std::string& session_id, int64_t fallback)
+    int64_t parse_session_id(const std::string& session_id, int64_t fallback)
     {
         if (session_id.empty() || session_id == "main")
             return fallback;
@@ -38,7 +39,7 @@ namespace
         }
     }
 
-    std::string minutesToHHMM(int minutes)
+    std::string minutes_to_hhmm(int minutes)
     {
         const int wrapped = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60);
         char buf[6];
@@ -46,7 +47,7 @@ namespace
         return buf;
     }
 
-    bool parseJsonField(const drogon::orm::Field& field, Json::Value& out)
+    bool parse_json_field(const drogon::orm::Field& field, Json::Value& out)
     {
         if (field.isNull())
             return false;
@@ -56,20 +57,20 @@ namespace
         return Json::parseFromStream(builder, stream, &out, &errors);
     }
 
-    std::string normalizeStageLabel(const std::string& label)
+    std::string normalize_stage_label(const std::string& label)
     {
         if (label == "deep" || label == "light" || label == "rem")
             return label;
         return "awake";
     }
 
-    std::string resolveStageLabel(const drogon::orm::Row& row)
+    std::string resolve_stage_label(const drogon::orm::Row& row)
     {
         if (!row["stage_label"].isNull())
-            return normalizeStageLabel(row["stage_label"].as<std::string>());
+            return normalize_stage_label(row["stage_label"].as<std::string>());
 
         Json::Value ratio;
-        if (parseJsonField(row["stage_ratio"], ratio))
+        if (parse_json_field(row["stage_ratio"], ratio))
         {
             std::string best = "awake";
             double best_value = -1.0;
@@ -87,7 +88,7 @@ namespace
         }
 
         Json::Value status;
-        if (parseJsonField(row["status_ratio"], status))
+        if (parse_json_field(row["status_ratio"], status))
         {
             const double asleep = status.get("asleep", 0.0).asDouble();
             return asleep >= 0.5 ? "light" : "awake";
@@ -96,7 +97,7 @@ namespace
         return "awake";
     }
 
-    int movementLevelFromRow(const drogon::orm::Row& row)
+    int movement_level_from_row(const drogon::orm::Row& row)
     {
         const double toss_mean = row["toss_mean"].isNull() ? 0.0 : row["toss_mean"].as<double>();
         const int toss_events = row["toss_events"].isNull() ? 0 : row["toss_events"].as<int>();
@@ -104,7 +105,7 @@ namespace
         return static_cast<int>(std::round(level));
     }
 
-    std::string formatDurationText(int total_seconds)
+    std::string format_duration_text(int total_seconds)
     {
         const int minutes = static_cast<int>(std::round(total_seconds / 60.0));
         const int hours = minutes / 60;
@@ -116,7 +117,7 @@ namespace
         return std::to_string(remainder) + "분";
     }
 
-    std::string formatClockLabel(const std::string& timestamp)
+    std::string format_clock_label(const std::string& timestamp)
     {
         if (timestamp.size() < 16)
             return timestamp;
@@ -129,11 +130,11 @@ namespace
         return buf;
     }
 
-    Json::Value buildStageBreakdown(const drogon::orm::Field& stage_totals_field)
+    Json::Value build_stage_breakdown(const drogon::orm::Field& stage_totals_field)
     {
         Json::Value breakdown(Json::arrayValue);
         Json::Value totals;
-        if (!parseJsonField(stage_totals_field, totals))
+        if (!parse_json_field(stage_totals_field, totals))
             return breakdown;
 
         static const struct
@@ -167,7 +168,7 @@ namespace
             item["label"] = stage.label;
             item["tone"] = stage.tone;
             item["percent"] = static_cast<int>(std::round((seconds * 100.0) / asleep_total_s));
-            item["durationText"] = formatDurationText(seconds);
+            item["durationText"] = format_duration_text(seconds);
             Json::Value typical(Json::arrayValue);
             typical.append(stage.typical_start);
             typical.append(stage.typical_end);
@@ -178,7 +179,7 @@ namespace
         return breakdown;
     }
 
-    Json::Value buildStageLog(const drogon::orm::Result& stats)
+    Json::Value build_stage_log(const drogon::orm::Result& stats)
     {
         Json::Value stage_log(Json::arrayValue);
         for (size_t i = 0; i < stats.size(); ++i)
@@ -188,7 +189,7 @@ namespace
                 continue;
 
             Json::Value point;
-            point["time"] = formatClockLabel(row["time_start"].as<std::string>());
+            point["time"] = format_clock_label(row["time_start"].as<std::string>());
             point["heartRate"] = row["hr_mean"].isNull() ? 0.0 : row["hr_mean"].as<double>();
             point["breathRate"] = row["br_mean"].isNull() ? 0.0 : row["br_mean"].as<double>();
             stage_log.append(point);
@@ -196,7 +197,7 @@ namespace
         return stage_log;
     }
 
-    Json::Value buildSnoringEpisodes(const drogon::orm::Result& stats)
+    Json::Value build_snoring_episodes(const drogon::orm::Result& stats)
     {
         Json::Value episodes(Json::arrayValue);
         for (size_t i = 0; i < stats.size(); ++i)
@@ -207,7 +208,7 @@ namespace
                 continue;
 
             Json::Value episode;
-            episode["time"] = formatClockLabel(row["time_start"].as<std::string>());
+            episode["time"] = format_clock_label(row["time_start"].as<std::string>());
             episode["durationMinutes"] = static_cast<int>(std::round(snore_ratio * 30.0));
             episodes.append(episode);
         }
@@ -215,19 +216,19 @@ namespace
     }
 }
 
-SleepStore::SleepStore(drogon::orm::DbClientPtr client) :
+SleepStore::SleepStore(db::DbClientPtr client) :
     m_client(std::move(client))
 {
 }
 
-std::string SleepStore::toIsoKst(const std::string& timestamp)
+std::string SleepStore::to_iso_kst(const std::string& timestamp)
 {
     if (timestamp.size() >= 19)
         return timestamp.substr(0, 10) + "T" + timestamp.substr(11, 8) + "+09:00";
     return timestamp;
 }
 
-int SleepStore::computeScore(double efficiency)
+int SleepStore::compute_score(double efficiency)
 {
     if (efficiency <= 0.0)
         return 0;
@@ -266,7 +267,7 @@ Json::Value SleepStore::getTodaySummary(int64_t user_id) const
     const std::string final_wake = row["final_wake"].isNull() ? "" : row["final_wake"].as<std::string>();
 
     out["date"] = row["night_date"].as<std::string>();
-    out["score"] = computeScore(efficiency);
+    out["score"] = compute_score(efficiency);
     out["achievedHours"] = std::round((asleep_s / 3600.0) * 10.0) / 10.0;
     out["goalHours"] = 7.5;
     out["bedTime"] = onset.size() >= 16 ? onset.substr(11, 5) : "--:--";
@@ -276,7 +277,7 @@ Json::Value SleepStore::getTodaySummary(int64_t user_id) const
 
 Json::Value SleepStore::getTodayPlan(int64_t user_id) const
 {
-    const auto plan_date = InsightsStore::referenceDate(m_client);
+    const auto plan_date = InsightsStore::reference_date(m_client);
 
     SettingsStore settings(m_client);
     const auto config = settings.getSleepConfig(user_id);
@@ -309,7 +310,7 @@ Json::Value SleepStore::getTodayPlan(int64_t user_id) const
     else
     {
         // 취침/기상 시각 산정은 더 이상 여기서 rule-based 로 계산하지 않는다 - 에이전트
-        // (app/graph/sleep_plan_graph.py)가 최근 수면 기록과 내일 일정을 스스로 조회해
+        // (app/graph 의 sleep_plan 생성 job)가 최근 수면 기록과 내일 일정을 스스로 조회해
         // 판단한다. GET 요청 경로에서 에이전트를 동기 호출하면 응답이 느려지므로, 대신
         // SleepManager 의 비동기 작업 큐에 생성을 요청만 해두고(sleep_plan_generator.h),
         // 이번 응답은 안전한 기본값으로 채운다 - 생성이 끝나면 다음 조회부터는 캐시된
@@ -325,10 +326,10 @@ Json::Value SleepStore::getTodayPlan(int64_t user_id) const
     }
 
     Json::Value out;
-    out["bedtime"] = minutesToHHMM(bedtime_min);
-    out["wakeTime"] = minutesToHHMM(wake_min);
-    out["prepTime"] = minutesToHHMM(prep_min);
-    out["lightDimTime"] = minutesToHHMM(bedtime_min - dim_start_minutes);
+    out["bedtime"] = minutes_to_hhmm(bedtime_min);
+    out["wakeTime"] = minutes_to_hhmm(wake_min);
+    out["prepTime"] = minutes_to_hhmm(prep_min);
+    out["lightDimTime"] = minutes_to_hhmm(bedtime_min - dim_start_minutes);
     out["recommendedTemperatureCelsius"] = recommended_temp;
     out["rationale"] = rationale;
     return out;
@@ -351,8 +352,8 @@ Json::Value SleepStore::getTodayAutomationSummary(int64_t user_id) const
     {
         Json::Value item;
         item["title"] = "취침 루틴";
-        item["text"] = "취침 " + padTime(config["bedtime"].asString()) + " · 기상 "
-            + padTime(config["wakeTime"].asString());
+        item["text"] = "취침 " + pad_time(config["bedtime"].asString()) + " · 기상 "
+            + pad_time(config["wakeTime"].asString());
         items.append(item);
     }
     {
@@ -393,10 +394,10 @@ Json::Value SleepStore::getDailySessions(int64_t user_id, const std::string& dat
         session["sessionId"] = std::to_string(row["id"].as<int64_t>());
         session["label"] = rows.size() > 1 && i > 0 ? "추가 수면" : "주 수면";
         const double efficiency = row["efficiency"].isNull() ? 0.0 : row["efficiency"].as<double>();
-        session["score"] = computeScore(efficiency);
+        session["score"] = compute_score(efficiency);
         Json::Value window;
-        window["start"] = row["onset"].isNull() ? "" : toIsoKst(row["onset"].as<std::string>());
-        window["end"] = row["final_wake"].isNull() ? "" : toIsoKst(row["final_wake"].as<std::string>());
+        window["start"] = row["onset"].isNull() ? "" : to_iso_kst(row["onset"].as<std::string>());
+        window["end"] = row["final_wake"].isNull() ? "" : to_iso_kst(row["final_wake"].as<std::string>());
         session["sleepWindow"] = window;
         sessions.append(session);
     }
@@ -410,8 +411,8 @@ Json::Value SleepStore::buildHypnogram(
     const std::string& end) const
 {
     Json::Value hypno;
-    hypno["start"] = toIsoKst(start);
-    hypno["end"] = toIsoKst(end);
+    hypno["start"] = to_iso_kst(start);
+    hypno["end"] = to_iso_kst(end);
 
     Json::Value segments(Json::arrayValue);
     Json::Value movement(Json::arrayValue);
@@ -419,10 +420,10 @@ Json::Value SleepStore::buildHypnogram(
     {
         const auto& row = stats[i];
         Json::Value segment;
-        segment["stage"] = resolveStageLabel(row);
+        segment["stage"] = resolve_stage_label(row);
         segment["durationMinutes"] = 1;
         segments.append(segment);
-        movement.append(movementLevelFromRow(row));
+        movement.append(movement_level_from_row(row));
     }
     hypno["segments"] = segments;
     hypno["movementLevels"] = movement;
@@ -442,7 +443,7 @@ Json::Value SleepStore::getDailyReport(
         return Json::Value();
 
     const int64_t default_id = session_rows[0]["id"].as<int64_t>();
-    const int64_t session_id = parseSessionId(session_id_text, default_id);
+    const int64_t session_id = parse_session_id(session_id_text, default_id);
 
     size_t session_index = 0;
     for (size_t i = 0; i < session_rows.size(); ++i)
@@ -486,10 +487,10 @@ ORDER BY time_start ASC
     out["sessionId"] = std::to_string(session_row["id"].as<int64_t>());
     out["label"] = "주 수면";
     out["date"] = date;
-    out["score"] = computeScore(efficiency);
+    out["score"] = compute_score(efficiency);
     out["sleepWindow"] = Json::Value(Json::objectValue);
-    out["sleepWindow"]["start"] = toIsoKst(onset);
-    out["sleepWindow"]["end"] = toIsoKst(final_wake);
+    out["sleepWindow"]["start"] = to_iso_kst(onset);
+    out["sleepWindow"]["end"] = to_iso_kst(final_wake);
     out["timeInBedMinutes"] = static_cast<int>(std::round(time_in_bed_s / 60.0));
     out["actualSleepMinutes"] = static_cast<int>(std::round(asleep_s / 60.0));
 
@@ -513,7 +514,7 @@ ORDER BY time_start ASC
         factors.append(factor);
     }
     out["scoreFactors"] = factors;
-    out["stageBreakdown"] = buildStageBreakdown(session_row["stage_totals"]);
+    out["stageBreakdown"] = build_stage_breakdown(session_row["stage_totals"]);
 
     out["hypnogram"] = buildHypnogram(stat_rows, onset, final_wake);
 
@@ -526,8 +527,8 @@ ORDER BY time_start ASC
         user_id,
         session_id);
 
-    out["stageLog"] = buildStageLog(stat_30m_rows);
-    out["snoringEpisodes"] = buildSnoringEpisodes(stat_30m_rows);
+    out["stageLog"] = build_stage_log(stat_30m_rows);
+    out["snoringEpisodes"] = build_snoring_episodes(stat_30m_rows);
     out["analysis"] = Json::Value(Json::arrayValue);
 
     auto report_rows = m_client->execSqlSync(
@@ -607,7 +608,7 @@ Json::Value SleepStore::getWeeklyReport(int64_t user_id, const std::string& week
                     ? 0
                     : session_rows[j]["asleep_total_s"].as<int>();
                 point["hours"] = std::round((asleep_s / 3600.0) * 10.0) / 10.0;
-                point["score"] = computeScore(efficiency);
+                point["score"] = compute_score(efficiency);
                 score_sum += point["score"].asInt();
                 ++score_count;
                 break;

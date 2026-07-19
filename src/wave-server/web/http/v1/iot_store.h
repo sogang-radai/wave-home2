@@ -114,8 +114,8 @@ private:
     dev::RadaiWs* requireRadaiWs(const std::string& external_id, std::string& code);
     const dev::RadaiWs* requireRadaiWs(const std::string& external_id, std::string& code) const;
 
-    static Json::Value toJsonValue(const nlohmann::json& value);
-    static bool isQueryError(const nlohmann::json& value);
+    static Json::Value to_json_value(const nlohmann::json& value);
+    static bool is_query_error(const nlohmann::json& value);
 };
 
 // Runs synthesis + device playback on the background task queue.

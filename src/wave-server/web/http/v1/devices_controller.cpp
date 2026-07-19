@@ -1,7 +1,10 @@
 #include "devices_controller.h"
 
+#include <optional>
+
 #include "../../../app/app_state.h"
 #include "../../../device/device.h"
+#include "../../../service/companion/companion_manager.h"
 #include "devices_store.h"
 #include "session_store.h"
 
@@ -9,9 +12,7 @@ WAVE_NAMESPACE_BEGIN
 WEB_NAMESPACE_BEGIN
 namespace v1 {
 
-void DevicesController::listDevices(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DevicesController::listDevices(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -24,9 +25,7 @@ void DevicesController::listDevices(
     callback(drogon::HttpResponse::newHttpJsonResponse(store.listDevices()));
 }
 
-void DevicesController::createDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback)
+void DevicesController::createDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -58,10 +57,7 @@ void DevicesController::createDevice(
     callback(resp);
 }
 
-void DevicesController::updateDevice(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void DevicesController::updateDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -88,12 +84,23 @@ void DevicesController::updateDevice(
         return;
     }
 
+    if (device->isMember("class") && (*device)["class"].asString() == "wave_station"
+        && device->isMember("settings") && (*device)["settings"].isObject())
+    {
+        const auto& settings = (*device)["settings"];
+        const bool companion = settings.isMember("companion")
+            && settings["companion"].isBool()
+            && settings["companion"].asBool();
+        std::optional<float> mic_gain;
+        if (settings.isMember("mic_gain") && settings["mic_gain"].isNumeric())
+            mic_gain = static_cast<float>(settings["mic_gain"].asDouble());
+        service::CompanionManager::get().notifyDeviceUpdated(deviceId, companion, mic_gain);
+    }
+
     callback(drogon::HttpResponse::newHttpJsonResponse(*device));
 }
 
-void DevicesController::deleteDevice(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void DevicesController::deleteDevice(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();
@@ -116,10 +123,7 @@ void DevicesController::deleteDevice(
     callback(drogon::HttpResponse::newHttpJsonResponse(body));
 }
 
-void DevicesController::assignRoom(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    std::string deviceId)
+void DevicesController::assignRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)
 {
     auto& state = AppState::get();
     if (!state.db())
@@ -160,9 +164,7 @@ void DevicesController::assignRoom(
     callback(drogon::HttpResponse::newHttpJsonResponse(*device));
 }
 
-void DevicesController::unassignRoom(
-    const drogon::HttpRequestPtr& /*req*/,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+void DevicesController::unassignRoom(const HttpRequestPtr& /*req*/, HttpResponseCallback&& callback,
     std::string deviceId)
 {
     auto& state = AppState::get();

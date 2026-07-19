@@ -523,7 +523,7 @@ Image::Image(Detail detail, std::string payload) :
     m_content = std::move(payload);
 }
 
-std::shared_ptr<Image> Image::fromBase64(std::string_view base64, Detail detail)
+std::shared_ptr<Image> Image::from_base64(std::string_view base64, Detail detail)
 {
     std::string payload;
     if (base64.rfind("data:", 0) == 0)
@@ -533,7 +533,7 @@ std::shared_ptr<Image> Image::fromBase64(std::string_view base64, Detail detail)
     return std::shared_ptr<Image>(new Image(detail, std::move(payload)));
 }
 
-std::shared_ptr<Image> Image::fromFile(std::string_view path, Detail detail)
+std::shared_ptr<Image> Image::from_file(std::string_view path, Detail detail)
 {
     std::string error;
     const std::string bytes = read_file_bytes(path, error);
@@ -552,7 +552,7 @@ std::shared_ptr<Image> Image::fromFile(std::string_view path, Detail detail)
     return std::shared_ptr<Image>(new Image(detail, std::move(payload)));
 }
 
-std::shared_ptr<Image> Image::fromUrl(std::string_view url, Detail detail)
+std::shared_ptr<Image> Image::from_url(std::string_view url, Detail detail)
 {
     return std::shared_ptr<Image>(new Image(detail, std::string(url)));
 }
@@ -596,12 +596,12 @@ std::string_view Text::content() const
     return m_message;
 }
 
-std::string_view Client::textForApi(const Text& text)
+std::string_view Client::text_for_api(const Text& text)
 {
     return !text.m_answer.empty() ? text.m_answer : text.m_message;
 }
 
-std::shared_ptr<Text> Client::makeAssistantText(std::string thinking, std::string answer)
+std::shared_ptr<Text> Client::make_assistant_text(std::string thinking, std::string answer)
 {
     auto text = std::shared_ptr<Text>(new Text());
     if (!thinking.empty())
@@ -800,7 +800,7 @@ bool Chat::restore(const json& archive)
                             else if (detail_tag == "high")
                                 detail = Image::Detail::High;
                         }
-                        message->addContent(Image::fromUrl(image_url["url"].get<std::string>(), detail));
+                        message->addContent(Image::from_url(image_url["url"].get<std::string>(), detail));
                     }
                 }
             }
@@ -1174,7 +1174,7 @@ Result Client::Impl::sendStreamRequest(
         return ERROR_PARSE;
     }
 
-    chat.addMessage(Message::create(Message::Role::Assistant, Client::makeAssistantText(thinking_text, assistant_text)));
+    chat.addMessage(Message::create(Message::Role::Assistant, Client::make_assistant_text(thinking_text, assistant_text)));
     return SUCCESS;
 }
 
@@ -1184,7 +1184,7 @@ void Client::Impl::appendMessageContent(std::string& out, const Content& content
     {
         const auto& text = static_cast<const Text&>(content);
         out.append("{\"type\":\"text\",\"text\":");
-        append_json_string(out, Client::textForApi(text));
+        append_json_string(out, Client::text_for_api(text));
         out.push_back('}');
         return;
     }
@@ -1217,7 +1217,7 @@ void Client::Impl::appendMessagesJson(std::string& out, const Chat& chat) const
         if (message->size() == 1 && (*message->begin())->kind() == Content::Kind::Text)
         {
             const auto& text = static_cast<const Text&>(**message->begin());
-            append_json_string(out, Client::textForApi(text));
+            append_json_string(out, Client::text_for_api(text));
         }
         else
         {
@@ -1333,7 +1333,7 @@ Result Client::Impl::parseChatResponse(
         return ERROR_PARSE;
     }
 
-    chat.addMessage(Message::create(Message::Role::Assistant, Client::makeAssistantText(thinking, content)));
+    chat.addMessage(Message::create(Message::Role::Assistant, Client::make_assistant_text(thinking, content)));
     return SUCCESS;
 }
 
@@ -1370,7 +1370,7 @@ Result Client::Impl::parseStreamResponse(
         return ERROR_PARSE;
     }
 
-    chat.addMessage(Message::create(Message::Role::Assistant, Client::makeAssistantText(thinking_text, assistant_text)));
+    chat.addMessage(Message::create(Message::Role::Assistant, Client::make_assistant_text(thinking_text, assistant_text)));
     return SUCCESS;
 }
 
@@ -1501,7 +1501,7 @@ Result Client::ensureModelLoaded()
 
 std::future<Result> Client::ensureModelLoadedAsync()
 {
-    return TaskQueue::enqueueAsync([this]() { return ensureModelLoaded(); });
+    return TaskQueue::enqueue_async([this]() { return ensureModelLoaded(); });
 }
 
 Result Client::chat(Chat& chat)
@@ -1512,7 +1512,7 @@ Result Client::chat(Chat& chat)
 
 std::future<Result> Client::chatAsync(Chat& chat)
 {
-    return TaskQueue::enqueueAsync([this, &chat]() { return this->chat(chat); });
+    return TaskQueue::enqueue_async([this, &chat]() { return this->chat(chat); });
 }
 
 Result Client::streamChat(
@@ -1529,7 +1529,7 @@ std::future<Result> Client::streamChatAsync(
     const std::function<void(const std::string&)>& on_stream,
     const std::function<void(const std::string&)>& on_thinking)
 {
-    return TaskQueue::enqueueAsync(
+    return TaskQueue::enqueue_async(
         [this, &chat, on_stream, on_thinking]() {
             return streamChat(chat, on_stream, on_thinking);
         });

@@ -1,4 +1,5 @@
 #include "device_wire_id.hpp"
+#include "../db/database.h"
 
 #include "../app/app_state.h"
 #include "device.h"
@@ -8,7 +9,7 @@ DEVICE_NAMESPACE_BEGIN
 
 namespace
 {
-    std::optional<int64_t> parseSmallPositiveInt(const std::string& value)
+    std::optional<int64_t> parse_small_positive_int(const std::string& value)
     {
         if (value.empty())
             return std::nullopt;
@@ -26,8 +27,8 @@ namespace
         }
     }
 
-    std::optional<int64_t> dbIdExists(
-        const drogon::orm::DbClientPtr& client,
+    std::optional<int64_t> db_id_exists(
+        const db::DbClientPtr& client,
         int64_t db_id)
     {
         if (!client || db_id <= 0)
@@ -63,7 +64,7 @@ std::string wireIdForDbRow(int64_t db_id, const std::string& /*db_name*/)
 }
 
 std::optional<int64_t> dbIdForWireId(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& wire_id)
 {
     if (wire_id.empty())
@@ -72,13 +73,13 @@ std::optional<int64_t> dbIdForWireId(
     const auto parsed = parseDeviceID(wire_id);
     if (parsed != 0)
     {
-        if (const auto found = dbIdExists(client, static_cast<int64_t>(parsed)))
+        if (const auto found = db_id_exists(client, static_cast<int64_t>(parsed)))
             return found;
     }
 
-    if (const auto as_int = parseSmallPositiveInt(wire_id))
+    if (const auto as_int = parse_small_positive_int(wire_id))
     {
-        if (const auto found = dbIdExists(client, *as_int))
+        if (const auto found = db_id_exists(client, *as_int))
             return found;
     }
 

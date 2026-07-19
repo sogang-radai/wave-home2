@@ -1,6 +1,6 @@
 # Posture Analysis API (경로 예약)
 
-호출 방향: **백엔드(:8500) → 에이전트(:8501)** · Base URL: `/posture/v1`
+호출 방향: **백엔드(:8500) → 에이전트(:8502)** · Base URL: `/posture/v1`
 
 자세 통계·리포트·인사이트 생성 API **경로만 예약**한다.
 내부 메트릭(`posture_stat` 컬럼)이 확정되기 전까지 Request/Response 본문은 확정하지 않는다.

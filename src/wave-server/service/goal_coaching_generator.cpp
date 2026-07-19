@@ -1,11 +1,12 @@
 #include "goal_coaching_generator.h"
+#include "../db/database.h"
 
 #include <optional>
 #include <sstream>
 
 #include "../core/json.h"
 #include "../core/logger.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 #include "agent_client.h"
 
 WAVE_NAMESPACE_BEGIN
@@ -47,7 +48,7 @@ namespace
 }
 
 std::optional<Json::Value> readCachedGoalCoaching(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     int64_t goal_id,
     const std::string& date)
 {
@@ -81,7 +82,7 @@ FROM goal_recommendation WHERE goal_id = ? AND date = ? ORDER BY id
 }
 
 std::optional<Json::Value> generateGoalCoaching(
-    const drogon::orm::DbClientPtr& client,
+    const db::DbClientPtr& client,
     const std::string& agent_base_url,
     int64_t user_id,
     int64_t goal_id,
@@ -101,7 +102,7 @@ std::optional<Json::Value> generateGoalCoaching(
     AgentGoalCoachingJobResult agent_result;
     if (runGoalCoachingJobSync(agent_base_url, body, agent_result, out_error) != AgentClientResult::success)
     {
-        LOG_WARN("goal coaching generation failed (goal {}): {}", goal_id, out_error);
+        WLOG_WARN("goal coaching generation failed (goal {}): {}", goal_id, out_error);
         return std::nullopt;
     }
 
@@ -178,12 +179,12 @@ INSERT INTO goal_recommendation (
             ++next_id;
         }
 
-        LOG_INFO("goal coaching persisted (goal {}, {} recommendation(s))", goal_id, items.size());
+        WLOG_INFO("goal coaching persisted (goal {}, {} recommendation(s))", goal_id, items.size());
     }
     catch (const std::exception& e)
     {
         out_error = e.what();
-        LOG_WARN("goal_coaching persist failed (goal {}): {}", goal_id, out_error);
+        WLOG_WARN("goal_coaching persist failed (goal {}): {}", goal_id, out_error);
         return std::nullopt;
     }
 

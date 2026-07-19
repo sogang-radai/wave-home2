@@ -3,10 +3,10 @@
 #include <stdexcept>
 
 #include "../core/logger.h"
-#include "../core/time_util.h"
+#include "util/time_util.h"
 
 WAVE_NAMESPACE_BEGIN
-namespace db {
+DB_NAMESPACE_BEGIN
 
 namespace
 {
@@ -16,42 +16,42 @@ namespace
             "schema v1 baseline",
             {
                 R"SQL(
-CREATE TABLE IF NOT EXISTS user (
+    CREATE TABLE IF NOT EXISTS user (
     id         INTEGER     NOT NULL,
     name       TEXT        NOT NULL,
     created_at VARCHAR(50),
     PRIMARY KEY (id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS user_session (
+    CREATE TABLE IF NOT EXISTS user_session (
     id                INTEGER     PRIMARY KEY,
     active_user_id    INTEGER,
     access_token_hash TEXT        NOT NULL,
     created_at        VARCHAR(50) NOT NULL,
     updated_at        VARCHAR(50) NOT NULL,
     FOREIGN KEY (active_user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS room (
+    CREATE TABLE IF NOT EXISTS room (
     id          INTEGER NOT NULL,
     name        TEXT    NOT NULL,
     description TEXT    NOT NULL,
     PRIMARY KEY (id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS room_user_map (
+    CREATE TABLE IF NOT EXISTS room_user_map (
     room_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     PRIMARY KEY (room_id, user_id),
     FOREIGN KEY (room_id) REFERENCES room(id),
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS device (
+    CREATE TABLE IF NOT EXISTS device (
     id              INTEGER NOT NULL,
     name            TEXT    NOT NULL,
     description     TEXT    NOT NULL,
@@ -61,63 +61,64 @@ CREATE TABLE IF NOT EXISTS device (
     interface_json  TEXT    NOT NULL DEFAULT '{}',
     settings_json   TEXT,
     PRIMARY KEY (id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS device_user_map (
+    CREATE TABLE IF NOT EXISTS device_user_map (
     device_id INTEGER NOT NULL,
     user_id   INTEGER NOT NULL,
     PRIMARY KEY (device_id, user_id),
     FOREIGN KEY (device_id) REFERENCES device(id),
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS device_room_map (
+    CREATE TABLE IF NOT EXISTS device_room_map (
     device_id INTEGER NOT NULL,
     room_id   INTEGER NOT NULL,
     PRIMARY KEY (device_id, room_id),
     FOREIGN KEY (device_id) REFERENCES device(id),
     FOREIGN KEY (room_id) REFERENCES room(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS user_sleep_config (
+    CREATE TABLE IF NOT EXISTS user_sleep_config (
     user_id    INTEGER     PRIMARY KEY,
     config     TEXT        NOT NULL,
     updated_at VARCHAR(50) NOT NULL,
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS user_general_settings (
+    CREATE TABLE IF NOT EXISTS user_general_settings (
     user_id    INTEGER     PRIMARY KEY,
     settings   TEXT        NOT NULL,
     updated_at VARCHAR(50) NOT NULL,
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS user_ai_agent_settings (
+    CREATE TABLE IF NOT EXISTS user_ai_agent_settings (
     user_id           INTEGER     PRIMARY KEY,
     personal_prompt   TEXT        NOT NULL DEFAULT '',
     selected_model_id TEXT        NOT NULL,
     ctrl_enter_send   INTEGER     NOT NULL DEFAULT 0,
     wave_ai_sound     INTEGER     NOT NULL DEFAULT 1,
+    voice_auto_send   INTEGER     NOT NULL DEFAULT 0,
     updated_at        VARCHAR(50) NOT NULL,
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS gesture_set (
+    CREATE TABLE IF NOT EXISTS gesture_set (
     id       INTEGER NOT NULL,
     name     TEXT    NOT NULL,
     archived INTEGER NOT NULL,
     PRIMARY KEY (id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS gesture_log (
+    CREATE TABLE IF NOT EXISTS gesture_log (
     id             INTEGER     PRIMARY KEY,
     gesture_set_id INTEGER     NOT NULL,
     class_id       INTEGER     NOT NULL,
@@ -130,22 +131,22 @@ CREATE TABLE IF NOT EXISTS gesture_log (
     FOREIGN KEY (gesture_set_id) REFERENCES gesture_set(id),
     FOREIGN KEY (radar_id) REFERENCES device(id),
     FOREIGN KEY (device_id) REFERENCES device(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_gesture_log_occurred ON gesture_log (timestamp)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_gesture_log_occurred ON gesture_log (timestamp)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS gesture_device_map (
+    CREATE TABLE IF NOT EXISTS gesture_device_map (
     device_id       INTEGER NOT NULL,
     gesture_set_id  INTEGER NOT NULL,
     PRIMARY KEY (device_id),
     FOREIGN KEY (device_id) REFERENCES device(id),
     FOREIGN KEY (gesture_set_id) REFERENCES gesture_set(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS automation_rule (
+    CREATE TABLE IF NOT EXISTS automation_rule (
     id              INTEGER      PRIMARY KEY,
     user_id         INTEGER      NOT NULL,
     external_id     TEXT         NOT NULL,
@@ -159,13 +160,13 @@ CREATE TABLE IF NOT EXISTS automation_rule (
     updated_at      VARCHAR(50)  NOT NULL,
     UNIQUE (external_id),
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_automation_rule_user ON automation_rule (user_id)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_automation_rule_user ON automation_rule (user_id)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS home_event (
+    CREATE TABLE IF NOT EXISTS home_event (
     id           INTEGER      PRIMARY KEY,
     user_id      INTEGER      NOT NULL,
     type         VARCHAR(20)  NOT NULL,
@@ -177,13 +178,13 @@ CREATE TABLE IF NOT EXISTS home_event (
     detail_json  TEXT,
     FOREIGN KEY (user_id) REFERENCES user(id),
     FOREIGN KEY (device_id) REFERENCES device(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_home_event_user_time ON home_event (user_id, occurred_at)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_home_event_user_time ON home_event (user_id, occurred_at)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS insight (
+    CREATE TABLE IF NOT EXISTS insight (
     id                 INTEGER      PRIMARY KEY,
     user_id            INTEGER      NOT NULL,
     surface            VARCHAR(20)  NOT NULL,
@@ -206,13 +207,13 @@ CREATE TABLE IF NOT EXISTS insight (
     CHECK (action_type NOT IN ('automation_rule', 'reservation') OR rule_json IS NOT NULL),
     CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_insight_user_surface_date ON insight (user_id, surface, date)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_insight_user_surface_date ON insight (user_id, surface, date)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS schedule_task (
+    CREATE TABLE IF NOT EXISTS schedule_task (
     id                INTEGER      PRIMARY KEY,
     user_id           INTEGER      NOT NULL,
     title             VARCHAR(100) NOT NULL,
@@ -237,19 +238,19 @@ CREATE TABLE IF NOT EXISTS schedule_task (
            OR (start_minute >= 0 AND start_minute < end_minute AND end_minute <= 1440)),
     FOREIGN KEY (user_id) REFERENCES user(id),
     FOREIGN KEY (source_insight_id) REFERENCES insight(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_schedule_task_user_day ON schedule_task (user_id, day_of_week)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_schedule_task_user_day ON schedule_task (user_id, day_of_week)
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_schedule_task_user_event ON schedule_task (user_id, event_date)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_schedule_task_user_event ON schedule_task (user_id, event_date)
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_schedule_task_insight ON schedule_task (source_insight_id)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_schedule_task_insight ON schedule_task (source_insight_id)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS alarm (
+    CREATE TABLE IF NOT EXISTS alarm (
     id              INTEGER      PRIMARY KEY,
     user_id         INTEGER      NOT NULL,
     name            VARCHAR(100) NOT NULL,
@@ -269,16 +270,16 @@ CREATE TABLE IF NOT EXISTS alarm (
     FOREIGN KEY (user_id) REFERENCES user(id),
     FOREIGN KEY (radar_device_id) REFERENCES device(id),
     FOREIGN KEY (device_id) REFERENCES device(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_alarm_user_enabled ON alarm (user_id, enabled)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_alarm_user_enabled ON alarm (user_id, enabled)
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_alarm_user_time ON alarm (user_id, time_minute)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_alarm_user_time ON alarm (user_id, time_minute)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS notification (
+    CREATE TABLE IF NOT EXISTS notification (
     id         INTEGER      PRIMARY KEY,
     user_id    INTEGER      NOT NULL,
     type       VARCHAR(20)  NOT NULL,
@@ -286,13 +287,13 @@ CREATE TABLE IF NOT EXISTS notification (
     read       INTEGER      NOT NULL,
     created_at VARCHAR(50)  NOT NULL,
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_notification_user_created ON notification (user_id, created_at)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_notification_user_created ON notification (user_id, created_at)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS chat_history (
+    CREATE TABLE IF NOT EXISTS chat_history (
     id         INTEGER      NOT NULL,
     user_id    INTEGER      NOT NULL,
     title      VARCHAR(100) NOT NULL DEFAULT '새 대화',
@@ -301,13 +302,13 @@ CREATE TABLE IF NOT EXISTS chat_history (
     message    TEXT         NOT NULL,
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_chat_history_user_updated ON chat_history (user_id, updated_at DESC)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_chat_history_user_updated ON chat_history (user_id, updated_at DESC)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS push_subscription (
+    CREATE TABLE IF NOT EXISTS push_subscription (
     session_id  INTEGER NOT NULL,
     endpoint    TEXT    NOT NULL,
     p256dh      TEXT    NOT NULL,
@@ -316,18 +317,18 @@ CREATE TABLE IF NOT EXISTS push_subscription (
     updated_at  VARCHAR(50) NOT NULL,
     PRIMARY KEY (session_id, endpoint),
     FOREIGN KEY (session_id) REFERENCES user_session(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS schema_version (
+    CREATE TABLE IF NOT EXISTS schema_version (
     version     INTEGER NOT NULL,
     applied_at  VARCHAR(50) NOT NULL,
     description TEXT,
     PRIMARY KEY (version)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS sleep_session (
+    CREATE TABLE IF NOT EXISTS sleep_session (
     id             INTEGER     PRIMARY KEY,
     user_id        INTEGER     NOT NULL,
     room_id        INTEGER     NOT NULL,
@@ -348,10 +349,10 @@ CREATE TABLE IF NOT EXISTS sleep_session (
     FOREIGN KEY (room_id) REFERENCES room(id),
     FOREIGN KEY (radar_id) REFERENCES device(id),
     FOREIGN KEY (station_id) REFERENCES device(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS sleep_stat (
+    CREATE TABLE IF NOT EXISTS sleep_stat (
     id               INTEGER     PRIMARY KEY,
     user_id          INTEGER     NOT NULL,
     room_id          INTEGER     NOT NULL,
@@ -388,18 +389,18 @@ CREATE TABLE IF NOT EXISTS sleep_stat (
     FOREIGN KEY (user_id) REFERENCES user(id),
     FOREIGN KEY (room_id) REFERENCES room(id),
     FOREIGN KEY (session_id) REFERENCES sleep_session(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_sleep_stat_user_granularity_time
+    CREATE INDEX IF NOT EXISTS idx_sleep_stat_user_granularity_time
     ON sleep_stat (user_id, granularity, time_start)
-)SQL",
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_sleep_session_user_night
+    CREATE INDEX IF NOT EXISTS idx_sleep_session_user_night
     ON sleep_session (user_id, night_date)
-)SQL",
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS sleep_report (
+    CREATE TABLE IF NOT EXISTS sleep_report (
     id           INTEGER     PRIMARY KEY,
     user_id      INTEGER     NOT NULL,
     period       VARCHAR(10) NOT NULL,
@@ -411,10 +412,10 @@ CREATE TABLE IF NOT EXISTS sleep_report (
     UNIQUE (user_id, period, period_start),
     FOREIGN KEY (user_id) REFERENCES user(id),
     FOREIGN KEY (session_id) REFERENCES sleep_session(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS power_energy (
+    CREATE TABLE IF NOT EXISTS power_energy (
     id           INTEGER     PRIMARY KEY,
     device_id    INTEGER,
     granularity  VARCHAR(3)  NOT NULL,
@@ -424,13 +425,13 @@ CREATE TABLE IF NOT EXISTS power_energy (
     sample_count INTEGER     NOT NULL,
     CHECK (granularity IN ('5m', '1h', '24h', '1w', '1mo')),
     FOREIGN KEY (device_id) REFERENCES device(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE UNIQUE INDEX IF NOT EXISTS uq_power_energy ON power_energy (COALESCE(device_id, -1), granularity, time_start)
-)SQL",
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_power_energy ON power_energy (COALESCE(device_id, -1), granularity, time_start)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS power_report (
+    CREATE TABLE IF NOT EXISTS power_report (
     id           INTEGER     PRIMARY KEY,
     energy_id    INTEGER     NOT NULL,
     device_id    INTEGER,
@@ -442,13 +443,13 @@ CREATE TABLE IF NOT EXISTS power_report (
     CHECK (period IN ('1h', '24h', '1w', '1mo', '1yr')),
     FOREIGN KEY (energy_id) REFERENCES power_energy(id),
     FOREIGN KEY (device_id) REFERENCES device(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE UNIQUE INDEX IF NOT EXISTS uq_power_report ON power_report (COALESCE(device_id, -1), period, period_start)
-)SQL",
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_power_report ON power_report (COALESCE(device_id, -1), period, period_start)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS posture_stat (
+    CREATE TABLE IF NOT EXISTS posture_stat (
     id          INTEGER     PRIMARY KEY,
     user_id     INTEGER     NOT NULL,
     granularity VARCHAR(3)  NOT NULL,
@@ -459,10 +460,10 @@ CREATE TABLE IF NOT EXISTS posture_stat (
     CHECK (granularity IN ('1h', '1d')),
     UNIQUE (user_id, granularity, time_start),
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS posture_report (
+    CREATE TABLE IF NOT EXISTS posture_report (
     id           INTEGER     PRIMARY KEY,
     user_id      INTEGER     NOT NULL,
     period       VARCHAR(10) NOT NULL,
@@ -472,10 +473,10 @@ CREATE TABLE IF NOT EXISTS posture_report (
     CHECK (period IN ('daily', 'weekly')),
     UNIQUE (user_id, period, period_start),
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS weekly_plan_report (
+    CREATE TABLE IF NOT EXISTS weekly_plan_report (
     id           INTEGER     PRIMARY KEY,
     user_id      INTEGER     NOT NULL,
     period_start VARCHAR(50) NOT NULL,
@@ -484,8 +485,8 @@ CREATE TABLE IF NOT EXISTS weekly_plan_report (
     created_at   VARCHAR(50) NOT NULL,
     UNIQUE (user_id, period_start),
     FOREIGN KEY (user_id) REFERENCES user(id)
-)
-)SQL",
+    )
+    )SQL",
             },
         },
         {
@@ -493,7 +494,7 @@ CREATE TABLE IF NOT EXISTS weekly_plan_report (
             "user action log (insight/schedule_task execution history)",
             {
                 R"SQL(
-CREATE TABLE IF NOT EXISTS user_action_log (
+    CREATE TABLE IF NOT EXISTS user_action_log (
     id            INTEGER      PRIMARY KEY,
     user_id       INTEGER      NOT NULL,
     action_type   VARCHAR(30)  NOT NULL,
@@ -504,13 +505,13 @@ CREATE TABLE IF NOT EXISTS user_action_log (
     CHECK (action_type IN ('insight_applied', 'insight_canceled', 'schedule_task_completed', 'schedule_task_uncompleted', 'schedule_task_created')),
     CHECK (ref_type IN ('insight', 'schedule_task')),
     FOREIGN KEY (user_id) REFERENCES user(id)
-))SQL",
+    ))SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_action_log_user_time ON user_action_log (user_id, occurred_at)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_action_log_user_time ON user_action_log (user_id, occurred_at)
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_action_log_ref ON user_action_log (ref_type, ref_id)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_action_log_ref ON user_action_log (ref_type, ref_id)
+    )SQL",
             },
         },
         {
@@ -518,7 +519,7 @@ CREATE INDEX IF NOT EXISTS idx_action_log_ref ON user_action_log (ref_type, ref_
             "sleep plan (tonight's recommended bedtime/wake time cache)",
             {
                 R"SQL(
-CREATE TABLE IF NOT EXISTS sleep_plan (
+    CREATE TABLE IF NOT EXISTS sleep_plan (
     id                      INTEGER      PRIMARY KEY,
     user_id                 INTEGER      NOT NULL,
     plan_date               VARCHAR(10)  NOT NULL,
@@ -533,10 +534,10 @@ CREATE TABLE IF NOT EXISTS sleep_plan (
     CHECK (wake_minute >= 0 AND wake_minute <= 1439),
     UNIQUE (user_id, plan_date),
     FOREIGN KEY (user_id) REFERENCES user(id)
-))SQL",
+    ))SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_sleep_plan_user_date ON sleep_plan (user_id, plan_date)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_sleep_plan_user_date ON sleep_plan (user_id, plan_date)
+    )SQL",
             },
         },
         {
@@ -544,13 +545,13 @@ CREATE INDEX IF NOT EXISTS idx_sleep_plan_user_date ON sleep_plan (user_id, plan
             "power report embedding fallback storage",
             {
                 R"SQL(
-CREATE TABLE IF NOT EXISTS power_report_embedding (
+    CREATE TABLE IF NOT EXISTS power_report_embedding (
     report_id      INTEGER     PRIMARY KEY,
     dim            INTEGER     NOT NULL,
     embedding_blob BLOB        NOT NULL,
     updated_at     VARCHAR(50) NOT NULL,
     FOREIGN KEY (report_id) REFERENCES power_report(id)
-))SQL",
+    ))SQL",
             },
         },
         {
@@ -558,8 +559,8 @@ CREATE TABLE IF NOT EXISTS power_report_embedding (
             "index power_energy for granularity/time_start range scans",
             {
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_power_energy_gran_time ON power_energy (granularity, time_start, device_id)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_power_energy_gran_time ON power_energy (granularity, time_start, device_id)
+    )SQL",
             },
         },
         {
@@ -567,7 +568,7 @@ CREATE INDEX IF NOT EXISTS idx_power_energy_gran_time ON power_energy (granulari
             "goal-based habit coaching tables (goal, goal_coaching_report, goal_recommendation)",
             {
                 R"SQL(
-CREATE TABLE IF NOT EXISTS goal (
+    CREATE TABLE IF NOT EXISTS goal (
     id          INTEGER      PRIMARY KEY,
     user_id     INTEGER      NOT NULL,
     title       VARCHAR(200) NOT NULL,
@@ -578,12 +579,12 @@ CREATE TABLE IF NOT EXISTS goal (
     CHECK (category IN ('sleep', 'posture', 'mental', 'life', 'diet')),
     CHECK (status IN ('active', 'archived', 'completed')),
     FOREIGN KEY (user_id) REFERENCES user(id)
-))SQL",
+    ))SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_goal_user_status ON goal (user_id, status)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_goal_user_status ON goal (user_id, status)
+    )SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS goal_coaching_report (
+    CREATE TABLE IF NOT EXISTS goal_coaching_report (
     id                      INTEGER      PRIMARY KEY,
     goal_id                 INTEGER      NOT NULL,
     user_id                 INTEGER      NOT NULL,
@@ -595,9 +596,9 @@ CREATE TABLE IF NOT EXISTS goal_coaching_report (
     UNIQUE (goal_id, period_start),
     FOREIGN KEY (goal_id) REFERENCES goal(id),
     FOREIGN KEY (user_id) REFERENCES user(id)
-))SQL",
+    ))SQL",
                 R"SQL(
-CREATE TABLE IF NOT EXISTS goal_recommendation (
+    CREATE TABLE IF NOT EXISTS goal_recommendation (
     id                 INTEGER      PRIMARY KEY,
     goal_id            INTEGER      NOT NULL,
     user_id            INTEGER      NOT NULL,
@@ -619,10 +620,10 @@ CREATE TABLE IF NOT EXISTS goal_recommendation (
     CHECK (action_type != 'schedule_task' OR schedule_task_json IS NOT NULL),
     FOREIGN KEY (goal_id) REFERENCES goal(id),
     FOREIGN KEY (user_id) REFERENCES user(id)
-))SQL",
+    ))SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_goal_recommendation_goal_date ON goal_recommendation (goal_id, date)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_goal_recommendation_goal_date ON goal_recommendation (goal_id, date)
+    )SQL",
             },
         },
         {
@@ -630,16 +631,25 @@ CREATE INDEX IF NOT EXISTS idx_goal_recommendation_goal_date ON goal_recommendat
             "add category column to user_action_log for goal-coaching filtering",
             {
                 R"SQL(
-ALTER TABLE user_action_log ADD COLUMN category VARCHAR(10)
-)SQL",
+    ALTER TABLE user_action_log ADD COLUMN category VARCHAR(10)
+    )SQL",
                 R"SQL(
-CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log (user_id, category, occurred_at)
-)SQL",
+    CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log (user_id, category, occurred_at)
+    )SQL",
+            },
+        },
+        {
+            8,
+            "add voice_auto_send to user_ai_agent_settings",
+            {
+                R"SQL(
+    ALTER TABLE user_ai_agent_settings ADD COLUMN voice_auto_send INTEGER NOT NULL DEFAULT 0
+    )SQL",
             },
         },
     };
 
-    int currentVersion(const drogon::orm::DbClientPtr& client)
+    int current_version(const db::DbClientPtr& client)
     {
         try
         {
@@ -654,22 +664,22 @@ CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log 
         }
     }
 
-    void seedNotificationsIfEmpty(const drogon::orm::DbClientPtr& client);
-    void seedRoomsAndDevicesIfEmpty(const drogon::orm::DbClientPtr& client);
+    void seed_notifications_if_empty(const db::DbClientPtr& client);
+    void seed_rooms_and_devices_if_empty(const db::DbClientPtr& client);
 
-    void seedInitialData(const drogon::orm::DbClientPtr& client)
+    void seed_initial_data(const db::DbClientPtr& client)
     {
         auto rows = client->execSqlSync("SELECT COUNT(*) FROM user");
         if (!rows.empty() && rows[0][0].as<int64_t>() > 0)
         {
-            seedNotificationsIfEmpty(client);
-            seedRoomsAndDevicesIfEmpty(client);
+            seed_notifications_if_empty(client);
+            seed_rooms_and_devices_if_empty(client);
             return;
         }
 
         const auto now = formatTimestamp();
-        LOG_INFO("Seeding initial user/session data");
-        LOG_INFO("Dev Bearer token (store as wavehome_access_token): wavehome-dev-token");
+        WLOG_INFO("Seeding initial user/session data");
+        WLOG_INFO("Dev Bearer token (store as wavehome_access_token): wavehome-dev-token");
 
         client->execSqlSync(
             "INSERT INTO user (id, name, created_at) VALUES (?, ?, ?), (?, ?, ?)",
@@ -688,11 +698,11 @@ CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log 
             now,
             now);
 
-        seedNotificationsIfEmpty(client);
-        seedRoomsAndDevicesIfEmpty(client);
+        seed_notifications_if_empty(client);
+        seed_rooms_and_devices_if_empty(client);
     }
 
-    void seedNotificationsIfEmpty(const drogon::orm::DbClientPtr& client)
+    void seed_notifications_if_empty(const db::DbClientPtr& client)
     {
         try
         {
@@ -702,11 +712,11 @@ CREATE INDEX IF NOT EXISTS idx_action_log_user_category_time ON user_action_log 
 
             client->execSqlSync(
                 R"SQL(
-INSERT INTO notification (id, user_id, type, message, read, created_at) VALUES
-(1, 1, 'timer', '착석 1시간 48분 경과 — 스트레칭을 해보세요', 0, '2026-07-02 07:10:00'),
-(2, 1, 'sleep', '오늘 수면 목표까지 30분 부족합니다', 0, '2026-07-02 07:12:00'),
-(3, 2, 'posture', '오래 앉아 있었어요. 자세를 바꿔보세요', 0, '2026-07-02 08:00:00')
-)SQL");
+    INSERT INTO notification (id, user_id, type, message, read, created_at) VALUES
+    (1, 1, 'timer', '착석 1시간 48분 경과 — 스트레칭을 해보세요', 0, '2026-07-02 07:10:00'),
+    (2, 1, 'sleep', '오늘 수면 목표까지 30분 부족합니다', 0, '2026-07-02 07:12:00'),
+    (3, 2, 'posture', '오래 앉아 있었어요. 자세를 바꿔보세요', 0, '2026-07-02 08:00:00')
+    )SQL");
         }
         catch (const std::exception&)
         {
@@ -714,7 +724,7 @@ INSERT INTO notification (id, user_id, type, message, read, created_at) VALUES
         }
     }
 
-    void seedRoomsAndDevicesIfEmpty(const drogon::orm::DbClientPtr& client)
+    void seed_rooms_and_devices_if_empty(const db::DbClientPtr& client)
     {
         try
         {
@@ -723,16 +733,16 @@ INSERT INTO notification (id, user_id, type, message, read, created_at) VALUES
             {
                 client->execSqlSync(
                     R"SQL(
-INSERT INTO room (id, name, description) VALUES
-(1, '거실', '거실'),
-(2, '침실', '침실'),
-(3, '부엌', '부엌')
-)SQL");
+    INSERT INTO room (id, name, description) VALUES
+    (1, '거실', '거실'),
+    (2, '침실', '침실'),
+    (3, '부엌', '부엌')
+    )SQL");
                 client->execSqlSync(
                     R"SQL(
-INSERT INTO room_user_map (room_id, user_id) VALUES
-(1, 1), (1, 2), (2, 1)
-)SQL");
+    INSERT INTO room_user_map (room_id, user_id) VALUES
+    (1, 1), (1, 2), (2, 1)
+    )SQL");
             }
 
             auto device_rows = client->execSqlSync("SELECT COUNT(*) FROM device");
@@ -741,41 +751,41 @@ INSERT INTO room_user_map (room_id, user_id) VALUES
 
             client->execSqlSync(
                 R"SQL(
-INSERT INTO device (id, name, description, class, archived, enabled, interface_json, settings_json) VALUES
-(1, '침실 하방 레이더', 'SRS R4SN mmWave 레이더', 'srs_r4sn', 0, 1,
+    INSERT INTO device (id, name, description, class, archived, enabled, interface_json, settings_json) VALUES
+    (1, '침실 하방 레이더', 'SRS R4SN mmWave 레이더', 'srs_r4sn', 0, 1,
  '{"host":"192.168.0.33","mac":"68:96:6A:4C:69:D4","point_cloud":{"enabled":true,"port":29172},"iq":{"enabled":true,"port":29171}}',
  '{"angle_z":0.0,"angle_y":0.0,"min_x":-5.0,"max_x":5.0,"min_y":0.0,"max_y":10.0,"min_z":-2.0,"max_z":2.0}'),
-(2, 'Wave Station', '침실 Wave Station', 'wave_station', 0, 1,
+    (2, 'Wave Station', '침실 Wave Station', 'wave_station', 0, 1,
  '{"host":"192.168.0.60","port":8765}',
- '{"sample_rate":16000,"sample_size":16,"channels":1}'),
-(3, '거실 카메라', '거실 IoT 카메라', 'reolink_e1_pro', 0, 1,
+ '{"sample_rate":16000,"sample_size":16,"channels":1,"capabilities":{"mic_pcm":true,"mic_opus":true,"speaker_pcm":false,"speaker_opus":true,"ir_receive":true,"ir_transmit":true,"ambient_light":true,"temperature":true,"humidity":true}}'),
+    (3, '거실 카메라', '거실 IoT 카메라', 'reolink_e1_pro', 0, 1,
  '{"host":"192.168.0.50","mac":"94:8C:D7:A2:6A:97","user":"enc:0500120444","password":"enc:0500120444595d5e51","rtsp_port":554,"go2rtc":true}',
  NULL),
-(4, '플러그1 - 선풍기', '거실 선풍기 스마트 플러그', 'tuya_ep2h', 0, 1,
+    (4, '플러그1 - 선풍기', '거실 선풍기 스마트 플러그', 'tuya_ep2h', 0, 1,
  '{"host":"192.168.0.37","mac":"50:8B:B9:9F:6E:83","device_id":"eb61aa6ce49add5d80yfcj","local_key":"s^q2?;Ur|q{SlG(>","version":"3.3"}',
  NULL),
-(5, '침실 TV', '침실 책상 - 삼성 32인치 TV', 'samsung_g7', 0, 1,
+    (5, '침실 TV', '침실 책상 - 삼성 32인치 TV', 'samsung_g7', 0, 1,
  '{"host":"192.168.0.24","mac":"04:E4:B6:A9:8D:0A","token":"13135473"}',
  NULL),
-(6, '거실 조명', '거실 조명 - 컬러', 'philips_wiz_e29_white', 0, 1,
+    (6, '거실 조명', '거실 조명 - 컬러', 'philips_wiz_e29_white', 0, 1,
  '{"host":"192.168.0.51","mac":"98:77:D5:D0:B4:42","port":38899}',
  NULL)
-)SQL");
+    )SQL");
 
             client->execSqlSync(
                 R"SQL(
-INSERT INTO device_room_map (device_id, room_id) VALUES
-(1, 2), (2, 2), (3, 1), (4, 1), (5, 2), (6, 1)
-)SQL");
+    INSERT INTO device_room_map (device_id, room_id) VALUES
+    (1, 2), (2, 2), (3, 1), (4, 1), (5, 2), (6, 1)
+    )SQL");
         }
         catch (const std::exception& e)
         {
-            LOG_WARN("Room/device seed skipped: {}", e.what());
+            WLOG_WARN("Room/device seed skipped: {}", e.what());
         }
     }
-}
+    }
 
-void configureConnectionSettings(const drogon::orm::DbClientPtr& client)
+void configureConnectionSettings(const db::DbClientPtr& client)
 {
     if (!client)
         return;
@@ -790,19 +800,19 @@ void configureConnectionSettings(const drogon::orm::DbClientPtr& client)
     }
     catch (const std::exception& e)
     {
-        LOG_WARN("SQLite PRAGMA setup failed: {}", e.what());
+        WLOG_WARN("SQLite PRAGMA setup failed: {}", e.what());
     }
 }
 
-bool runMigrations(const drogon::orm::DbClientPtr& client)
+bool runMigrations(const db::DbClientPtr& client)
 {
     if (!client)
     {
-        LOG_ERROR("Database client is null");
+        WLOG_ERROR("Database client is null");
         return false;
     }
 
-    const int applied = currentVersion(client);
+    const int applied = current_version(client);
 
     try
     {
@@ -811,7 +821,7 @@ bool runMigrations(const drogon::orm::DbClientPtr& client)
             if (migration.version <= applied)
                 continue;
 
-            LOG_INFO("Applying DB migration v{}: {}", migration.version, migration.description);
+            WLOG_INFO("Applying DB migration v{}: {}", migration.version, migration.description);
             for (const char* sql : migration.statements)
                 client->execSqlSync(sql);
 
@@ -822,44 +832,44 @@ bool runMigrations(const drogon::orm::DbClientPtr& client)
                 migration.description);
         }
 
-        seedInitialData(client);
+        seed_initial_data(client);
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Database migration failed: {}", e.what());
+        WLOG_ERROR("Database migration failed: {}", e.what());
         return false;
     }
 
-    LOG_INFO("Database migrations complete (version {})", currentVersion(client));
+    WLOG_INFO("Database migrations complete (version {})", current_version(client));
     return true;
 }
 
-bool validateDatabaseSchema(const drogon::orm::DbClientPtr& client)
+bool validateDatabaseSchema(const db::DbClientPtr& client)
 {
     if (!client)
     {
-        LOG_ERROR("Database client is null");
+        WLOG_ERROR("Database client is null");
         return false;
     }
 
     try
     {
-        const int version = currentVersion(client);
+        const int version = current_version(client);
         if (version <= 0)
         {
-            LOG_ERROR("Database schema_version is empty or missing");
+            WLOG_ERROR("Database schema_version is empty or missing");
             return false;
         }
 
-        LOG_INFO("Database schema validated (version {}, migrations skipped)", version);
+        WLOG_INFO("Database schema validated (version {}, migrations skipped)", version);
         return true;
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("Database schema validation failed: {}", e.what());
+        WLOG_ERROR("Database schema validation failed: {}", e.what());
         return false;
     }
 }
 
-} // namespace db
+DB_NAMESPACE_END
 WAVE_NAMESPACE_END
