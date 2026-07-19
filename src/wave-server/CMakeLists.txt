@@ -96,7 +96,6 @@ set(_wave_server_sources
     web/http/v1/dashboard_controller.cpp
     web/http/v1/weekly_plan_store.cpp
     web/http/v1/weekly_plan_controller.cpp
-    web/http/push_notification.cpp
     web/push/web_push.cpp
     web/push/push_store.cpp
     device/device.cpp
@@ -109,8 +108,6 @@ set(_wave_server_sources
     device/platform/philips_wiz_e29.cpp
     device/platform/samsung_tizen.cpp
     device/platform/radai_ws.cpp
-    device/platform/ir_device.cpp
-    device/protocol/ir_remote.cpp
     nn/frame_encoder.cpp
     nn/frame_aggregator.cpp
     nn/gesture_pipeline.cpp

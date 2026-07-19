@@ -28,11 +28,8 @@ public:
     METHOD_LIST_END
 
     void listTasks(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void createTask(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void updateTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId);
-
     void deleteTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId);
 };
 

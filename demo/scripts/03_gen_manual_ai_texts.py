@@ -14,7 +14,7 @@ from _lib import manual_texts
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"
 OUT_DIR = REPO_ROOT / "demo" / "ai_manual"
-AI_REPORTS_DIR = REPO_ROOT / "demo" / "ai_reports"
+AI_REPORTS_DIR = REPO_ROOT / "demo" / "agent"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 NOW = "2026-07-01 00:00:00"

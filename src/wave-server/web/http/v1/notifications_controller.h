@@ -21,9 +21,7 @@ public:
     METHOD_LIST_END
 
     void listNotifications(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void markAllRead(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void markRead(const HttpRequestPtr& req, HttpResponseCallback&& callback, const std::string& notification_id);
 };
 

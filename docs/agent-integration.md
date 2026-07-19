@@ -64,20 +64,25 @@ OLLAMA_BASE_URL=http://127.0.0.1:11434
 
 ## 4. 실행
 
+프론트는 먼저 `./scripts/build/site.sh`(prod) / `site-demo.sh`(demo) / `site-test.sh`(test)로 빌드합니다.
+전체 절차는 루트 [README.md](../README.md)의 **빠른 시작**을 보세요.
+
 ```bash
 # Terminal 1 — backend
 ./scripts/run/prod.sh          # or ./scripts/run-prod.sh
 
 # Terminal 2 — agent
 cd wave-home-agent && source .venv/bin/activate
-uvicorn app.main:app --reload --port 8502
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8502
 ```
 
 데모:
 
 ```bash
 ./scripts/run/demo.sh
-# agent: uvicorn … --port 8512
+# agent:
+cd wave-home-agent && source .venv/bin/activate
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8512
 ```
 
 ## 5. 스모크

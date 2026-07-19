@@ -19,7 +19,7 @@ struct SnoreAudioSample
     bool snoreActive = false;
 };
 
-// Wave Station PCM -> snore band energy + noise level (no PCM persistence).
+// Wave Station PCM -> snore band energy + noise level (kiss_fftr; no PCM persistence).
 class SnoreAudioAnalyzer
 {
 public:

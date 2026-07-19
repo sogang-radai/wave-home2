@@ -58,87 +58,57 @@ public:
     METHOD_LIST_END
 
     void queryDb(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void searchRag(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void listDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void getDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void listDeviceClasses(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void getDeviceState(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void queryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,
         std::string queryName);
-
     void invokeDeviceAction(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,
         std::string actionName);
 
     void getPtzCapabilities(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void movePtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void stopPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void zoomPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
     void getCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void setCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void captureSnapshot(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void sendTts(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
     void listRules(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void getRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
-
     void createRule(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void updateRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
-
     void deleteRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
-
     void setRuleEnabled(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
-
     void executeRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 
     void listIrCommands(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void getIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string commandId);
 
     void listEvents(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void toolListDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void toolControlDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void toolQueryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void toolSchedule(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void toolScheduleList(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void toolScheduleCancel(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void listAlarms(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void createAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void updateAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string id);
-
     void deleteAlarm(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string id);
 
     void listScheduleTasks(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void createScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void updateScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId);
-
     void deleteScheduleTask(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string taskId);
 };
 

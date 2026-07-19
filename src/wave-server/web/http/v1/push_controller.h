@@ -21,9 +21,7 @@ public:
     METHOD_LIST_END
 
     void vapidPublicKey(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void saveSubscription(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void deleteSubscription(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 

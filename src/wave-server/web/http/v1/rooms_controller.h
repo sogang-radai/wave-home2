@@ -24,15 +24,11 @@ public:
     METHOD_LIST_END
 
     void listRooms(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void createRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void updateRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId);
-
     void deleteRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId);
 
     void getMembers(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId);
-
     void putMembers(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t roomId);
 };
 

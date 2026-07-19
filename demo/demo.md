@@ -1,31 +1,32 @@
 # Demo DB 생성 가이드
 
 `docs/db-schema.md`(2026-07-08 버전) 기준으로 2026년 6월 1일~30일(30일) 목업 데이터를 생성한다.
-사용자는 `김건강`(user_id=1, 침실에서 취침)과 `박헬스`(user_id=2, 침실에서 취침하지 않음— 수면 데이터 없음)
-두 명이다.
+사용자는 `김건강`과 `박헬스`두 명이다.
 
-관련 문서: [`sleep.md`](./sleep.md)(수면 시나리오), [`power.md`](./power.md)(전력 시나리오).
+관련 문서: [`sleep.md`](./sleep.md)(수면 시나리오), [`power.md`](./power.md)(전력 시나리오), [`chat.md`](./chat.md)(채팅 시나리오).
 
 ## 폴더 구조
 
 ```
 demo/
-├── demo.md                    # 이 문서
-├── sleep.md                   # 수면 30일 시나리오(레이더+삼성헬스 분석 포함)
-├── power.md                   # 전력 시나리오(플러그별 모델)
+├── demo.md                       # 이 문서
+├── sleep.md                      # 수면 30일 시나리오
+├── power.md                      # 전력 시나리오
+├── chat.md                       # 채팅 시나리오(검수·첫 대사)
 ├── scripts/
-│   ├── _lib/                   # 공용 모듈(schema, devices, timeutil, ollama_client, agent_client,
-│   │                          #  power_model, sleep_model, sleep_scenario, narrative, manual_texts)
-│   ├── 01_gen_raw_data.py      # AI 불필요 원시 데이터 전체(수면 제외)
-│   ├── 01b_gen_sleep_raw.py    # sleep_session/sleep_stat 원시 데이터
-│   ├── 02_call_agent_reports.py# 에이전트(:8502) 실호출 — 수면 daily/weekly, 전력 24h/1w/1mo
-│   ├── 03_gen_manual_ai_texts.py # 에이전트 미지원 영역 수동 작성 + 1h전력/30m수면 템플릿
-│   ├── 04_embed_manual_texts.py  # 03 산출물을 Ollama로 직접 임베딩
-│   └── 05_load_ai_json_to_db.py  # 02+03/04 산출물을 최종 demo.db에 반영
-├── ai_reports/                 # 02 산출물(중간 JSON, git 커밋 대상 아님 권장)
-│   ├── power_reports.json
-│   └── sleep_reports.json
-└── ai_manual/                   # 03/04 산출물(중간 JSON)
+│   ├── _lib/
+│   ├── 01_gen_raw_data.py
+│   ├── 01b_gen_sleep_raw.py
+│   ├── 02_call_agent_reports.py  # 에이전트 실호출 → demo/agent/*_reports.json
+│   ├── 03_gen_manual_ai_texts.py
+│   ├── 04_embed_manual_texts.py
+│   ├── 05_load_ai_json_to_db.py  # agent/·ai_manual/ → demo.db
+│   └── 06_collect_chat_turns.py  # 채팅 실호출 → demo/agent/chat.json
+├── agent/                        # 에이전트 실호출 산출물
+│   ├── power_reports.json        # [ignore] 02 산출
+│   ├── sleep_reports.json        # [ignore] 02 산출
+│   └── chat.json                 # 06 산출(대화+툴콜, DB 시드용)
+└── ai_manual/                    # 03/04 산출물(중간 JSON)
     ├── insight.json
     ├── weekly_plan_report.json
     ├── power_report_1h.json
@@ -99,7 +100,7 @@ Ollama로 직접 임베딩한다(LLM 생성 호출 없음).
   `model` 옵션 참고).
 
 **재실행/이어하기**: `02_call_agent_reports.py`는 실행할 때마다
-`demo/ai_reports/power_reports.json`·`sleep_reports.json`을 읽어 **이미 끝난 대상은
+`demo/agent/power_reports.json`·`sleep_reports.json`을 읽어 **이미 끝난 대상은
 건너뛴다**. 매 건 완료 후 즉시 파일에 체크포인트 저장하므로, 중간에 서버를 껐다 켜도
 `python3 02_call_agent_reports.py`를 다시 실행하면 남은 것만 이어서 진행한다.
 
@@ -113,10 +114,10 @@ Ollama로 직접 임베딩한다(LLM 생성 호출 없음).
 
 ```bash
 cd demo/scripts
-python3 -c "import json; print('power', len(json.load(open('../ai_reports/power_reports.json'))))"
+python3 -c "import json; print('power', len(json.load(open('../agent/power_reports.json'))))"
 python3 -c "
 import json
-rows = json.load(open('../ai_reports/sleep_reports.json'))
+rows = json.load(open('../agent/sleep_reports.json'))
 daily = sum(1 for r in rows if r['period']=='daily')
 weekly = sum(1 for r in rows if r['period']=='weekly')
 print('sleep', len(rows), f'(daily {daily} + weekly {weekly})')
@@ -128,8 +129,8 @@ print('sleep', len(rows), f'(daily {daily} + weekly {weekly})')
 
 ```
 === 02_call_agent_reports 완료 ===
-power_reports: 55 -> .../demo/ai_reports/power_reports.json
-sleep_reports: 54 -> .../demo/ai_reports/sleep_reports.json
+power_reports: 55 -> .../demo/agent/power_reports.json
+sleep_reports: 54 -> .../demo/agent/sleep_reports.json
 ```
 
 ### 주간 리포트만 다시 생성할 때
@@ -142,7 +143,7 @@ cd demo/scripts
 python3 -c "
 import json
 from pathlib import Path
-p = Path('../ai_reports/sleep_reports.json')
+p = Path('../agent/sleep_reports.json')
 rows = json.load(open(p))
 kept = [r for r in rows if r.get('period') != 'weekly']
 print('before', len(rows), 'after', len(kept), 'weekly removed', len(rows)-len(kept))
@@ -162,13 +163,21 @@ python3 05_load_ai_json_to_db.py   # 03/04는 건너뛰어도 됨(weekly만 바�
 | --- | --- | --- |
 | `03_gen_manual_ai_texts.py` | insight·weekly_plan·1h전력·30m수면 템플릿 작성. `sleep_reports.json`의 weekly는 DB 메트릭으로 **본문만** 재병합(에이전트 `report_text`·`embedding`은 daily·weekly 모두 유지) | weekly만 갱신했으면 생략 가능 |
 | `04_embed_manual_texts.py` | 03 산출물 Ollama 임베딩 | 03을 안 돌렸으면 생략 |
-| `05_load_ai_json_to_db.py` | `ai_reports`·`ai_manual` → `demo.db` | **필수** |
+| `05_load_ai_json_to_db.py` | `agent`·`ai_manual` → `demo.db` | **필수** |
+| `06_collect_chat_turns.py` | 채팅 시나리오 실호출 → `agent/chat.json` | 채팅 시드 |
+| `07_load_chat_json_to_db.py` | `agent/chat.json` → `demo.db` `chat_history` 교체 | 채팅 DB 반영 |
 
 ```bash
 cd demo/scripts
 python3 03_gen_manual_ai_texts.py
 python3 04_embed_manual_texts.py
 python3 05_load_ai_json_to_db.py
+# 채팅 시드(에이전트 :8512 + demo 백엔드 필요, 턴 단위)
+python3 06_collect_chat_turns.py start S01
+python3 06_collect_chat_turns.py turn S01 "다음 대사"
+python3 06_collect_chat_turns.py done S01
+# 수집 완료 후 DB 반영(기존 chat_history 삭제 후 교체)
+python3 07_load_chat_json_to_db.py
 ```
 
 `05` 정상 출력 예:

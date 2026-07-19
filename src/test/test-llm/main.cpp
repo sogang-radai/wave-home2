@@ -99,7 +99,7 @@ void addUserMessage(Chat& chat, const std::string& text, const std::string& imag
     if (!text.empty())
         message->addContent(Text::create(text));
     if (!image_path.empty())
-        message->addContent(Image::fromFile(image_path));
+        message->addContent(Image::from_file(image_path));
     chat.addMessage(std::move(message));
 }
 

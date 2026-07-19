@@ -20,7 +20,6 @@ public:
     METHOD_LIST_END
 
     void getSession(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void patchActiveAccount(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 

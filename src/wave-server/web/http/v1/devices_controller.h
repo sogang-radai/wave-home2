@@ -27,6 +27,7 @@ public:
     void createDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void updateDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
     void deleteDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
+
     void assignRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
     void unassignRoom(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 };

@@ -147,7 +147,7 @@ FFT 크기 2048. Warmup 약 7회 estimate는 수치 억제.
 
 시계 `:00/:30` 고정 창이 아니라 **세션 시작 시각 기준** 30분 창이다.
 
-코골이: Wave Station mic opus 구독 → `SnoreAudioAnalyzer`. 없으면 toss/온도 fallback.
+코골이: Wave Station mic opus 구독 → `SnoreAudioAnalyzer` (512샘플 Hann + **kiss_fftr**, 100–800 Hz 대역 에너지 비율). 없으면 toss/온도 fallback.
 
 ---
 
@@ -194,6 +194,6 @@ FFT 크기 2048. Warmup 약 7회 estimate는 수치 억제.
 | `sleep_session_fsm.*` | 세션 |
 | `sleep_stage_synth.*` | light/deep/REM |
 | `sleep_aggregator.*` | 초·분·30분 |
-| `sleep_audio.*` | 코골이 |
+| `sleep_audio.*` | 코골이 (kiss_fftr 대역 에너지) |
 | `sleep_store.cpp` | HTTP 조회 |
 | `src/test/test-iq/vital_signs.py` | DSP 레퍼런스 |

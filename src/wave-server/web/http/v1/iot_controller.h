@@ -46,59 +46,37 @@ public:
     METHOD_LIST_END
 
     void getSummary(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void listDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void getDeviceState(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void queryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,
         std::string queryName);
-
     void invokeDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,
         std::string actionName);
-
     void reconnectDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void listEvents(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    // Camera stream
     void getCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void setCameraStream(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void exchangeCameraWebRtc(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void streamMp4(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void streamMjpeg(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    // Ptz
     void getPtzCapabilities(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void movePtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void stopPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void zoomPtz(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    // Snapshot
     void captureSnapshot(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
-    // TTS
     void sendTts(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
-    // Wave Station telemetry
     void streamWaveStationTelemetry(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
 
-    // IR commands
     void listIrCommands(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void saveIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void deleteIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string commandId);
     void learnIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
-    // Gesture
     void listGestureSets(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void getGestureSetDefinition(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string gestureSetId);
     void getRadarGestureSet(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);

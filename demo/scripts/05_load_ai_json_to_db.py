@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """02(에이전트 실호출)·03/04(수동 작성+임베딩) 산출물을 최종 bin/data/demo.db 에 반영한다.
 
-- demo/ai_reports/power_reports.json  -> power_report(24h/1w/1mo) + vec_power_report
-- demo/ai_reports/sleep_reports.json  -> sleep_report(daily/weekly) + vec_sleep_report
+- demo/agent/power_reports.json  -> power_report(24h/1w/1mo) + vec_power_report
+- demo/agent/sleep_reports.json  -> sleep_report(daily/weekly) + vec_sleep_report
 - demo/ai_manual/power_report_1h.json -> power_report(1h) + vec_power_report
 - demo/ai_manual/sleep_stat_30m_summary.json -> sleep_stat.summary_text(이미 있음) + vec_sleep_stat
 - demo/ai_manual/insight.json         -> insight + vec_insight_{surface}
@@ -22,7 +22,7 @@ from _lib.schema import INSIGHT_SURFACE_TO_VEC, ensure_runtime_schema
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"
-AI_REPORTS_DIR = REPO_ROOT / "demo" / "ai_reports"
+AI_REPORTS_DIR = REPO_ROOT / "demo" / "agent"
 AI_MANUAL_DIR = REPO_ROOT / "demo" / "ai_manual"
 
 

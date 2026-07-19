@@ -27,21 +27,16 @@ public:
     METHOD_LIST_END
 
     void getGeneral(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void putGeneral(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void getSleep(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void putSleep(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void listSounds(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void listTtsSpeakers(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void listAiModels(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void getAiAgent(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void putAiAgent(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 

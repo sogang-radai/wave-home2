@@ -18,7 +18,8 @@ bin/**/*.db-wal
 
 # Demo DB pipeline (regenerate: demo/scripts/, see demo/demo.md)
 demo/data/
-demo/ai_reports/
+demo/agent/power_reports.json
+demo/agent/sleep_reports.json
 demo/ai_manual/
 mock/data/
 mock/ai_reports/

@@ -26,13 +26,7 @@ public:
     void getInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId);
     void applyInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId);
     void updateInsight(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t insightId);
-
-    /**
-     * 특정 surface/date 인사이트를 에이전트에 즉시 생성 요청하고 저장한다
-     * (평소엔 sleep_report 는 sleep_manager 가 리포트 생성 직후 자동 트리거하지만,
-     * weekly_plan/dashboard_banner 등 다른 surface 는 아직 자동 트리거가 없어
-     * 수동/운영 트리거로도 쓸 수 있게 열어둔다).
-     */
+    /** 특정 surface/date 인사이트를 에이전트에 즉시 생성 요청하고 저장한다. */
     void generateInsights(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 

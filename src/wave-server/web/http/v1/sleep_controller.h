@@ -25,17 +25,12 @@ public:
     METHOD_LIST_END
 
     void todaySummary(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void todayPlan(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void todayPhoneUsage(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void todayAutomationSummary(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void dailySessions(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void dailyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void weeklyReport(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 

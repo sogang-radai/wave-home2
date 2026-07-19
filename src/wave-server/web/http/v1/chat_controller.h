@@ -28,9 +28,7 @@ public:
     METHOD_LIST_END
 
     void listConversations(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void createConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void getConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string conversationId);
     void renameConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string conversationId);
     void deleteConversation(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string conversationId);

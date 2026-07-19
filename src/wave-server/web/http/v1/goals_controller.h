@@ -28,7 +28,7 @@ public:
     void listGoals(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void updateGoal(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t goalId);
     void getCoaching(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t goalId);
-    
+
     void applyRecommendation(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t goalId, int64_t recommendationId);
     void updateRecommendation(const HttpRequestPtr& req, HttpResponseCallback&& callback, int64_t goalId, int64_t recommendationId);
 };

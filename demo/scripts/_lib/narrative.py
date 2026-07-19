@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import random
+from pathlib import Path
 
 from . import timeutil
 
@@ -172,7 +173,7 @@ def gen_automation_rules(hex_ids: dict[str, str], now: str) -> list[tuple]:
             now, now,
         ),
         (
-            2, "rule_schedule_induction_safety_off", "인덕션 안전 타이머", 1, 0,
+            1, "rule_schedule_induction_safety_off", "인덕션 안전 타이머", 1, 0,
             None,
             json.dumps({"repeat": "once", "delayMinutes": 30}, ensure_ascii=False),
             actions(hex_ids["induction_plug"], "off"),
@@ -453,7 +454,26 @@ def gen_chat_histories(rng: random.Random) -> list[tuple]:
 
     데모 목록에 같은 제목이 반복되지 않도록 topic bank 를 한 번씩만 사용한다.
     message 컬럼은 ChatStore 배열 포맷: [{id, role, text, createdAt}, ...]
+
+    demo/agent/chat.json 이 있으면(에이전트 실수집본) 그걸 쓰고,
+    최종 반영은 demo/scripts/07_load_chat_json_to_db.py 를 권장한다.
     """
+    chat_json = Path(__file__).resolve().parents[2] / "agent" / "chat.json"
+    if chat_json.exists():
+        try:
+            from importlib.util import module_from_spec, spec_from_file_location
+
+            loader_path = Path(__file__).resolve().parents[1] / "07_load_chat_json_to_db.py"
+            spec = spec_from_file_location("load_chat_json", loader_path)
+            if spec and spec.loader:
+                mod = module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                rows = mod.conversations_from_json(chat_json)
+                if rows:
+                    return rows
+        except Exception:
+            pass
+
     rows: list[tuple] = []
     dates = timeutil.june_dates()
     conv_id = 1

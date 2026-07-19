@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <complex>
+#include <vector>
+
+#include "kiss_fftr.h"
 
 WAVE_NAMESPACE_BEGIN
 SERVICE_NAMESPACE_BEGIN
@@ -22,8 +24,8 @@ namespace
         return 20.0 * std::log10(rms);
     }
 
-    // Naive DFT magnitude for band energy (window is small: 512).
-    void band_energy(
+    /** Hann-windowed real FFT band power via kiss_fftr (same snore-band ratio as before). */
+    void band_energy_kissfft(
         const float* samples,
         size_t n,
         uint32_t sample_rate,
@@ -34,22 +36,35 @@ namespace
     {
         band_out = 0.0;
         total_out = 0.0;
-        if (n < 8 || sample_rate == 0)
+        if (n < 8 || sample_rate == 0 || (n & 1u) != 0)
             return;
 
-        const double two_pi_n = 2.0 * M_PI / static_cast<double>(n);
-        const size_t n_freq = n / 2;
-        for (size_t k = 1; k < n_freq; ++k)
+        kiss_fftr_cfg cfg = kiss_fftr_alloc(static_cast<int>(n), 0, nullptr, nullptr);
+        if (!cfg)
+            return;
+
+        std::vector<kiss_fft_scalar> timedata(n);
+        const double two_pi_nm1 = 2.0 * M_PI / static_cast<double>(n - 1);
+        for (size_t t = 0; t < n; ++t)
         {
-            const double hz = static_cast<double>(k) * static_cast<double>(sample_rate)
-                / static_cast<double>(n);
-            std::complex<double> acc(0.0, 0.0);
-            for (size_t t = 0; t < n; ++t)
-            {
-                const double angle = two_pi_n * static_cast<double>(k) * static_cast<double>(t);
-                acc += static_cast<double>(samples[t]) * std::complex<double>(std::cos(angle), -std::sin(angle));
-            }
-            const double power = std::norm(acc);
+            const double hann = 0.5 * (1.0 - std::cos(two_pi_nm1 * static_cast<double>(t)));
+            timedata[t] = static_cast<kiss_fft_scalar>(static_cast<double>(samples[t]) * hann);
+        }
+
+        std::vector<kiss_fft_cpx> freqdata(n / 2 + 1);
+        kiss_fftr(cfg, timedata.data(), freqdata.data());
+        kiss_fftr_free(cfg);
+
+        const double hz_per_bin = static_cast<double>(sample_rate) / static_cast<double>(n);
+        // Skip DC (k=0); use positive frequencies only.
+        for (size_t k = 1; k < freqdata.size(); ++k)
+        {
+            const double hz = static_cast<double>(k) * hz_per_bin;
+            if (hz > static_cast<double>(sample_rate) * 0.5)
+                break;
+            const double re = static_cast<double>(freqdata[k].r);
+            const double im = static_cast<double>(freqdata[k].i);
+            const double power = re * re + im * im;
             total_out += power;
             if (hz >= lo_hz && hz <= hi_hz)
                 band_out += power;
@@ -104,7 +119,7 @@ void SnoreAudioAnalyzer::analyzeWindow()
 
     double band = 0.0;
     double total = 0.0;
-    band_energy(
+    band_energy_kissfft(
         m_pcm.data(),
         kWindowSamples,
         m_sampleRate,
@@ -142,7 +157,6 @@ SnoreAudioSample SnoreAudioAnalyzer::flushMinute()
     out.snoreActive = (static_cast<double>(m_activeCount) / static_cast<double>(m_windowCount)) >= 0.25;
 
     // snore_ratio for DB = fraction of active windows (0~1)
-    // stash in snoreScore for callers that want ratio; SleepManager uses active fraction separately
     m_latest = out;
     const double active_ratio = static_cast<double>(m_activeCount) / static_cast<double>(m_windowCount);
     out.snoreScore = active_ratio;

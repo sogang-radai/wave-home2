@@ -24,15 +24,10 @@ public:
     METHOD_LIST_END
 
     void listRules(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void createRule(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void updateRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
-
     void deleteRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
-
     void setRuleEnabled(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
-
     void executeRule(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string ruleId);
 };
 

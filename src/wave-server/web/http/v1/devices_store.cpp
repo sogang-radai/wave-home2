@@ -23,7 +23,6 @@ namespace
         "srs_r4sn",
         "wave_mic",
         "wave_cam",
-        "ir_reciever",
         "reolink_e1_pro",
         "droid_cam",
         "wave_station",
