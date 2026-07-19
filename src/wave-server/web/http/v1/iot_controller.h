@@ -94,22 +94,15 @@ public:
 
     // IR commands
     void listIrCommands(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void saveIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void deleteIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string commandId);
-
     void learnIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     // Gesture
     void listGestureSets(const HttpRequestPtr& req, HttpResponseCallback&& callback);
-
     void getGestureSetDefinition(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string gestureSetId);
-
     void getRadarGestureSet(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void setRadarGestureSet(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
-
     void listSpeechOverlays(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 };
 

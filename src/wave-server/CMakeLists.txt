@@ -168,6 +168,21 @@ if(WAVE_BUILD_POSE)
     target_compile_definitions(wave-server PRIVATE WAVE_BUILD_POSE=1)
 endif()
 
+# kissfft for sleep vitals bandpass / comb (prefer sherpa's kissfft target; else compile sources).
+set(_wave_kissfft_src "${CMAKE_SOURCE_DIR}/.deps/kissfft-src")
+if(TARGET kissfft)
+    list(APPEND _wave_server_libs kissfft)
+    if(EXISTS "${_wave_kissfft_src}/kiss_fftr.h")
+        target_include_directories(wave-server PRIVATE "${_wave_kissfft_src}")
+    endif()
+elseif(EXISTS "${_wave_kissfft_src}/kiss_fft.c")
+    target_sources(wave-server PRIVATE
+        "${_wave_kissfft_src}/kiss_fft.c"
+        "${_wave_kissfft_src}/kiss_fftr.c"
+    )
+    target_include_directories(wave-server PRIVATE "${_wave_kissfft_src}")
+endif()
+
 target_link_libraries(wave-server PRIVATE ${_wave_server_libs} OpenSSL::SSL OpenSSL::Crypto)
 wave_link_opus(wave-server)
 if(APPLE)

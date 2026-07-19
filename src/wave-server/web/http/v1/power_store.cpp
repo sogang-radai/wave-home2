@@ -286,17 +286,20 @@ Json::Value PowerStore::period_trend(
 
     if (ui_period == "week")
     {
+        // date-only(`YYYY-MM-DD`)와 datetime(`YYYY-MM-DD 00:00:00`) 행이 공존할 수 있어
+        // calendar day로 묶어 요일 라벨이 두 번 나오지 않게 한다.
         const auto rows = client->execSqlSync(
-            "SELECT time_start, energy_wh FROM power_energy WHERE granularity='24h'"
+            "SELECT date(time_start) AS day, MAX(energy_wh) AS energy_wh"
+            " FROM power_energy WHERE granularity='24h'"
             " AND date(time_start) BETWEEN date(?, '-6 days') AND date(?)" + device_clause
-            + " ORDER BY time_start",
+            + " GROUP BY date(time_start) ORDER BY day",
             ref_date,
             ref_date);
         static const char* weekdays[] = {"일", "월", "화", "수", "목", "금", "토"};
         for (const auto& row : rows)
         {
-            const auto ts = row["time_start"].as<std::string>();
-            const auto date_rows = client->execSqlSync("SELECT strftime('%w', ?)", ts);
+            const auto day = row["day"].as<std::string>();
+            const auto date_rows = client->execSqlSync("SELECT strftime('%w', ?)", day);
             int wday = date_rows.empty() ? 0 : date_rows[0][0].as<int>();
             appendPoint(weekdays[wday], row["energy_wh"].as<double>());
         }
@@ -307,16 +310,18 @@ Json::Value PowerStore::period_trend(
     {
         const std::string month_prefix = ref_date.substr(0, 7);
         const auto rows = client->execSqlSync(
-            "SELECT time_start, energy_wh FROM power_energy WHERE granularity='24h'"
-            " AND time_start LIKE ?" + device_clause + " ORDER BY time_start",
+            "SELECT date(time_start) AS day, MAX(energy_wh) AS energy_wh"
+            " FROM power_energy WHERE granularity='24h'"
+            " AND time_start LIKE ?" + device_clause
+            + " GROUP BY date(time_start) ORDER BY day",
             month_prefix + "%");
         for (const auto& row : rows)
         {
-            const auto ts = row["time_start"].as<std::string>();
-            if (ts.size() < 10)
+            const auto day = row["day"].as<std::string>();
+            if (day.size() < 10)
                 continue;
-            const int day = std::stoi(ts.substr(8, 2));
-            appendPoint(std::to_string(day), row["energy_wh"].as<double>());
+            const int day_num = std::stoi(day.substr(8, 2));
+            appendPoint(std::to_string(day_num), row["energy_wh"].as<double>());
         }
         return series;
     }
@@ -325,10 +330,13 @@ Json::Value PowerStore::period_trend(
     {
         const std::string year_prefix = ref_date.substr(0, 4);
         std::map<int, double> monthly;
+        // 일별 중복 행을 먼저 접은 뒤 월합 — 그렇지 않으면 date/datetime 중복이 요금을 두 배로 만든다.
         const auto rows = client->execSqlSync(
-            "SELECT substr(time_start, 6, 2) AS month_key, SUM(energy_wh) AS total"
-            " FROM power_energy WHERE granularity='24h' AND time_start LIKE ?" + device_clause
-            + " GROUP BY substr(time_start, 1, 7) ORDER BY month_key",
+            "SELECT substr(day, 6, 2) AS month_key, SUM(energy_wh) AS total FROM ("
+            "  SELECT date(time_start) AS day, MAX(energy_wh) AS energy_wh"
+            "  FROM power_energy WHERE granularity='24h' AND time_start LIKE ?" + device_clause
+            + "  GROUP BY date(time_start)"
+            ") GROUP BY substr(day, 1, 7) ORDER BY month_key",
             year_prefix + "-%");
         for (const auto& row : rows)
         {
@@ -438,6 +446,11 @@ WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_star
     const int64_t bucket_count = agg_rows[0]["buckets"].as<int64_t>();
     const double coverage = std::min(1.0, static_cast<double>(bucket_count) / expected_5m_buckets);
 
+    // Demo seed는 24h를 date-only(`YYYY-MM-DD`)로 넣는다. datetime 키를 쓰면
+    // 같은 날이 두 줄이 되어 주간 차트가 "월월화화"처럼 중복 라벨이 된다.
+    const std::string energy_time_start =
+        (period == "24h" && period_start.size() >= 10) ? period_start.substr(0, 10) : period_start;
+
     client->execSqlSync(
         R"SQL(
 INSERT INTO power_energy (device_id, granularity, time_start, energy_wh, coverage, sample_count)
@@ -448,7 +461,7 @@ ON CONFLICT DO UPDATE SET
     sample_count = excluded.sample_count
 )SQL",
         period,
-        period_start,
+        energy_time_start,
         energy_wh,
         coverage,
         sample_count);
@@ -456,7 +469,7 @@ ON CONFLICT DO UPDATE SET
     const auto energy_rows = client->execSqlSync(
         "SELECT id FROM power_energy WHERE device_id IS NULL AND granularity = ? AND time_start = ?",
         period,
-        period_start);
+        energy_time_start);
     if (energy_rows.empty())
         return std::nullopt;
     const int64_t energy_id = energy_rows[0]["id"].as<int64_t>();

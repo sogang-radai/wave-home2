@@ -1,5 +1,7 @@
 #include "sleep_manager.h"
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <map>
 
@@ -100,6 +102,15 @@ namespace
     bool is_sleep_radar_manifest_entry(const dev::DeviceManifestEntry& entry)
     {
         if (entry.config.value("class", "") != "srs_r4sn")
+            return false;
+        if (!entry.config.contains("settings") || !entry.config["settings"].is_object())
+            return false;
+        return entry.config["settings"].value("sleep", false);
+    }
+
+    bool is_sleep_station_manifest_entry(const dev::DeviceManifestEntry& entry)
+    {
+        if (entry.config.value("class", "") != "wave_station")
             return false;
         if (!entry.config.contains("settings") || !entry.config["settings"].is_object())
             return false;
@@ -266,6 +277,17 @@ bool SleepManager::is_sleep_enabled_radar(const std::string& external_id)
     return false;
 }
 
+bool SleepManager::is_sleep_enabled_station(const std::string& external_id)
+{
+    for (const auto& entry : AppState::get().deviceManager.manifestEntries())
+    {
+        if (entry.config.value("id", "") != external_id)
+            continue;
+        return is_sleep_station_manifest_entry(entry);
+    }
+    return false;
+}
+
 void SleepManager::tickVitals(SleepRuntime& runtime)
 {
     if (runtime.sessionFsm.phase() != SessionPhase::Sleeping)
@@ -294,10 +316,19 @@ void SleepManager::tickVitals(SleepRuntime& runtime)
     if (++s_vital_tick % 20 != 0)
         return;
 
-    std::vector<dev::RadarIQRequest> requests(1);
-    requests[0].azimuth = target.azimuth;
-    requests[0].elevation = target.elevation;
-    requests[0].distance = target.distance;
+    constexpr float kBinM = VitalTargetPicker::kRangeBinSizeM;
+    const int center_bin = static_cast<int>(std::lround(target.distance / kBinM));
+    std::vector<dev::RadarIQRequest> requests;
+    requests.reserve(2 * VitalSignsProcessor::kHalfWidthBins + 1);
+    for (int offset = -VitalSignsProcessor::kHalfWidthBins; offset <= VitalSignsProcessor::kHalfWidthBins; ++offset)
+    {
+        const int rb = std::max(0, center_bin + offset);
+        dev::RadarIQRequest req;
+        req.azimuth = target.azimuth;
+        req.elevation = target.elevation;
+        req.distance = static_cast<float>(rb) * kBinM;
+        requests.push_back(req);
+    }
 
     std::vector<dev::RadarIQResponse> responses;
     auto future = iq_provider->requestIQAsync(requests, responses);
@@ -305,10 +336,14 @@ void SleepManager::tickVitals(SleepRuntime& runtime)
         return;
 
     future.get();
-    if (responses.empty())
+    if (responses.size() != requests.size())
         return;
 
-    runtime.vitalProcessor.pushSample(responses[0].iq);
+    for (size_t i = 0; i < responses.size(); ++i)
+    {
+        const int rb = static_cast<int>(std::lround(requests[i].distance / kBinM));
+        runtime.vitalProcessor.pushSample(rb, responses[i].iq);
+    }
     runtime.lastVitals = runtime.vitalProcessor.estimate();
 }
 
@@ -413,11 +448,19 @@ ORDER BY r.id, ru.user_id, d.id
             {
                 if (!is_sleep_enabled_radar(wire_id))
                     continue;
+                // First sleep=true radar wins (ORDER BY d.id).
+                if (config.radarDbId > 0)
+                    continue;
                 config.radarDbId = device_id;
                 config.radarExternalId = wire_id;
             }
             else if (device_class == "wave_station")
             {
+                if (!is_sleep_enabled_station(wire_id))
+                    continue;
+                // First sleep=true WaveStation wins.
+                if (config.stationDbId > 0)
+                    continue;
                 config.stationDbId = device_id;
                 config.stationExternalId = wire_id;
             }
@@ -616,37 +659,72 @@ void SleepManager::flushMinuteBoundary(SleepRuntime& runtime, const std::string&
     {
         persistMinuteStat(runtime, stat);
 
-        if (!runtime.thirtyMinInitialized)
-        {
-            runtime.thirtyMinAgg.reset(floorToThirtyMin(stat.timeStart));
-            runtime.activeThirtyMinStart = floorToThirtyMin(stat.timeStart);
-            runtime.thirtyMinInitialized = true;
-        }
-        runtime.thirtyMinAgg.addMinute(stat);
-
         if (auto close = runtime.sessionFsm.onMinute(stat))
+        {
+            // Flush any partial session-relative 30m window before closing.
+            if (runtime.sessionThirtyActive && runtime.minutesInThirtyMinWindow > 0)
+            {
+                ThirtyMinStat tstat;
+                if (runtime.thirtyMinAgg.flush(tstat))
+                    persistThirtyMinStat(runtime, tstat);
+            }
+            runtime.sessionThirtyActive = false;
+            runtime.minutesInThirtyMinWindow = 0;
+            runtime.thirtyMinInitialized = false;
             handleSessionClose(runtime, *close);
+        }
+        else
+        {
+            const auto phase = runtime.sessionFsm.phase();
+            const bool in_session = phase == SessionPhase::Sleeping
+                || phase == SessionPhase::MicroWake
+                || phase == SessionPhase::WakePending;
+
+            // Start the first 30m window when sleep onset is confirmed.
+            if (phase == SessionPhase::Sleeping && !runtime.sessionThirtyActive)
+            {
+                runtime.thirtyMinAgg.reset(stat.timeStart);
+                runtime.activeThirtyMinStart = stat.timeStart;
+                runtime.thirtyMinInitialized = true;
+                runtime.sessionThirtyActive = true;
+                runtime.minutesInThirtyMinWindow = 0;
+                runtime.minuteStagesInWindow.clear();
+                runtime.windowSnoreSum = 0.0;
+                runtime.windowNoiseSum = 0.0;
+                runtime.windowAudioMinutes = 0;
+            }
+
+            if (runtime.sessionThirtyActive && in_session)
+            {
+                runtime.thirtyMinAgg.addMinute(stat);
+                ++runtime.minutesInThirtyMinWindow;
+                if (runtime.minutesInThirtyMinWindow >= 30)
+                {
+                    ThirtyMinStat tstat;
+                    if (runtime.thirtyMinAgg.flush(tstat))
+                        persistThirtyMinStat(runtime, tstat);
+
+                    // Next window starts at this minute's end (session-elapsed, not clock).
+                    const std::string next_start = !stat.timeEnd.empty() ? stat.timeEnd : stat.timeStart;
+                    runtime.thirtyMinAgg.reset(next_start);
+                    runtime.activeThirtyMinStart = next_start;
+                    runtime.minutesInThirtyMinWindow = 0;
+                    runtime.minuteStagesInWindow.clear();
+                    runtime.windowSnoreSum = 0.0;
+                    runtime.windowNoiseSum = 0.0;
+                    runtime.windowAudioMinutes = 0;
+                }
+            }
+        }
     }
 
     runtime.minuteAgg.reset(minute_start);
     runtime.activeMinuteStart = minute_start;
 }
 
-void SleepManager::flushThirtyMinBoundary(SleepRuntime& runtime, const std::string& now_ts)
+void SleepManager::flushThirtyMinBoundary(SleepRuntime& /*runtime*/, const std::string& /*now_ts*/)
 {
-    if (!runtime.thirtyMinInitialized)
-        return;
-
-    const std::string window_start = floorToThirtyMin(now_ts);
-    if (window_start == runtime.activeThirtyMinStart)
-        return;
-
-    ThirtyMinStat stat;
-    if (runtime.thirtyMinAgg.flush(stat))
-        persistThirtyMinStat(runtime, stat);
-
-    runtime.thirtyMinAgg.reset(window_start);
-    runtime.activeThirtyMinStart = window_start;
+    // 30m summaries are session-relative and flushed from flushMinuteBoundary.
 }
 
 void SleepManager::persistMinuteStat(SleepRuntime& runtime, const MinuteStat& stat)
@@ -1187,7 +1265,15 @@ WHERE id = ?
         weekly.userId = runtime.config.userId;
         weekly.roomId = runtime.config.roomId;
         weekly.period = "weekly";
-        weekly.periodStart = mondayOfWeek(close.nightDate);
+        // Rolling 7-day window ending on nightDate (inclusive): [nightDate-6, nightDate].
+        {
+            const auto start_rows = client->execSqlSync(
+                "SELECT date(?, '-6 day') AS week_start",
+                close.nightDate);
+            weekly.periodStart = start_rows.empty()
+                ? close.nightDate
+                : start_rows[0]["week_start"].as<std::string>();
+        }
         enqueueJob(std::move(weekly));
 
         // 오늘 밤(=지난밤의 다음날) "추천 수면 시간"을 지금 미리 생성해둔다 - 기상 직후
@@ -1413,6 +1499,7 @@ ON CONFLICT(user_id, period, period_start) DO UPDATE SET
 
     if (job.kind == SleepJobKind::WeeklyReport)
     {
+        // periodStart = anchor-6; include nights through periodStart+6 (the close night).
         const auto week_end_rows = client->execSqlSync(
             "SELECT date(?, '+7 day') AS week_end",
             job.periodStart);

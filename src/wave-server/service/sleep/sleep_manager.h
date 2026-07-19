@@ -52,6 +52,9 @@ struct SleepRuntime
     bool secondInitialized = false;
     bool minuteInitialized = false;
     bool thirtyMinInitialized = false;
+    /** Session-relative 30m window (not wall-clock :00/:30). */
+    bool sessionThirtyActive = false;
+    int32_t minutesInThirtyMinWindow = 0;
     VitalTargetPicker vitalPicker;
     VitalSignsProcessor vitalProcessor;
     VitalEstimate lastVitals;
@@ -131,6 +134,7 @@ private:
     void tickAudio(SleepRuntime& runtime);
     void ensureMicSubscription(SleepRuntime& runtime, bool want_subscribed);
     static bool is_sleep_enabled_radar(const std::string& external_id);
+    static bool is_sleep_enabled_station(const std::string& external_id);
     std::optional<double> queryStationEnv(const std::string& external_id, const char* field);
     void storeAgentEmbeddings(SleepJobKind kind, int64_t row_id, const std::vector<float>& embedding);
 

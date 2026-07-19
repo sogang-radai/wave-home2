@@ -79,6 +79,7 @@
             "model": "Wave Station",
             "name": "Wave Station",
             "settings": {
+                "sleep": true,
                 "channels": 1,
                 "sample_rate": 16000,
                 "sample_size": 16,

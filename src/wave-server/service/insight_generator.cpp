@@ -90,9 +90,22 @@ bool generateAndPersistInsights(
             const std::string kind = item.value("kind", std::string("tip"));
             const bool actionable = item.value("actionable", false);
 
-            const std::optional<std::string> label = item.contains("label") && item["label"].is_string()
+            std::optional<std::string> label = item.contains("label") && item["label"].is_string()
                 ? std::optional<std::string>(item["label"].get<std::string>())
                 : std::nullopt;
+            if (!label || label->empty())
+            {
+                if (surface == "power")
+                    label = "전력";
+                else if (surface == "sleep_report")
+                    label = "수면";
+                else if (surface == "posture_report")
+                    label = "자세";
+                else if (surface == "weekly_plan")
+                    label = "주간계획";
+                else if (surface == "dashboard_banner")
+                    label = "안내";
+            }
             const std::optional<std::string> action_type =
                 item.contains("actionType") && item["actionType"].is_string()
                     ? std::optional<std::string>(item["actionType"].get<std::string>())
