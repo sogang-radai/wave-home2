@@ -1,16 +1,48 @@
 # WaveHome
 
-![thumbnail](docs/images/thumbnail.png)
 
-서강대학교 팀 **RADAI** - 2026 AI·SW 중심대학 디지털 경진대회(SW 부문)
+> 2026 AI·SW 중심대학 디지털 경진대회(SW 부문) - Team **RADAI**(서강대학교)
 
-사용자의 수면과 행동 패턴을 이해하고, AI Agent 기반 맞춤형 스마트홈 제어로 더 건강한 일상을 만드는 **홈 헬스 인텔리전스** 솔루션입니다.
+AI Agent 기반의 **Home Health Intelligence** 플랫폼입니다.
 
-비접촉 레이더·Wave Station으로 수면·바이탈·환경을 수집하고, 제스처·예약·룰로 가전을 제어하며, 멀티 에이전트(수면·전력·환경 + 총괄)가 인사이트와 자동화를 제공합니다. 웨어러블 없이 로컬 네트워크 중심으로 프라이버시를 지키는 것을 목표로 합니다.
+비접촉 레이더와 센서를 활용해 사용자의 수면, 행동, 생활 패턴을 분석하고, 개인 맞춤형 건강 인사이트와 스마트홈 자동화를 제공합니다.
 
-핵심 구성은 **프론트(React SPA)** · **백엔드(C++ Drogon,** `wave-server`**)** · **에이전트(Python FastAPI + LangGraph)** 입니다.
+멀티 AI 에이전트(수면·전력·환경·총괄)가 데이터를 분석하여 리포트를 생성하고, 제스처·예약·자동화 규칙을 통해 IoT 기기를 제어합니다. 모든 기능은 로컬 네트워크 중심으로 동작하여 개인정보 보호를 고려했습니다.
 
----
+핵심 구성은 **React SPA**, **C++ Drogon Backend (`wave-server`)**, **Python FastAPI + LangGraph AI Agent**입니다.
+
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=DHlVH8eD7T8">
+    <img src="https://img.youtube.com/vi/DHlVH8eD7T8/0.jpg" alt="시연영상" width="600px">
+  </a>
+  <br>
+  <p> <b>시연영상 (클릭 시 유튜브로 이동)</b></p>
+</div>
+
+## 서브모듈
+
+```bash
+git submodule update --init --recursive
+```
+
+
+| 경로                | 설명                                                 |
+| ----------------- | -------------------------------------------------- |
+| `wave-home-front` | React SPA                                          |
+| `wave-home-agent` | FastAPI + LangGraph 에이전트 (prod :8502 / demo :8512) |
+
+
+
+## 빌드·실행
+
+```bash
+./scripts/build/server.sh
+./scripts/build/site.sh          # production front → site/
+./scripts/run/prod.sh            # backend client :8500, agent-api :8501
+# agent: uvicorn … --port 8502
+```
+
+데모: `./scripts/build/site-demo.sh` → `./scripts/run/demo.sh` (client :8510 / agent-api :8511 / agent :8512)
 
 ## 폴더 구조
 
@@ -101,41 +133,6 @@ wave-home2/
 
 
 ---
-
-
-
-## 서브모듈
-
-```bash
-git submodule update --init --recursive
-```
-
-
-| 경로                | 설명                                                 |
-| ----------------- | -------------------------------------------------- |
-| `wave-home-front` | React SPA                                          |
-| `wave-home-agent` | FastAPI + LangGraph 에이전트 (prod :8502 / demo :8512) |
-
-
-에이전트 최초 클론(비공개 repo) — **본인 터미널**에서 실행:
-
-```bash
-git clone https://github.com/sogang-radai/wave-home-agent.git wave-home-agent
-./scripts/configure/agent-dev.sh
-```
-
-
-
-## 빌드·실행
-
-```bash
-./scripts/build/server.sh
-./scripts/build/site.sh          # production front → site/
-./scripts/run/prod.sh            # backend client :8500, agent-api :8501
-# agent: uvicorn … --port 8502
-```
-
-데모: `./scripts/build/site-demo.sh` → `./scripts/run/demo.sh` (client :8510 / agent-api :8511 / agent :8512)
 
 포트: [docs/ports.txt](docs/ports.txt) · [docs/wave-server-boundaries.md](docs/wave-server-boundaries.md)  
 API 계약: [docs/agent-api/README.md](docs/agent-api/README.md)
