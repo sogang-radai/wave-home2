@@ -6,6 +6,8 @@
 #include <sstream>
 #include <unordered_set>
 
+#include <json/json.h>
+
 #include "../v1/chat_store.h"
 #include "../../../core/logger.h"
 #include "../../../device/device_wire_id.hpp"
@@ -803,8 +805,26 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
                 item["asleepTotalS"] = static_cast<Json::Int64>(row["asleep_total_s"].as<int64_t>());
             if (!row["efficiency"].isNull())
                 item["efficiency"] = row["efficiency"].as<double>();
+            if (!row["stage_totals"].isNull())
+            {
+                const auto raw = row["stage_totals"].as<std::string>();
+                Json::Value parsed;
+                Json::CharReaderBuilder reader;
+                std::string errors;
+                std::istringstream stream(raw);
+                if (Json::parseFromStream(reader, stream, &parsed, &errors) && parsed.isObject())
+                    item["stageTotals"] = parsed;
+                else
+                    item["stageTotals"] = raw;
+            }
             if (!row["toss_events"].isNull())
                 item["tossEvents"] = static_cast<Json::Int64>(row["toss_events"].as<int64_t>());
+            if (!row["hr_mean"].isNull())
+                item["hrMean"] = row["hr_mean"].as<double>();
+            if (!row["br_mean"].isNull())
+                item["brMean"] = row["br_mean"].as<double>();
+            if (!row["snore_ratio"].isNull())
+                item["snoreRatio"] = row["snore_ratio"].as<double>();
             items.append(item);
         }
         return make_query_success(table, std::move(items));
