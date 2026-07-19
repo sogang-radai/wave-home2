@@ -61,32 +61,38 @@ git submodule update --init --recursive
 ./scripts/configure/agent-dev.sh
 ```
 
-`wave-home-agent/.env`가 없으면 `.env.example`에서 만들고 venv·의존성을 설치합니다. 채팅·리포트를 쓰려면 `.env`에 키를 넣습니다.
+`wave-home-agent/.env`가 없으면 `.env.example`에서 복사하고, Python venv·의존성까지 설치합니다.
+채팅·리포트를 쓰려면 `.env`에 API 키(또는 Ollama)를 넣습니다.
 
 ```bash
 # wave-home-agent/.env (발췌)
-LLM_PROVIDER=EMINI_API_KEY=...          # 또는 OPENAI_API_KEY
+LLM_PROVIDER=gemini                 # 또는 openai / ollama
+GEMINI_API_KEY=...                  # LLM_PROVIDER=gemini 일 때
+# OPENAI_API_KEY=...                # LLM_PROVIDER=openai 일 때
 OLLAMA_BASE_URL=http://127.0.0.1:11434   # 임베딩·LLM 포워딩 시
 ```
 
+이후 에이전트 실행 전에 `source wave-home-agent/.venv/bin/activate` 하면 됩니다.
 
 
-### 3. 백엔드·프론트 빌드 (세 프로필 전부)
+
+### 3. 백엔드·프론트 빌드 (세 프로필 공통)
 
 ```bash
-./scripts/build/server.sh        # → bin/wave-server
+./scripts/build/server.sh        # → bin/wave-server (drogon 로컬 패치 포함)
 ./scripts/build/site.sh          # production → site/
 ./scripts/build/site-demo.sh     # demo        → site-demo/
 ./scripts/build/site-test.sh     # test/mock   → site-test/
 ```
 
+필요한 프로필의 site 스크립트만 실행해도 됩니다. 예: 데모만 쓸 때 `server.sh` + `site-demo.sh`.
+
 
 
 ### 4. (선택 사항) 신경망 모델 다운로드
 
-수면 및 제스처 모델은 용량이 적어서 이미 포함되어 있습니다. 
-
-TTS/STT 모델은 .gitignore로 처리했습니다. 음성 기능을 사용하려면 다음 스크립트를 실행하면 됩니다. 
+수면·제스처 모델은 저장소에 포함되어 있습니다.
+TTS/STT 가중치는 `.gitignore` 대상이므로, 음성 기능을 쓰려면 아래를 실행합니다.
 
 ```bash
 ./scripts/download/all-models.sh   # 또는 tts-model.sh / stt-model.sh 개별
@@ -96,7 +102,9 @@ TTS/STT 모델은 .gitignore로 처리했습니다. 음성 기능을 사용하�
 
 ### 5. 실행
 
-세 프로필은 **동시에 띄우지 마세요** (포트·에이전트 `.env`가 겹칩니다). 프로필을 바꿀 때마다 아래 순서대로 다시 기동합니다.
+세 프로필은 **동시에 띄우지 마세요** (포트·에이전트 `.env`가 겹칩니다).
+프로필을 바꿀 때마다 백엔드·에이전트를 해당 포트에 맞게 다시 기동합니다.
+`prod.sh` / `demo.sh`는 기동 전에 에이전트 `.env` 포트를 맞춰 줍니다 (`agent-real.sh` / `agent-demo.sh`).
 
 
 | 프로필            | 프론트 정적       | Backend client | Backend agent-api | Agent    | DB                              |
@@ -106,24 +114,9 @@ TTS/STT 모델은 .gitignore로 처리했습니다. 음성 기능을 사용하�
 | **Test**       | `site-test/` | **8520**       | 미사용               | 미사용      | 인브라우저 mock (에이전트 불필요)           |
 
 
+#### Production (실제 기기·DB)
 
-
-#### .venv 세팅
-
-아래 명령어를 실행해서 에이전트 서버용 가상 실행환경을 만듭니다!!
-
-```
-cd wave-home-agent
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-
-
-#### Production(실제 기기에 실제 DB 사용)
-
-터미널 1 — 백엔드 (`agent-real.sh`로 `.env` 포트 맞춤 후 기동):
+터미널 1 — 백엔드:
 
 ```bash
 ./scripts/run/prod.sh
@@ -140,7 +133,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8502
 
 브라우저: [http://127.0.0.1:8500](http://127.0.0.1:8500)
 
-#### Demo (기기는 가상으로, ./bin/data/demo.md 사용)
+#### Demo (가상 기기, `bin/data/demo.db`)
 
 ```bash
 ./scripts/run/demo.sh
