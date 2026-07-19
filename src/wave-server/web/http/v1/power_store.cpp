@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <optional>
@@ -259,10 +260,12 @@ Json::Value PowerStore::period_trend(
         device_clause = " AND device_id IS NULL";
     }
 
-    auto appendPoint = [&](const std::string& label, double wh, bool unit_kwh = false) {
+    auto appendPoint = [&](const std::string& label, double wh, const std::string& period_start,
+                           bool unit_kwh = false) {
         Json::Value point;
         point["label"] = label;
         point["wh"] = unit_kwh ? wh : std::round(wh * 100.0) / 100.0;
+        point["periodStart"] = period_start;
         if (unit_kwh)
             point["unitKwh"] = true;
         series.append(point);
@@ -280,7 +283,8 @@ Json::Value PowerStore::period_trend(
             if (ts.size() < 13)
                 continue;
             const int hour = std::stoi(ts.substr(11, 2));
-            appendPoint(std::to_string(hour) + "시", row["energy_wh"].as<double>());
+            const std::string hour_start = ts.substr(0, 13) + ":00:00";
+            appendPoint(std::to_string(hour) + "시", row["energy_wh"].as<double>(), hour_start);
         }
         return series;
     }
@@ -302,7 +306,7 @@ Json::Value PowerStore::period_trend(
             const auto day = row["day"].as<std::string>();
             const auto date_rows = client->execSqlSync("SELECT strftime('%w', ?)", day);
             int wday = date_rows.empty() ? 0 : date_rows[0][0].as<int>();
-            appendPoint(weekdays[wday], row["energy_wh"].as<double>());
+            appendPoint(weekdays[wday], row["energy_wh"].as<double>(), day);
         }
         return series;
     }
@@ -322,7 +326,7 @@ Json::Value PowerStore::period_trend(
             if (day.size() < 10)
                 continue;
             const int day_num = std::stoi(day.substr(8, 2));
-            appendPoint(std::to_string(day_num), row["energy_wh"].as<double>());
+            appendPoint(std::to_string(day_num), row["energy_wh"].as<double>(), day);
         }
         return series;
     }
@@ -347,7 +351,9 @@ Json::Value PowerStore::period_trend(
         for (int month = 1; month <= 12; ++month)
         {
             const double wh = monthly.count(month) ? monthly[month] : 0.0;
-            appendPoint(std::to_string(month) + "월", wh / 1000.0, true);
+            char month_start[16];
+            std::snprintf(month_start, sizeof(month_start), "%s-%02d-01", year_prefix.c_str(), month);
+            appendPoint(std::to_string(month) + "월", wh / 1000.0, month_start, true);
         }
         return series;
     }
@@ -858,6 +864,13 @@ bool PowerStore::ensure_daily_report(const db::DbClientPtr& client, const std::s
 {
     if (!client)
         return false;
+    // date-only / datetime 시드가 공존해도 같은 날을 한 번만 본다.
+    const auto existing = client->execSqlSync(
+        "SELECT id FROM power_report WHERE period = '24h' AND device_id IS NULL"
+        " AND date(period_start) = date(?) LIMIT 1",
+        date);
+    if (!existing.empty())
+        return true;
     const std::string day_start = date + " 00:00:00";
     const auto day_end_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", date);
     const std::string day_end =
@@ -869,9 +882,18 @@ bool PowerStore::ensure_hourly_report(const db::DbClientPtr& client, const std::
 {
     if (!client)
         return false;
-    const auto hour_end_rows = client->execSqlSync("SELECT datetime(?, '+1 hour') AS d", hour_start);
-    const std::string hour_end = hour_end_rows.empty() ? hour_start : hour_end_rows[0]["d"].as<std::string>();
-    return enqueue_report_job("1h", hour_start, hour_start, hour_end, 12.0, true);
+    const std::string normalized = hour_start.size() >= 13
+        ? hour_start.substr(0, 13) + ":00:00"
+        : hour_start;
+    const auto existing = client->execSqlSync(
+        "SELECT id FROM power_report WHERE period = '1h' AND device_id IS NULL"
+        " AND period_start = ? LIMIT 1",
+        normalized);
+    if (!existing.empty())
+        return true;
+    const auto hour_end_rows = client->execSqlSync("SELECT datetime(?, '+1 hour') AS d", normalized);
+    const std::string hour_end = hour_end_rows.empty() ? normalized : hour_end_rows[0]["d"].as<std::string>();
+    return enqueue_report_job("1h", normalized, normalized, hour_end, 12.0, true);
 }
 
 Json::Value PowerStore::query_report(
@@ -922,9 +944,8 @@ Json::Value PowerStore::query_report(
 
     const bool exact_match = !period_start_hint.empty() && (
         (*api_period == "1h" && period_start_hint.find(' ') != std::string::npos)
-        || (*api_period == "24h" && period_start_hint.size() == 10)
-        || (*api_period == "1mo" && period_start_hint.size() == 10)
-        || (*api_period == "1w" && period_start_hint.size() == 10));
+        || ((*api_period == "24h" || *api_period == "1mo" || *api_period == "1w")
+            && period_start_hint.size() >= 10));
 
     const auto now_rows = client->execSqlSync("SELECT datetime('now', 'localtime') AS now");
     const std::string now_full = now_rows.empty() ? (ref_date + " 00:00:00") : now_rows[0]["now"].as<std::string>();
@@ -960,12 +981,18 @@ Json::Value PowerStore::query_report(
     sql << "SELECT metrics, report_text, period_start FROM power_report WHERE period = '" << *api_period << "'";
     if (exact_match)
     {
-        // 24h 도 1h 와 마찬가지로 "YYYY-MM-DD 00:00:00" 전체 타임스탬프로 저장되므로,
-        // 날짜만 담긴 hint(예: "2026-07-11")를 그대로 비교하면 절대 매치되지 않는다.
-        const std::string exact_value = *api_period == "1h"
-            ? period_start_hint.substr(0, 13) + ":00:00"
-            : *api_period == "24h" ? period_start_hint.substr(0, 10) + " 00:00:00" : period_start_hint;
-        sql << " AND period_start = '" << exact_value << "'";
+        // 시드 DB 는 24h/1w/1mo 를 date-only(`YYYY-MM-DD`)로, 런타임 생성분은
+        // datetime(`YYYY-MM-DD 00:00:00`)로 넣을 수 있어 둘 다 허용한다.
+        if (*api_period == "1h")
+        {
+            const std::string exact_value = period_start_hint.substr(0, 13) + ":00:00";
+            sql << " AND period_start = '" << exact_value << "'";
+        }
+        else
+        {
+            const std::string day = period_start_hint.substr(0, 10);
+            sql << " AND date(period_start) = date('" << day << "')";
+        }
     }
     else
     {

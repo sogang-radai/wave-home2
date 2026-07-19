@@ -48,11 +48,16 @@ def load_power_reports(conn: sqlite3.Connection, vec_ready: bool) -> int:
 
     n = 0
     for r in rows:
+        period_start = r["period_start"]
+        # 백엔드 query_report 는 24h 를 datetime 또는 date(period_start) 로 조회한다.
+        # 시드 일관성을 위해 24h date-only 는 자정 datetime 으로 정규화한다.
+        if r["period"] == "24h" and isinstance(period_start, str) and len(period_start) == 10:
+            period_start = period_start + " 00:00:00"
         cur.execute(
             "INSERT INTO power_report (energy_id, device_id, period, period_start, metrics, report_text, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                r["energy_id"], r.get("device_id"), r["period"], r["period_start"],
+                r["energy_id"], r.get("device_id"), r["period"], period_start,
                 json.dumps(r["metrics"], ensure_ascii=False), r["report_text"],
                 r.get("created_at", "2026-07-01 00:00:00"),
             ),
