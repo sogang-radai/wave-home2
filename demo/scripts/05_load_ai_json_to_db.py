@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """02(에이전트 실호출)·03/04(수동 작성+임베딩) 산출물을 최종 bin/data/demo.db 에 반영한다.
 
-- demo/agent/power_reports.json  -> power_report(24h/1w/1mo) + vec_power_report
+- demo/agent/power_reports.json  -> power_report(24h/1w/1mo[/1h]) + vec_power_report
 - demo/agent/sleep_reports.json  -> sleep_report(daily/weekly) + vec_sleep_report
 - demo/ai_manual/power_report_1h.json -> power_report(1h) + vec_power_report
 - demo/ai_manual/sleep_stat_30m_summary.json -> sleep_stat.summary_text(이미 있음) + vec_sleep_stat
 - demo/ai_manual/insight.json         -> insight + vec_insight_{surface}
+- demo/agent/power_insights.json      -> insight(surface=power) only (--power-only 시)
 - demo/ai_manual/weekly_plan_report.json -> weekly_plan_report + vec_weekly_plan_report
 
 여러 번 실행해도 안전하도록, 로드 전 대상 테이블의 관련 행을 지우고 다시 넣는다.
+
+    python3 demo/scripts/05_load_ai_json_to_db.py
+    python3 demo/scripts/05_load_ai_json_to_db.py --power-only
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 from pathlib import Path
@@ -108,14 +113,8 @@ def load_sleep_30m_summaries(conn: sqlite3.Connection, vec_ready: bool) -> int:
     return n
 
 
-def load_insights(conn: sqlite3.Connection, vec_ready: bool) -> int:
+def _insert_insight_rows(conn: sqlite3.Connection, rows: list[dict], vec_ready: bool) -> int:
     cur = conn.cursor()
-    if vec_ready:
-        for vec_table in set(INSIGHT_SURFACE_TO_VEC.values()):
-            cur.execute(f"DELETE FROM {vec_table}")
-    cur.execute("DELETE FROM insight")
-
-    rows = load_json(AI_MANUAL_DIR / "insight.json")
     n = 0
     for r in rows:
         cur.execute(
@@ -123,7 +122,7 @@ def load_insights(conn: sqlite3.Connection, vec_ready: bool) -> int:
             "approved, rule_json, schedule_task_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 r["user_id"], r["surface"], r["kind"], r["date"], r.get("label"), r["title"], r["text"],
-                r["actionable"], r.get("action_type"), r["approved"], r.get("rule_json"),
+                r["actionable"], r.get("action_type"), r.get("approved", 0), r.get("rule_json"),
                 r.get("schedule_task_json"), r["created_at"],
             ),
         )
@@ -137,6 +136,35 @@ def load_insights(conn: sqlite3.Connection, vec_ready: bool) -> int:
         n += 1
     conn.commit()
     return n
+
+
+def load_insights(conn: sqlite3.Connection, vec_ready: bool) -> int:
+    cur = conn.cursor()
+    if vec_ready:
+        for vec_table in set(INSIGHT_SURFACE_TO_VEC.values()):
+            cur.execute(f"DELETE FROM {vec_table}")
+    cur.execute("DELETE FROM insight")
+    return _insert_insight_rows(conn, load_json(AI_MANUAL_DIR / "insight.json"), vec_ready)
+
+
+def load_power_insights_only(conn: sqlite3.Connection, vec_ready: bool) -> int:
+    """surface=power 만 교체. 수면/배너 등 다른 insight 는 유지."""
+    cur = conn.cursor()
+    if vec_ready:
+        old_ids = [r[0] for r in cur.execute("SELECT id FROM insight WHERE surface='power'").fetchall()]
+        if old_ids:
+            placeholders = ",".join("?" * len(old_ids))
+            cur.execute(
+                f"DELETE FROM vec_insight_power WHERE insight_id IN ({placeholders})",
+                old_ids,
+            )
+    cur.execute("DELETE FROM insight WHERE surface='power'")
+    conn.commit()
+    rows = load_json(AI_REPORTS_DIR / "power_insights.json")
+    if not rows:
+        print("  (없음) demo/agent/power_insights.json")
+        return 0
+    return _insert_insight_rows(conn, rows, vec_ready)
 
 
 def load_weekly_plan_reports(conn: sqlite3.Connection, vec_ready: bool) -> int:
@@ -198,6 +226,14 @@ def ensure_calendar_monthly_power_reports(conn: sqlite3.Connection) -> int:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--power-only",
+        action="store_true",
+        help="power_report + surface=power insight 만 교체(수면/기타 insight 유지)",
+    )
+    args = parser.parse_args()
+
     conn = sqlite3.connect(DB_PATH)
     vec_ready = ensure_runtime_schema(conn, with_vec=True)
     if not vec_ready:
@@ -208,10 +244,13 @@ def main() -> None:
 
     print(f"power_report: {load_power_reports(conn, vec_ready)}건")
     print(f"power_report(1mo calendar): {ensure_calendar_monthly_power_reports(conn)}건")
-    print(f"sleep_report: {load_sleep_reports(conn, vec_ready)}건")
-    print(f"sleep_stat(30m summary): {load_sleep_30m_summaries(conn, vec_ready)}건")
-    print(f"insight: {load_insights(conn, vec_ready)}건")
-    print(f"weekly_plan_report: {load_weekly_plan_reports(conn, vec_ready)}건")
+    if args.power_only:
+        print(f"insight(power only): {load_power_insights_only(conn, vec_ready)}건")
+    else:
+        print(f"sleep_report: {load_sleep_reports(conn, vec_ready)}건")
+        print(f"sleep_stat(30m summary): {load_sleep_30m_summaries(conn, vec_ready)}건")
+        print(f"insight: {load_insights(conn, vec_ready)}건")
+        print(f"weekly_plan_report: {load_weekly_plan_reports(conn, vec_ready)}건")
 
     conn.close()
     print("=== 05_load_ai_json_to_db 완료 ===")

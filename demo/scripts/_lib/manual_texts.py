@@ -216,36 +216,98 @@ def gen_weekly_plan_reports(conn: sqlite3.Connection, now: str) -> list[dict]:
 
 # ---------------------------------------------------------------------------
 # 1h 전력 리포트(템플릿, device_id=NULL 만)
+# 앵커일(2026-06-30)은 에이전트 실호출 분이므로 제외한다.
+# 문장 톤은 에이전트 샘플(요약·변화·주의·보완을 필요할 때만)에 맞춘다.
 # ---------------------------------------------------------------------------
-def gen_power_1h_reports(conn: sqlite3.Connection, now: str) -> list[dict]:
+AGENT_POWER_1H_DATES = {"2026-06-30"}
+
+
+def gen_power_1h_reports(
+    conn: sqlite3.Connection,
+    now: str,
+    *,
+    exclude_dates: set[str] | None = None,
+) -> list[dict]:
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     rows = cur.execute(
         "SELECT * FROM power_energy WHERE device_id IS NULL AND granularity='1h' ORDER BY time_start"
     ).fetchall()
+    skip = exclude_dates if exclude_dates is not None else AGENT_POWER_1H_DATES
 
     out = []
+    prev_wh: float | None = None
     for r in rows:
+        day = r["time_start"][:10]
+        if day in skip:
+            prev_wh = r["energy_wh"]
+            continue
         hour = int(r["time_start"][11:13])
-        kwh = round(r["energy_wh"] / 1000, 3)
+        wh = float(r["energy_wh"] or 0)
+        kwh = round(wh / 1000, 3)
+
+        tops = cur.execute(
+            "SELECT pe.device_id, d.name, pe.energy_wh FROM power_energy pe "
+            "JOIN device d ON d.id = pe.device_id "
+            "WHERE pe.granularity='1h' AND pe.time_start=? AND pe.device_id IS NOT NULL "
+            "ORDER BY pe.energy_wh DESC LIMIT 2",
+            (r["time_start"],),
+        ).fetchall()
+
+        # 요약
         if kwh < 0.05:
-            desc = "대기전력 수준의 사용량"
-        elif kwh < 0.3:
-            desc = "가벼운 사용량"
-        elif kwh < 0.8:
-            desc = "보통 수준의 사용량"
+            summary = f"{day} {hour:02d}시대 가정 전력은 {kwh}kWh로 대기전력 위주의 조용한 시간이었습니다."
+        elif kwh < 0.25:
+            summary = f"{day} {hour:02d}시대 가정 전력 사용량은 {kwh}kWh로 가벼운 편이었습니다."
+        elif kwh < 0.7:
+            summary = f"{day} {hour:02d}시대 가정 전력 사용량은 {kwh}kWh로 보통 수준이었습니다."
         else:
-            desc = "높은 사용량"
-        text = f"{r['time_start'][:10]} {hour:02d}시대 전력 사용량은 {kwh}kWh 로 {desc}이었습니다."
+            summary = f"{day} {hour:02d}시대 가정 전력 사용량은 {kwh}kWh로 비교적 높은 편이었습니다."
+
+        parts = [summary]
+
+        if tops and tops[0]["energy_wh"] and wh > 0:
+            share = tops[0]["energy_wh"] / wh
+            if share >= 0.35:
+                parts.append(f"기기별로는 {tops[0]['name']} 비중이 약 {share*100:.0f}%로 가장 컸습니다.")
+
+        # 주요 변화 (직전 시간 대비, 신호가 있을 때만)
+        if prev_wh is not None and prev_wh > 1e-6:
+            pct = (wh - prev_wh) / prev_wh * 100
+            if abs(pct) >= 35:
+                direction = "늘었" if pct > 0 else "줄었"
+                parts.append(f"직전 시간보다 약 {abs(pct):.0f}% {direction}습니다.")
+
+        # 주의 신호 / 보완 (고사용·심야 대기 등 필요할 때만)
+        if kwh >= 0.8:
+            parts.append("피크가 몰린 구간이니 가능하면 사용 시간을 분산해 보세요.")
+        elif kwh < 0.05 and 0 <= hour < 6:
+            parts.append("심야에도 플러그가 켜져 있으면 대기전력을 점검해 보세요.")
+        elif tops and len(tops) >= 2 and kwh >= 0.3:
+            parts.append("주요 가전 사용이 겹치지 않게 조절하면 피크를 낮출 수 있어요.")
+
+        metrics: dict = {"energyWh": round(wh, 2), "energyKwh": kwh}
+        if tops:
+            metrics["byDevice"] = [
+                {
+                    "deviceId": t["device_id"],
+                    "name": t["name"],
+                    "energyWh": t["energy_wh"],
+                    "share": round(t["energy_wh"] / wh, 4) if wh else 0,
+                }
+                for t in tops
+            ]
+
         out.append({
             "energy_id": r["id"],
             "device_id": None,
             "period": "1h",
             "period_start": r["time_start"],
-            "metrics": {"energyWh": r["energy_wh"], "energyKwh": kwh},
-            "report_text": text,
+            "metrics": metrics,
+            "report_text": " ".join(parts),
             "created_at": now,
         })
+        prev_wh = wh
     return out
 
 

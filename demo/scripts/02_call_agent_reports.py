@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""에이전트(:8501)에 daily/weekly 수면 리포트 + 24h/1w/1mo 전력 리포트를 실호출한다(축소안).
+"""에이전트에 수면/전력 리포트를 실호출한다(축소안).
 
 DB에는 쓰지 않고 결과를 demo/agent/*.json 으로만 남긴다(05_load_ai_json_to_db.py가 반영).
-전력은 계측 플러그 합산(device_id=NULL)만 실호출한다(약속된 축소 범위: 24h 30 + 1w 24 + 1mo 1 = 55건).
+전력은 계측 플러그 합산(device_id=NULL)만 실호출한다(기본: 24h 30 + 1w 24 + 1mo 1 = 55건).
 수면은 daily 30 + weekly 24(롤링 7일 창, period_start=창 첫날) = 54건.
 
-실행 전: agent 서버(:8501)가 떠 있어야 한다.
-    uvicorn app.main:app --port 8501   (wave-home-agent/)
+실행 전: agent 서버가 떠 있어야 한다(데모 기본 :8512, AGENT_BASE_URL).
+모델 기본 gpt-5.4-mini (AGENT_MODEL).
 
 실행:
     python3 demo/scripts/02_call_agent_reports.py
+    python3 demo/scripts/02_call_agent_reports.py --power-only
+    python3 demo/scripts/02_call_agent_reports.py --power-1h-date 2026-06-30
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import sys
@@ -31,6 +34,7 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_WORKERS = 1
 USER_ID = 1
+CREATED_AT = "2026-07-01 00:00:00"
 
 SNAKE_TO_CAMEL_MAP = {
     "user_id": "userId", "room_id": "roomId", "session_id": "sessionId",
@@ -75,27 +79,39 @@ def call_power_report(conn: sqlite3.Connection, target_row: sqlite3.Row) -> dict
 
     peak_w = None
     peak_at = None
-    if period == "24h":
+    children: list[sqlite3.Row] = []
+    if period == "1h":
+        like = period_start[:13] + "%"
+        children_rows = cur.execute(
+            "SELECT * FROM power_energy WHERE granularity='5m' AND device_id IS NULL "
+            "AND time_start LIKE ? ORDER BY time_start",
+            (like,),
+        ).fetchall()
+        children = children_rows
+        if children_rows:
+            peak_row = max(children_rows, key=lambda r: r["energy_wh"])
+            peak_w = round(peak_row["energy_wh"] * 12, 1)
+            peak_at = peak_row["time_start"]
+    elif period == "24h":
         children_rows = cur.execute(
             "SELECT * FROM power_energy WHERE granularity='5m' AND device_id IS NULL AND time_start LIKE ?",
             (period_start + "%",),
         ).fetchall()
         if children_rows:
             peak_row = max(children_rows, key=lambda r: r["energy_wh"])
-            peak_w = round(peak_row["energy_wh"] * 12, 1)  # 5분 Wh -> W
+            peak_w = round(peak_row["energy_wh"] * 12, 1)
             peak_at = peak_row["time_start"]
-        child_gran = "1h"
+        children = cur.execute(
+            "SELECT * FROM power_energy WHERE granularity='1h' AND device_id IS NULL "
+            "AND time_start >= ? AND time_start < ?",
+            (period_start, _period_end(period, period_start)),
+        ).fetchall()
     else:
-        child_gran = "24h"
-
-    children = cur.execute(
-        "SELECT * FROM power_energy WHERE granularity=? AND device_id IS NULL AND time_start >= ? AND time_start < ?",
-        (
-            child_gran,
-            period_start,
-            _period_end(period, period_start),
-        ),
-    ).fetchall()
+        children = cur.execute(
+            "SELECT * FROM power_energy WHERE granularity='24h' AND device_id IS NULL "
+            "AND time_start >= ? AND time_start < ?",
+            (period_start, _period_end(period, period_start)),
+        ).fetchall()
 
     prev_start = _prev_period_start(period, period_start)
     prev_row = cur.execute(
@@ -128,6 +144,7 @@ def call_power_report(conn: sqlite3.Connection, target_row: sqlite3.Row) -> dict
         "target": row_to_camel(target_row),
         "children": [row_to_camel(r) for r in children],
         "embed": True,
+        "model": agent_client.DEFAULT_MODEL,
     }
     result = agent_client.create_power_report(body)
     return {
@@ -140,10 +157,14 @@ def call_power_report(conn: sqlite3.Connection, target_row: sqlite3.Row) -> dict
         "embedding": result["embedding"],
         "model": result.get("model"),
         "embedding_model": result.get("embeddingModel"),
+        "created_at": CREATED_AT,
     }
 
 
 def _period_end(period: str, start: str) -> str:
+    if period == "1h":
+        d = datetime.strptime(start, "%Y-%m-%d %H:%M:%S") + timedelta(hours=1)
+        return d.strftime("%Y-%m-%d %H:%M:%S")
     if period == "24h":
         d = datetime.strptime(start, "%Y-%m-%d") + timedelta(days=1)
         return timeutil.fmt_date(d.date())
@@ -155,6 +176,11 @@ def _period_end(period: str, start: str) -> str:
 
 
 def _prev_period_start(period: str, start: str) -> str | None:
+    if period == "1h":
+        d = datetime.strptime(start, "%Y-%m-%d %H:%M:%S") - timedelta(hours=1)
+        if d.date() < timeutil.MONTH_START:
+            return None
+        return d.strftime("%Y-%m-%d %H:%M:%S")
     d = datetime.strptime(start, "%Y-%m-%d")
     if period == "24h":
         prev = d - timedelta(days=1)
@@ -169,10 +195,19 @@ def _prev_period_start(period: str, start: str) -> str | None:
 
 def gather_power_targets(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     cur = conn.cursor()
-    rows = cur.execute(
-        "SELECT * FROM power_energy WHERE device_id IS NULL AND granularity IN ('24h','1w','1mo') ORDER BY granularity, time_start"
+    return cur.execute(
+        "SELECT * FROM power_energy WHERE device_id IS NULL AND granularity IN ('24h','1w','1mo') "
+        "ORDER BY granularity, time_start"
     ).fetchall()
-    return rows
+
+
+def gather_power_1h_targets(conn: sqlite3.Connection, day: str) -> list[sqlite3.Row]:
+    cur = conn.cursor()
+    return cur.execute(
+        "SELECT * FROM power_energy WHERE device_id IS NULL AND granularity='1h' "
+        "AND time_start LIKE ? ORDER BY time_start",
+        (day + "%",),
+    ).fetchall()
 
 
 def call_sleep_daily(conn: sqlite3.Connection, night_date: str) -> dict:
@@ -277,9 +312,21 @@ def _save(path: Path, items: list[dict]) -> None:
 
 
 def main() -> None:
-    if not agent_client.health_check():
-        print("에이전트 서버(:8501)가 응답하지 않습니다. 먼저 실행하세요.", file=sys.stderr)
+    parser = argparse.ArgumentParser(description="Call agent for sleep/power report generation")
+    parser.add_argument("--power-only", action="store_true", help="전력 리포트만 생성(수면 스킵)")
+    parser.add_argument(
+        "--power-1h-date",
+        metavar="YYYY-MM-DD",
+        help="해당 날짜의 1h 전력 리포트만 에이전트로 생성해 power_reports.json 에 병합",
+    )
+    parser.add_argument("--sleep-only", action="store_true", help="수면 리포트만 생성")
+    args = parser.parse_args()
+
+    base = agent_client.DEFAULT_BASE_URL
+    if not agent_client.health_check(base):
+        print(f"에이전트 서버({base})가 응답하지 않습니다. 먼저 실행하세요.", file=sys.stderr)
         sys.exit(1)
+    print(f"agent={base} model={agent_client.DEFAULT_MODEL}", flush=True)
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -291,15 +338,24 @@ def main() -> None:
     done_power_ids = {r["energy_id"] for r in power_results}
     done_sleep_keys = {(r["period"], r["period_start"]) for r in sleep_results}
 
-    all_power_targets = gather_power_targets(conn)
-    all_sleep_daily_dates = [row[0] for row in SCENARIO]
-    all_sleep_weekly_starts = [
-        timeutil.fmt_date(d) for d in timeutil.sliding_week_starts(timeutil.june_dates())
-    ]
-
-    power_targets = [r for r in all_power_targets if r["id"] not in done_power_ids]
-    sleep_daily_dates = [d for d in all_sleep_daily_dates if ("daily", d) not in done_sleep_keys]
-    sleep_weekly_starts = [w for w in all_sleep_weekly_starts if ("weekly", w) not in done_sleep_keys]
+    if args.power_1h_date:
+        all_power_targets = gather_power_1h_targets(conn, args.power_1h_date)
+        power_targets = [r for r in all_power_targets if r["id"] not in done_power_ids]
+        sleep_daily_dates: list[str] = []
+        sleep_weekly_starts: list[str] = []
+    else:
+        all_power_targets = [] if args.sleep_only else gather_power_targets(conn)
+        power_targets = [r for r in all_power_targets if r["id"] not in done_power_ids]
+        if args.power_only:
+            sleep_daily_dates = []
+            sleep_weekly_starts = []
+        else:
+            all_sleep_daily_dates = [row[0] for row in SCENARIO]
+            all_sleep_weekly_starts = [
+                timeutil.fmt_date(d) for d in timeutil.sliding_week_starts(timeutil.june_dates())
+            ]
+            sleep_daily_dates = [d for d in all_sleep_daily_dates if ("daily", d) not in done_sleep_keys]
+            sleep_weekly_starts = [w for w in all_sleep_weekly_starts if ("weekly", w) not in done_sleep_keys]
 
     print(
         f"이미 완료: power {len(done_power_ids)}건, sleep {len(sleep_results)}건 (재실행 시 스킵)\n"
@@ -368,6 +424,7 @@ def main() -> None:
         print(f"errors: {len(errors)}")
         for e in errors:
             print(" -", e)
+        sys.exit(1)
 
     conn.close()
 

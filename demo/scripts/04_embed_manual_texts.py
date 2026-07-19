@@ -31,14 +31,32 @@ def embed_file(path: Path, text_field: str) -> None:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--only",
+        action="append",
+        metavar="FILE",
+        help="특정 파일만 임베딩(예: --only power_report_1h.json). 여러 번 지정 가능",
+    )
+    args = parser.parse_args()
+
     targets = [
         ("insight.json", "text"),
         ("weekly_plan_report.json", "report_text"),
         ("power_report_1h.json", "report_text"),
         ("sleep_stat_30m_summary.json", "summary_text"),
     ]
+    if args.only:
+        wanted = set(args.only)
+        targets = [(f, field) for f, field in targets if f in wanted]
+    print(f"ollama={ollama_client.DEFAULT_BASE_URL}")
     for filename, field in targets:
         path = OUT_DIR / filename
+        if not path.exists():
+            print(f"  (없음, 스킵) {filename}")
+            continue
         print(f"임베딩 중: {filename}")
         embed_file(path, field)
 

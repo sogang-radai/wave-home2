@@ -1,17 +1,19 @@
-"""에이전트 서버(:8501) sleep/v1, power/v1 job API 클라이언트.
+"""에이전트 sleep/v1, power/v1, insight/v1 job API 클라이언트.
 
-docs/agent-api/sleep-analysis-api.md, power-analysis-api.md 의 비동기 job 패턴을 그대로
-따른다: POST -> 202 + jobId, GET /jobs/{jobId} 폴링(1~3초 시작, 30초 경과 후 5~10초 백오프).
+docs/agent-api/*-api.md 의 비동기 job 패턴: POST -> 202 + jobId, GET /jobs/{jobId} 폴링.
+데모 기본은 agent :8512 (AGENT_BASE_URL 로 덮어쓰기).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
 
-DEFAULT_BASE_URL = "http://127.0.0.1:8501"
+DEFAULT_BASE_URL = os.environ.get("AGENT_BASE_URL", "http://127.0.0.1:8512")
+DEFAULT_MODEL = os.environ.get("AGENT_MODEL", "gpt-5.4-mini")
 POLL_INITIAL_S = 2.0
 POLL_BACKOFF_AFTER_S = 30.0
 POLL_BACKOFF_S = 7.0
@@ -73,13 +75,28 @@ def _poll(base_url: str, jobs_path: str, job_id: str, timeout: float = POLL_TIME
 
 
 def create_sleep_report(body: dict, base_url: str = DEFAULT_BASE_URL) -> dict:
-    job_id = _post(base_url, "/sleep/v1/reports", body)
+    payload = {**body}
+    payload.setdefault("embed", True)
+    payload.setdefault("model", DEFAULT_MODEL)
+    job_id = _post(base_url, "/sleep/v1/reports", payload)
     return _poll(base_url, "/sleep/v1/jobs", job_id)
 
 
 def create_power_report(body: dict, base_url: str = DEFAULT_BASE_URL) -> dict:
-    job_id = _post(base_url, "/power/v1/reports", body)
+    payload = {**body}
+    payload.setdefault("embed", True)
+    payload.setdefault("model", DEFAULT_MODEL)
+    job_id = _post(base_url, "/power/v1/reports", payload)
     return _poll(base_url, "/power/v1/jobs", job_id)
+
+
+def create_insights(body: dict, base_url: str = DEFAULT_BASE_URL) -> dict:
+    """POST /insight/v1/insights → poll → result (items[])."""
+    payload = {**body}
+    payload.setdefault("embed", True)
+    payload.setdefault("model", DEFAULT_MODEL)
+    job_id = _post(base_url, "/insight/v1/insights", payload)
+    return _poll(base_url, "/insight/v1/jobs", job_id)
 
 
 def health_check(base_url: str = DEFAULT_BASE_URL, timeout: float = 3.0) -> bool:
