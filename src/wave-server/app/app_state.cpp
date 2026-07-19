@@ -519,13 +519,18 @@ void AppState::onDatabaseReady(const drogon::orm::DbClientPtr& client)
                 deviceManager.startDevicesAsync();
         }
 
-        service::SleepManager::get().reconcile();
-        service::SleepManager::get().start();
-        LOG_INFO("SleepManager started");
-
         service::AlarmManager::get().start();
         LOG_INFO("AlarmManager started");
     }
+
+    // SleepManager 의 job worker 스레드(수면 요약/일간·주간 리포트/오늘 밤 계획 생성)는
+    // 실제 레이더 유무와 무관하게 항상 필요하다 - 데모/노디바이스 모드에서도
+    // SleepStore::getTodayPlan()(sleep_store.cpp)이 sleep_plan 캐시가 없을 때 이 큐에
+    // 비동기 생성 요청을 넣는다. 레이더 폴링 스레드(tickRuntime)는 start() 내부에서
+    // 이미 AppState::get().no_devices 를 자체 체크하므로 무조건 start() 해도 안전하다.
+    service::SleepManager::get().reconcile();
+    service::SleepManager::get().start();
+    LOG_INFO("SleepManager started");
 
     m_dbReady.store(true, std::memory_order_release);
 }

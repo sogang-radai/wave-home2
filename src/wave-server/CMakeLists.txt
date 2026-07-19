@@ -10,6 +10,7 @@ set(_wave_server_sources
     service/llm_client.cpp
     service/agent_client.cpp
     service/insight_generator.cpp
+    service/sleep_plan_generator.cpp
     service/goal_coaching_generator.cpp
     service/go2rtc_service.cpp
     service/power_manager.cpp

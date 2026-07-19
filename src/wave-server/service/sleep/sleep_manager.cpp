@@ -16,6 +16,7 @@
 #include "../../device/platform/srs_r4sn.h"
 #include "../agent_client.h"
 #include "../insight_generator.h"
+#include "../sleep_plan_generator.h"
 
 #include <future>
 
@@ -994,6 +995,13 @@ WHERE id = ?
         weekly.periodStart = mondayOfWeek(close.nightDate);
         enqueueJob(std::move(weekly));
 
+        // 오늘 밤(=지난밤의 다음날) "추천 수면 시간"을 지금 미리 생성해둔다 - 기상 직후
+        // 최신 수면 기록을 반영해 에이전트가 계산하고, GET /sleep/today/plan 요청 경로에서는
+        // 절대 에이전트를 동기 호출하지 않는다(sleep_plan_generator.h 참고).
+        const auto next_night_rows = client->execSqlSync("SELECT date(?, '+1 day') AS d", close.nightDate);
+        if (!next_night_rows.empty())
+            requestSleepPlan(runtime.config.userId, next_night_rows[0]["d"].as<std::string>());
+
         runtime.sessionFsm.reset();
         runtime.sessionStageWindows.clear();
         runtime.asleepMinutesBeforeWindow = 0;
@@ -1033,6 +1041,15 @@ WHERE user_id = ?
     {
         LOG_WARN("sleep_stat session backfill failed: {}", e.what());
     }
+}
+
+void SleepManager::requestSleepPlan(int32_t user_id, const std::string& plan_date)
+{
+    SleepJob plan;
+    plan.kind = SleepJobKind::Plan;
+    plan.userId = user_id;
+    plan.periodStart = plan_date;
+    enqueueJob(std::move(plan));
 }
 
 void SleepManager::enqueueJob(SleepJob job)
@@ -1091,6 +1108,14 @@ void SleepManager::processJob(const SleepJob& job)
         {
             LOG_WARN("sleep summary write failed: {}", e.what());
         }
+        return;
+    }
+
+    if (job.kind == SleepJobKind::Plan)
+    {
+        std::string plan_error;
+        if (!generateAndPersistSleepPlan(client, app.config.agent.base_url, job.userId, job.periodStart, plan_error))
+            LOG_WARN("sleep plan generation failed (user {}, date {}): {}", job.userId, job.periodStart, plan_error);
         return;
     }
 
@@ -1322,6 +1347,9 @@ void SleepManager::storeAgentEmbeddings(
     case SleepJobKind::DailyReport:
     case SleepJobKind::WeeklyReport:
         store.storeSleepReportEmbedding(row_id, embedding);
+        break;
+    case SleepJobKind::Plan:
+        // sleep_plan_generator.cpp 는 embed=false 로 요청해 embedding 을 받지 않는다.
         break;
     }
 }

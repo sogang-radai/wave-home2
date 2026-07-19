@@ -63,6 +63,7 @@ enum class SleepJobKind
     Summary30m,
     DailyReport,
     WeeklyReport,
+    Plan,
 };
 
 struct SleepJob
@@ -85,6 +86,12 @@ public:
     void start();
     void stop();
     void reconcile();
+
+    /** plan_date(YYYY-MM-DD) 밤의 "오늘 밤 추천 수면 시간"을 에이전트에 비동기로 생성 요청한다
+     * (job worker 스레드에서 처리되므로 호출부를 막지 않는다). 실제 라디오 파이프라인은
+     * handleSessionClose() 에서 자동으로 호출하고, 데모 모드는 세션 시딩 지점에서 별도로
+     * 호출한다(demo_session_writes.cpp). */
+    void requestSleepPlan(int32_t user_id, const std::string& plan_date);
 
 private:
     SleepManager() = default;

@@ -356,6 +356,23 @@ CREATE TABLE sleep_report (
     FOREIGN KEY (session_id) REFERENCES sleep_session(id)
 );
 
+CREATE TABLE sleep_plan (
+    id                      INTEGER      PRIMARY KEY,
+    user_id                 INTEGER      NOT NULL,
+    plan_date               VARCHAR(10)  NOT NULL,
+    bedtime_minute          INTEGER      NOT NULL,
+    wake_minute             INTEGER      NOT NULL,
+    prep_minute             INTEGER,
+    recommended_temp_c      REAL,
+    target_duration_minutes INTEGER      NOT NULL,
+    rationale_text          VARCHAR(300) NOT NULL,
+    created_at              VARCHAR(50)  NOT NULL,
+    CHECK (bedtime_minute >= 0 AND bedtime_minute <= 1439),
+    CHECK (wake_minute >= 0 AND wake_minute <= 1439),
+    UNIQUE (user_id, plan_date),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
 CREATE TABLE power_energy (
     id           INTEGER     PRIMARY KEY,
     device_id    INTEGER,

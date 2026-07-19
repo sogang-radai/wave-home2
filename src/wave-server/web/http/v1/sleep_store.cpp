@@ -7,6 +7,7 @@
 
 #include "../../../app/app_state.h"
 #include "../../../core/time_util.h"
+#include "../../../service/sleep/sleep_manager.h"
 #include "insights_store.h"
 #include "settings_store.h"
 
@@ -37,15 +38,6 @@ namespace
         }
     }
 
-    int minutesOf(const std::string& time)
-    {
-        if (time.size() < 5)
-            return 0;
-        const int hour = std::stoi(time.substr(0, 2));
-        const int minute = std::stoi(time.substr(3, 2));
-        return hour * 60 + minute;
-    }
-
     std::string minutesToHHMM(int minutes)
     {
         const int wrapped = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60);
@@ -53,9 +45,6 @@ namespace
         std::snprintf(buf, sizeof(buf), "%02d:%02d", wrapped / 60, wrapped % 60);
         return buf;
     }
-
-    // strftime('%w', ...) 인덱스(0=일) 순서와 일치
-    const char* kWeekdayByDowIndex[] = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
 
     bool parseJsonField(const drogon::orm::Field& field, Json::Value& out)
     {
@@ -319,99 +308,20 @@ Json::Value SleepStore::getTodayPlan(int64_t user_id) const
     }
     else
     {
-        // 최근 7일 평균 수면 시간(있으면 목표로 삼고, 데이터가 부족하면 goalHours 로 대체)
-        const auto avg_rows = m_client->execSqlSync(
-            "SELECT AVG(asleep_total_s) AS avg_s, COUNT(*) AS n FROM"
-            " (SELECT asleep_total_s FROM sleep_session WHERE user_id = ? ORDER BY night_date DESC LIMIT 7)",
-            user_id);
-        const int session_count = avg_rows.empty() ? 0 : avg_rows[0]["n"].as<int>();
-        const double avg_sleep_minutes = (session_count > 0 && !avg_rows[0]["avg_s"].isNull())
-            ? avg_rows[0]["avg_s"].as<double>() / 60.0
-            : 0.0;
+        // 취침/기상 시각 산정은 더 이상 여기서 rule-based 로 계산하지 않는다 - 에이전트
+        // (app/graph/sleep_plan_graph.py)가 최근 수면 기록과 내일 일정을 스스로 조회해
+        // 판단한다. GET 요청 경로에서 에이전트를 동기 호출하면 응답이 느려지므로, 대신
+        // SleepManager 의 비동기 작업 큐에 생성을 요청만 해두고(sleep_plan_generator.h),
+        // 이번 응답은 안전한 기본값으로 채운다 - 생성이 끝나면 다음 조회부터는 캐시된
+        // 값(위 if 분기)이 바로 내려간다. 실제 세션 종료 시에는 SleepManager::handleSessionClose()
+        // 가 이미 미리 요청해두므로, 보통 이 경로는 첫 사용일이나 데모 모드처럼 아직
+        // sleep_plan 이 한 번도 생성되지 않은 경우에만 탄다.
+        service::SleepManager::get().requestSleepPlan(static_cast<int32_t>(user_id), plan_date);
 
-        const double goal_hours = config.get("goalHours", 7.5).asDouble();
-        const int target_duration_min = session_count >= 3
-            ? static_cast<int>(std::lround(avg_sleep_minutes))
-            : static_cast<int>(std::lround(goal_hours * 60.0));
-
-        // 내일 가장 이른 일정을 조회해 기상 시각의 제약으로 사용
-        const auto tomorrow_rows = m_client->execSqlSync("SELECT date(?, '+1 day') AS d", plan_date);
-        const std::string tomorrow_date = tomorrow_rows.empty() ? plan_date : tomorrow_rows[0]["d"].as<std::string>();
-        const auto wday_rows = m_client->execSqlSync("SELECT CAST(strftime('%w', ?) AS INTEGER) AS w", tomorrow_date);
-        const int wday_index = wday_rows.empty() ? 0 : (((wday_rows[0]["w"].as<int>() % 7) + 7) % 7);
-        const std::string tomorrow_weekday = kWeekdayByDowIndex[wday_index];
-
-        const auto commitment_rows = m_client->execSqlSync(
-            R"SQL(
-SELECT MIN(start_minute) AS earliest
-FROM schedule_task
-WHERE user_id = ? AND start_minute IS NOT NULL
-  AND (
-    (schedule_kind = 'once' AND event_date = ?)
-    OR (schedule_kind = 'weekly' AND day_of_week = ?)
-  )
-)SQL",
-            user_id,
-            tomorrow_date,
-            tomorrow_weekday);
-
-        constexpr int kPrepBufferMinutes = 60;
-        std::optional<int> earliest_commitment;
-        if (!commitment_rows.empty() && !commitment_rows[0]["earliest"].isNull())
-            earliest_commitment = commitment_rows[0]["earliest"].as<int>();
-
-        wake_min = earliest_commitment
-            ? std::max(0, *earliest_commitment - kPrepBufferMinutes)
-            : minutesOf(config["wakeTime"].asString());
-        bedtime_min = wake_min - target_duration_min;
-        while (bedtime_min < 0)
-            bedtime_min += 24 * 60;
-        bedtime_min %= 24 * 60;
+        bedtime_min = 23 * 60 + 30;
+        wake_min = 7 * 60;
         prep_min = bedtime_min - (dim_start_minutes + 10);
-
-        std::ostringstream rationale_stream;
-        if (session_count >= 3)
-        {
-            const int avg_h = static_cast<int>(avg_sleep_minutes) / 60;
-            const int avg_m = static_cast<int>(avg_sleep_minutes) % 60;
-            rationale_stream << "최근 " << session_count << "일 평균 수면 시간은 " << avg_h << "시간 " << avg_m
-                              << "분이에요. ";
-        }
-        else
-        {
-            rationale_stream << "아직 수면 기록이 충분하지 않아 목표 수면 시간(" << goal_hours << "시간)에 맞춰 추천했어요. ";
-        }
-        if (earliest_commitment)
-        {
-            rationale_stream << "내일 " << minutesToHHMM(*earliest_commitment) << " 일정을 고려해 "
-                              << minutesToHHMM(bedtime_min) << "에 잠자리에 들면 목표 수면 시간을 채울 수 있어요.";
-        }
-        else
-        {
-            rationale_stream << "내일 이른 아침 일정이 없어 평소 목표에 맞춰 추천했어요.";
-        }
-        rationale = rationale_stream.str();
-
-        const auto id_rows = m_client->execSqlSync("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM sleep_plan");
-        const int64_t plan_id = id_rows.empty() ? 1 : id_rows[0]["next_id"].as<int64_t>();
-
-        m_client->execSqlSync(
-            R"SQL(
-INSERT INTO sleep_plan (
-    id, user_id, plan_date, bedtime_minute, wake_minute, prep_minute,
-    recommended_temp_c, target_duration_minutes, rationale_text, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-)SQL",
-            plan_id,
-            user_id,
-            plan_date,
-            bedtime_min,
-            wake_min,
-            prep_min,
-            recommended_temp,
-            target_duration_min,
-            rationale,
-            formatTimestamp());
+        rationale = "아직 오늘 밤 수면 계획이 준비되지 않았어요. 곧 최신 수면 기록을 반영한 추천으로 갱신될 예정이에요.";
     }
 
     Json::Value out;
