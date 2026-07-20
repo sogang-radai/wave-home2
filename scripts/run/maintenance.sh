@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Serve the maintenance page in place of wave-server (docs/ports.txt: client-api :8500).
-# Use while backend/frontend dev servers are stopped for backend work.
+# Serve the maintenance page in place of wave-server (docs/ports.txt: demo client-api :8510).
+# Use while backend/frontend demo servers are stopped for backend work.
 set -euo pipefail
 
-PORT="${1:-8500}"
+PORT="${1:-8510}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SITE="$ROOT/wave-home-front/maintenance-site"
 
