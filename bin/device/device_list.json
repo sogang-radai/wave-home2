@@ -200,10 +200,27 @@
             "room_id": "0000000000000003"
         },
         {
+            "class": "tuya_ep2h",
+            "description": "부엌 전자레인지 스마트 플러그",
+            "enabled": true,
+            "id": "000000000000000a",
+            "interface": {
+                "device_id": "eb9c2f71a0d84e3b12mw01",
+                "host": "192.168.0.61",
+                "local_key": "MwPlugKey#demo01!",
+                "mac": "50:8B:B9:B1:0E:14",
+                "version": "3.3"
+            },
+            "model": "EP2-H",
+            "name": "플러그5 - 전자레인지",
+            "vendor": "Tenpl",
+            "room_id": "0000000000000003"
+        },
+        {
             "class": "samsung_g7",
             "description": "침실 책상 - 삼성 32인치 TV",
             "enabled": true,
-            "id": "000000000000000a",
+            "id": "000000000000000b",
             "interface": {
                 "host": "192.168.0.24",
                 "mac": "04:E4:B6:A9:8D:0A",
@@ -218,7 +235,7 @@
             "class": "philips_wiz_e29_color",
             "description": "침실 조명 - 컬러",
             "enabled": true,
-            "id": "000000000000000b",
+            "id": "000000000000000c",
             "interface": {
                 "host": "192.168.0.51",
                 "mac": "98:77:D5:D0:B4:42",
@@ -233,7 +250,7 @@
             "class": "philips_wiz_e29_white",
             "description": "거실 조명 - 화이트",
             "enabled": true,
-            "id": "000000000000000c",
+            "id": "000000000000000d",
             "interface": {
                 "host": "192.168.0.55",
                 "mac": "98:77:D5:E6:BF:72",
@@ -248,7 +265,7 @@
             "class": "philips_wiz_e29_white",
             "description": "부엌 조명 - 화이트",
             "enabled": true,
-            "id": "000000000000000d",
+            "id": "000000000000000e",
             "interface": {
                 "host": "192.168.0.83",
                 "mac": "98:77:D5:D0:B4:42",
@@ -257,23 +274,6 @@
             "model": "WiZ White E29",
             "name": "부엌 조명",
             "vendor": "Philips",
-            "room_id": "0000000000000003"
-        },
-        {
-            "class": "tuya_ep2h",
-            "description": "부엌 전자레인지 스마트 플러그",
-            "enabled": true,
-            "id": "000000000000000e",
-            "interface": {
-                "device_id": "eb9c2f71a0d84e3b12mw01",
-                "host": "192.168.0.61",
-                "local_key": "MwPlugKey#demo01!",
-                "mac": "50:8B:B9:B1:0E:14",
-                "version": "3.3"
-            },
-            "model": "EP2-H",
-            "name": "플러그5 - 전자레인지",
-            "vendor": "Tenpl",
             "room_id": "0000000000000003"
         }
     ]

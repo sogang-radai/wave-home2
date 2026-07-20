@@ -51,11 +51,11 @@ FAN_PLUG_HEX_ID = hex_id(6)
 PC_PLUG_HEX_ID = hex_id(7)
 AIRCON_PLUG_HEX_ID = hex_id(8)
 INDUCTION_PLUG_HEX_ID = hex_id(9)
-TV_HEX_ID = hex_id(10)
-BEDROOM_LIGHT_HEX_ID = hex_id(11)
-LIVING_LIGHT_HEX_ID = hex_id(12)
-KITCHEN_LIGHT_HEX_ID = hex_id(13)
-MICROWAVE_PLUG_HEX_ID = hex_id(14)
+MICROWAVE_PLUG_HEX_ID = hex_id(10)
+TV_HEX_ID = hex_id(11)
+BEDROOM_LIGHT_HEX_ID = hex_id(12)
+LIVING_LIGHT_HEX_ID = hex_id(13)
+KITCHEN_LIGHT_HEX_ID = hex_id(14)
 
 
 def load_gesture_sets() -> list[tuple[int, str, int]]:

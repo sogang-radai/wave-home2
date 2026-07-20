@@ -2368,7 +2368,7 @@
     "actionable": 1,
     "action_type": "automation_rule",
     "approved": 0,
-    "rule_json": "{\"name\": \"침실 조명 취침 자동 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"23:30\"}, \"action\": {\"deviceId\": \"000000000000000b\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
+    "rule_json": "{\"name\": \"침실 조명 취침 자동 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"23:30\"}, \"action\": {\"deviceId\": \"000000000000000c\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
     "schedule_task_json": null,
     "embedding": [
       0.011203475,
@@ -5512,7 +5512,7 @@
     "actionable": 1,
     "action_type": "automation_rule",
     "approved": 0,
-    "rule_json": "{\"name\": \"침실 TV 밤 시간 자동 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"01:00\"}, \"action\": {\"deviceId\": \"000000000000000a\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
+    "rule_json": "{\"name\": \"침실 TV 밤 시간 자동 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"01:00\"}, \"action\": {\"deviceId\": \"000000000000000b\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
     "schedule_task_json": null,
     "embedding": [
       -0.02329254,
@@ -14158,7 +14158,7 @@
     "actionable": 1,
     "action_type": "automation_rule",
     "approved": 0,
-    "rule_json": "{\"name\": \"침실 TV 외출/취침 전원 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"23:30\"}, \"action\": {\"deviceId\": \"000000000000000a\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
+    "rule_json": "{\"name\": \"침실 TV 외출/취침 전원 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"23:30\"}, \"action\": {\"deviceId\": \"000000000000000b\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
     "schedule_task_json": null,
     "embedding": [
       -0.009853865,
@@ -17302,7 +17302,7 @@
     "actionable": 1,
     "action_type": "automation_rule",
     "approved": 0,
-    "rule_json": "{\"name\": \"침실 조명 밤 자동 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"23:30\"}, \"action\": {\"deviceId\": \"000000000000000b\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
+    "rule_json": "{\"name\": \"침실 조명 밤 자동 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"23:30\"}, \"action\": {\"deviceId\": \"000000000000000c\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
     "schedule_task_json": null,
     "embedding": [
       -0.0054830476,
@@ -22018,7 +22018,7 @@
     "actionable": 1,
     "action_type": "automation_rule",
     "approved": 0,
-    "rule_json": "{\"name\": \"침실 조명 자동 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"once\", \"delayMinutes\": 30}, \"action\": {\"deviceId\": \"000000000000000b\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
+    "rule_json": "{\"name\": \"침실 조명 자동 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"once\", \"delayMinutes\": 30}, \"action\": {\"deviceId\": \"000000000000000c\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
     "schedule_task_json": null,
     "embedding": [
       0.005508188,
@@ -25948,7 +25948,7 @@
     "actionable": 1,
     "action_type": "automation_rule",
     "approved": 0,
-    "rule_json": "{\"name\": \"밤 시간 부엌 조명 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"23:30\"}, \"action\": {\"deviceId\": \"000000000000000d\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
+    "rule_json": "{\"name\": \"밤 시간 부엌 조명 끄기\", \"enabled\": true, \"trigger\": null, \"schedule\": {\"repeat\": \"daily\", \"time\": \"23:30\"}, \"action\": {\"deviceId\": \"000000000000000e\", \"name\": \"off\", \"params\": {}}, \"execMode\": \"once\", \"repeatIntervalMs\": null, \"cooldownMs\": 0}",
     "schedule_task_json": null,
     "embedding": [
       0.0100336075,

@@ -201,7 +201,7 @@ Json::Value DashboardStore::currentState() const
     Json::Value out;
     Json::Value indoor;
     indoor["label"] = "쾌적";
-    indoor["detail"] = "온도 24℃ · 조도 낮음";
+    indoor["detail"] = "온도 24℃ · 습도 45%";
     out["indoorEnvironment"] = indoor;
 
     Json::Value mode;

@@ -20,7 +20,7 @@ from _lib import devices, power_model, schema
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = REPO_ROOT / "bin" / "data" / "demo.db"
-PLUG_IDS = (6, 7, 8, 9, 14)
+PLUG_IDS = (6, 7, 8, 9, 10)
 
 
 def _plug_pk_by_appliance(conn: sqlite3.Connection) -> dict[str, int]:
@@ -76,7 +76,7 @@ def main() -> None:
     ).fetchone()[0]
     mw_wh = cur.execute(
         "SELECT COALESCE(SUM(energy_wh),0) FROM power_energy "
-        "WHERE device_id=14 AND granularity='24h'"
+        "WHERE device_id=10 AND granularity='24h'"
     ).fetchone()[0]
 
     null_kwh = round(null_wh / 1000, 2)
@@ -89,7 +89,7 @@ def main() -> None:
         conn.close()
         sys.exit(2)
     if mw_wh <= 0:
-        print("ERROR: 전자레인지(device_id=14) 에너지가 없습니다.", file=sys.stderr)
+        print("ERROR: 전자레인지(device_id=10) 에너지가 없습니다.", file=sys.stderr)
         conn.close()
         sys.exit(2)
 

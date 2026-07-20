@@ -1226,6 +1226,8 @@ Json::Value IotStore::snapshotWaveStationTelemetry(const std::string& external_i
     if (auto* queryable = dynamic_cast<dev::Queryable*>(wave_station))
     {
         const auto env = queryable->query("env", json::object());
+        // Omit env when the first post-subscribe query races ahead of sensor
+        // samples — clients keep the last good reading instead of flashing "—".
         if (!is_query_error(env) && !env.empty())
         {
             Json::Value env_json;
@@ -1235,16 +1237,9 @@ Json::Value IotStore::snapshotWaveStationTelemetry(const std::string& external_i
                 env_json["tempC"] = env["temperature_c"].get<double>();
             if (env.contains("humidity_percent"))
                 env_json["humidity"] = env["humidity_percent"].get<double>();
-            body["env"] = env_json;
+            if (!env_json.empty())
+                body["env"] = env_json;
         }
-        else
-        {
-            body["env"] = Json::nullValue;
-        }
-    }
-    else
-    {
-        body["env"] = Json::nullValue;
     }
 
     code.clear();

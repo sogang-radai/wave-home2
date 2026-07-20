@@ -72,10 +72,10 @@ DEV = {
     "pc": hex_id(7),
     "aircon": hex_id(8),
     "induction": hex_id(9),
-    "tv": hex_id(10),
-    "bed_light": hex_id(11),
-    "living_light": hex_id(12),
-    "kitchen_light": hex_id(13),
+    "tv": hex_id(11),
+    "bed_light": hex_id(12),
+    "living_light": hex_id(13),
+    "kitchen_light": hex_id(14),
 }
 
 # 첫 대사만 고정. 후속 턴은 답변을 보고 수동으로 넣는다.

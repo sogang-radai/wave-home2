@@ -58,7 +58,7 @@ double DemoPowerMeter::rated_power_for_device(const std::string& device_id)
         return 600.0;   // aircon
     if (device_id == "0000000000000009")
         return 2400.0;  // induction
-    if (device_id == "000000000000000e")
+    if (device_id == "000000000000000a")
         return 1100.0;  // microwave
     return 0.0;
 }
@@ -225,7 +225,7 @@ ORDER BY d.id
         const auto wire_id = dev::wireIdForDbRow(row["id"].as<int64_t>(), row["name"].as<std::string>());
         const double rated = rated_power_for_device(wire_id);
         const bool default_on =
-            wire_id != "0000000000000009" && wire_id != "000000000000000e";
+            wire_id != "0000000000000009" && wire_id != "000000000000000a";
 
         DemoPowerReading reading;
         {

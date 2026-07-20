@@ -135,7 +135,7 @@ Json::Value DemoDeviceBackend::stateForDevice(
     {
         const double rated_power = DemoPowerMeter::rated_power_for_device(device_id);
         const bool switch_on =
-            device_id != "0000000000000009" && device_id != "000000000000000e";
+            device_id != "0000000000000009" && device_id != "000000000000000a";
         state["switch"] = switch_on;
         state["ratedPower"] = rated_power;
         state["voltage"] = 235.0;

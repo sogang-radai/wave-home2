@@ -782,7 +782,7 @@ namespace
     INSERT INTO device (id, name, description, class, archived, enabled, interface_json, settings_json) VALUES
     (1, '침실 하방 레이더', 'SRS R4SN mmWave 레이더', 'srs_r4sn', 0, 1,
  '{"host":"192.168.0.33","mac":"68:96:6A:4C:69:D4","point_cloud":{"enabled":true,"port":29172},"iq":{"enabled":true,"port":29171}}',
- '{"angle_z":0.0,"angle_y":0.0,"min_x":-5.0,"max_x":5.0,"min_y":0.0,"max_y":10.0,"min_z":-2.0,"max_z":2.0}'),
+ '{"sleep":true,"angle_z":0.0,"angle_y":0.0,"min_x":-5.0,"max_x":5.0,"min_y":0.0,"max_y":10.0,"min_z":-2.0,"max_z":2.0}'),
     (2, 'Wave Station', '침실 Wave Station', 'wave_station', 0, 1,
  '{"host":"192.168.0.60","port":8765}',
  '{"sample_rate":16000,"sample_size":16,"channels":1,"capabilities":{"mic_pcm":true,"mic_opus":true,"speaker_pcm":false,"speaker_opus":true,"ir_receive":true,"ir_transmit":true,"ambient_light":true,"temperature":true,"humidity":true}}'),
