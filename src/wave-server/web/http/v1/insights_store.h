@@ -20,6 +20,18 @@ public:
 
     static std::string reference_date(db::DbClientPtr client);
 
+    /** Highest-confidence active habit for `user_id`, shaped like dashboardDailyMessage's
+     *  {headline, body} — Json::nullValue if none exist. Shared by the dashboard and
+     *  weekly-plan banner reads as their no-synthesized-banner-yet fallback, so both
+     *  prefer a stable, confidence-ranked pick over "whichever row happens to be most
+     *  recent". `habit_type` restricts to one category (e.g. "lifestyle" for the
+     *  weekly-plan fallback, to match generateAndPersistWeeklyPlanBanner's own scoping);
+     *  empty considers any active habit. */
+    static Json::Value bestActiveHabitBanner(
+        const db::DbClientPtr& client,
+        int64_t user_id,
+        const std::string& habit_type = "");
+
     Json::Value list(
         int64_t user_id,
         const std::optional<std::string>& surface,

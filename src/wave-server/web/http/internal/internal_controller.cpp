@@ -14,6 +14,7 @@
 #include "../../../facade/alarms_facade.h"
 #include "../../../facade/schedule_tasks_facade.h"
 #include "../../../service/alarm_manager.h"
+#include "../../../service/user_model_manager.h"
 #include "../v1/iot_store.h"
 #include "../v1/session_store.h"
 #include "alarms_internal_store.h"
@@ -958,6 +959,69 @@ void InternalController::listEvents(const HttpRequestPtr& req, HttpResponseCallb
         respond_device_error(callback, code, "이벤트를 조회할 수 없습니다.");
     else
         callback(drogon::HttpResponse::newHttpJsonResponse(body));
+}
+
+void InternalController::runUserModelRollover(const HttpRequestPtr& req, HttpResponseCallback&& callback)
+{
+    const auto client = require_db(callback);
+    if (!client)
+        return;
+
+    std::string for_date;
+    if (const auto json = req->getJsonObject())
+    {
+        if (json->isMember("date") && (*json)["date"].isString())
+            for_date = (*json)["date"].asString();
+    }
+    if (for_date.empty())
+    {
+        const auto rows = client->execSqlSync("SELECT date('now', 'localtime', '-1 day') AS d");
+        for_date = rows.empty() ? std::string() : rows[0]["d"].as<std::string>();
+    }
+
+    service::UserModelManager::get().computeNow(for_date);
+
+    Json::Value result;
+    result["date"] = for_date;
+
+    const auto model_rows = client->execSqlSync(
+        "SELECT user_id, avg_bedtime_minute, avg_wake_minute, sleep_duration_avg_minutes, "
+        "preferred_light_brightness, sample_days FROM daily_user_model WHERE model_date = ?",
+        for_date);
+    Json::Value models(Json::arrayValue);
+    for (const auto& row : model_rows)
+    {
+        Json::Value m;
+        m["userId"] = row["user_id"].as<int64_t>();
+        m["avgBedtimeMinute"] = row["avg_bedtime_minute"].isNull() ? Json::Value() : Json::Value(row["avg_bedtime_minute"].as<int64_t>());
+        m["avgWakeMinute"] = row["avg_wake_minute"].isNull() ? Json::Value() : Json::Value(row["avg_wake_minute"].as<int64_t>());
+        m["sleepDurationAvgMinutes"] = row["sleep_duration_avg_minutes"].isNull() ? Json::Value() : Json::Value(row["sleep_duration_avg_minutes"].as<double>());
+        m["preferredLightBrightness"] = row["preferred_light_brightness"].isNull() ? Json::Value() : Json::Value(row["preferred_light_brightness"].as<double>());
+        m["sampleDays"] = row["sample_days"].as<int64_t>();
+        models.append(m);
+    }
+    result["dailyUserModel"] = models;
+
+    const auto habit_rows = client->execSqlSync(
+        "SELECT id, user_id, habit_type, title, description, confidence, status, evidence_json "
+        "FROM user_habit ORDER BY updated_at DESC LIMIT 20");
+    Json::Value habits(Json::arrayValue);
+    for (const auto& row : habit_rows)
+    {
+        Json::Value h;
+        h["id"] = row["id"].as<int64_t>();
+        h["userId"] = row["user_id"].as<int64_t>();
+        h["habitType"] = row["habit_type"].as<std::string>();
+        h["title"] = row["title"].as<std::string>();
+        h["description"] = row["description"].as<std::string>();
+        h["confidence"] = row["confidence"].as<double>();
+        h["status"] = row["status"].as<std::string>();
+        h["evidence"] = row["evidence_json"].as<std::string>();
+        habits.append(h);
+    }
+    result["userHabit"] = habits;
+
+    callback(drogon::HttpResponse::newHttpJsonResponse(result));
 }
 
 void InternalController::toolListDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback)

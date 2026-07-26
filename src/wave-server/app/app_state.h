@@ -135,6 +135,14 @@ public:
     void shutdown();
 
 private:
+    void persistEventToDb(
+        const std::string& type,
+        const std::string& device_id,
+        const std::string& device_name,
+        const std::string& message,
+        const std::string& triggered_by,
+        const Json::Value& detail);
+
     static std::string iso_now_kst();
 
     AppState& m_app;

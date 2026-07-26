@@ -28,6 +28,46 @@ namespace
         }
         return out;
     }
+
+    std::vector<int64_t> parse_used_habit_ids(const json& item)
+    {
+        std::vector<int64_t> out;
+        if (!item.contains("usedHabitIds") || !item["usedHabitIds"].is_array())
+            return out;
+        for (const auto& value : item["usedHabitIds"])
+        {
+            if (value.is_number_integer())
+                out.push_back(value.get<int64_t>());
+        }
+        return out;
+    }
+
+    // Only bumps rows the LLM actually claimed to use, scoped to this user —
+    // never trusted blindly (an id for another user's habit is simply a
+    // no-op UPDATE, matching the "never persist on an unverified claim"
+    // discipline used for habit evidence itself).
+    void bump_habit_last_used(
+        const db::DbClientPtr& client,
+        int64_t user_id,
+        const std::vector<int64_t>& habit_ids,
+        const std::string& now)
+    {
+        for (const auto habit_id : habit_ids)
+        {
+            try
+            {
+                client->execSqlSync(
+                    "UPDATE user_habit SET last_used_at = ? WHERE id = ? AND user_id = ?",
+                    now,
+                    habit_id,
+                    user_id);
+            }
+            catch (const std::exception& e)
+            {
+                WLOG_WARN("insight persist: last_used_at update failed for habit {}: {}", habit_id, e.what());
+            }
+        }
+    }
 }
 
 bool generateAndPersistInsights(
@@ -155,6 +195,8 @@ INSERT INTO insight (
                     surface,
                     insight_id);
             }
+
+            bump_habit_last_used(client, user_id, parse_used_habit_ids(item), now);
 
             ++next_id;
         }

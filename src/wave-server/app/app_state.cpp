@@ -14,6 +14,7 @@
 #include "../service/go2rtc_service.h"
 #include "util/time_util.h"
 #include "../device/device.h"
+#include "../device/device_wire_id.hpp"
 #include "../device/platform/droid_cam.h"
 #include "util/exe_path.h"
 #include "runtime/profile_runtime.h"
@@ -562,6 +563,98 @@ void IotRuntime::logEvent(
     m_events.insert(m_events.begin(), event);
     if (m_events.size() > 300)
         m_events.resize(300);
+
+    persistEventToDb(type, device_id, device_name, message, triggered_by, detail);
+}
+
+void IotRuntime::persistEventToDb(
+    const std::string& type,
+    const std::string& device_id,
+    const std::string& device_name,
+    const std::string& message,
+    const std::string& triggered_by,
+    const Json::Value& detail)
+{
+    auto client = m_app.db();
+    if (!client)
+        return;
+
+    std::optional<int64_t> db_device_id;
+    if (!device_id.empty())
+    {
+        try
+        {
+            db_device_id = dev::dbIdForWireId(client, device_id);
+        }
+        catch (const std::exception& e)
+        {
+            WLOG_WARN("IotRuntime::persistEventToDb: device id resolve failed for {}: {}", device_id, e.what());
+        }
+    }
+
+    if (!db_device_id)
+    {
+        // Device not yet room-mapped, archived, or the id isn't a resolvable
+        // wire id (e.g. a non-device triggered_by-only event) — nothing to
+        // attribute the row to, so skip rather than write a dangling FK.
+        return;
+    }
+
+    std::vector<int64_t> user_ids;
+    try
+    {
+        const auto rows = client->execSqlSync(
+            R"SQL(
+SELECT DISTINCT ru.user_id
+FROM device_room_map drm
+JOIN room_user_map ru ON ru.room_id = drm.room_id
+WHERE drm.device_id = ?
+)SQL",
+            *db_device_id);
+        for (const auto& row : rows)
+            user_ids.push_back(row["user_id"].as<int64_t>());
+    }
+    catch (const std::exception& e)
+    {
+        WLOG_WARN("IotRuntime::persistEventToDb: room/user lookup failed: {}", e.what());
+        return;
+    }
+
+    if (user_ids.empty())
+        return;
+
+    Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
+    const std::string detail_serialized = Json::writeString(builder, detail);
+    const std::string occurred_at = iso_now_kst();
+
+    // Fan-out: a shared room (e.g. living room with two users) attributes the
+    // event to every associated user rather than picking one and dropping the
+    // rest — under-counting a user's behavior would silently corrupt their
+    // daily_user_model/habit aggregates, and the duplicate-row cost is small.
+    for (int64_t user_id : user_ids)
+    {
+        try
+        {
+            client->execSqlSync(
+                R"SQL(
+INSERT INTO home_event (user_id, type, occurred_at, device_id, device_name, message, triggered_by, detail_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+)SQL",
+                user_id,
+                type,
+                occurred_at,
+                *db_device_id,
+                device_name,
+                message,
+                triggered_by,
+                detail_serialized);
+        }
+        catch (const std::exception& e)
+        {
+            WLOG_WARN("IotRuntime::persistEventToDb: home_event insert failed for user {}: {}", user_id, e.what());
+        }
+    }
 }
 
 Json::Value IotRuntime::listEvents(const std::string& device_id) const

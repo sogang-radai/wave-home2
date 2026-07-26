@@ -55,6 +55,10 @@ public:
     ADD_METHOD_TO(InternalController::createScheduleTask, "/internal/v1/schedule-tasks", drogon::Post);
     ADD_METHOD_TO(InternalController::updateScheduleTask, "/internal/v1/schedule-tasks/{taskId}", drogon::Patch);
     ADD_METHOD_TO(InternalController::deleteScheduleTask, "/internal/v1/schedule-tasks/{taskId}", drogon::Delete);
+    // Debug/manual trigger — normally UserModelManager runs this once per calendar-day
+    // rollover on its own background thread; this lets it be fired on demand for testing
+    // instead of waiting for real midnight.
+    ADD_METHOD_TO(InternalController::runUserModelRollover, "/internal/v1/user-model/rollover", drogon::Post);
     METHOD_LIST_END
 
     void queryDb(const HttpRequestPtr& req, HttpResponseCallback&& callback);
@@ -93,6 +97,7 @@ public:
     void getIrCommand(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string commandId);
 
     void listEvents(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void runUserModelRollover(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void toolListDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void toolControlDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback);

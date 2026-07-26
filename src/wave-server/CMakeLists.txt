@@ -16,10 +16,14 @@ set(_wave_server_sources
     service/agent/insight_generator.cpp
     service/agent/insight_vec_store.cpp
     service/agent/goal_coaching_generator.cpp
+    service/agent/habit_event_catalog.cpp
+    service/agent/habit_generator.cpp
+    service/agent/banner_generator.cpp
     service/sleep_plan_generator.cpp
     service/go2rtc_service.cpp
     service/agent/agent_job_queue.cpp
     service/power_manager.cpp
+    service/user_model_manager.cpp
     service/alarm_manager.cpp
     service/trigger_types.cpp
     service/action_queue.cpp

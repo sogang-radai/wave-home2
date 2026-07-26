@@ -161,6 +161,23 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
     const int limit = clamp_limit(query);
     const bool desc = order_desc(query);
 
+    // Binds `user_id` (always the first `?`) followed by each collected string filter
+    // value (in the order their `?` placeholders were appended to the SQL text) — used
+    // by the daily_user_model/user_habit/home_event handlers below, whose optional
+    // string filters (date ranges, status/type) vary in count per call, unlike the
+    // fixed-shape queries elsewhere in this file that concatenate filter values inline.
+    auto bind_and_run = [this](const std::string& sql, int64_t user_id, const std::vector<std::string>& string_binds)
+    {
+        switch (string_binds.size())
+        {
+            case 0: return m_client->execSqlSync(sql, user_id);
+            case 1: return m_client->execSqlSync(sql, user_id, string_binds[0]);
+            case 2: return m_client->execSqlSync(sql, user_id, string_binds[0], string_binds[1]);
+            case 3: return m_client->execSqlSync(sql, user_id, string_binds[0], string_binds[1], string_binds[2]);
+            default: return m_client->execSqlSync(sql, user_id, string_binds[0], string_binds[1], string_binds[2], string_binds[3]);
+        }
+    };
+
     if (table == "user")
     {
         std::string sql = "SELECT id, name, created_at FROM user";
@@ -968,6 +985,166 @@ Json::Value DbQueryStore::executeOneUnchecked(const Json::Value& query, const st
             item["enabled"] = row["enabled"].as<int>() != 0;
             item["createdAt"] = row["created_at"].as<std::string>();
             item["updatedAt"] = row["updated_at"].as<std::string>();
+            items.append(item);
+        }
+        return make_query_success(table, std::move(items));
+    }
+
+    if (table == "daily_user_model")
+    {
+        const auto user_id = filter_int(filter, "userId");
+        if (!user_id)
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+
+        std::ostringstream sql;
+        sql << "SELECT id, user_id, model_date, window_days, avg_bedtime_minute, avg_wake_minute,"
+            << " sleep_duration_avg_minutes, preferred_light_brightness, sample_days, computed_at"
+            << " FROM daily_user_model WHERE user_id = ?";
+        std::vector<std::string> string_binds;
+        if (const auto id = filter_int(filter, "id"))
+            sql << " AND id = " << *id;
+        if (const auto model_date = filter_string(filter, "modelDate"))
+        {
+            sql << " AND model_date = ?";
+            string_binds.push_back(*model_date);
+        }
+        if (const auto from = filter_string(filter, "from"))
+        {
+            sql << " AND model_date >= ?";
+            string_binds.push_back(*from);
+        }
+        if (const auto to = filter_string(filter, "to"))
+        {
+            sql << " AND model_date <= ?";
+            string_binds.push_back(*to);
+        }
+        sql << (desc ? " ORDER BY model_date DESC, id DESC" : " ORDER BY model_date ASC, id ASC");
+        sql << " LIMIT " << limit;
+
+        auto rows = bind_and_run(sql.str(), *user_id, string_binds);
+        Json::Value items(Json::arrayValue);
+        for (const auto& row : rows)
+        {
+            Json::Value item;
+            item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
+            item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
+            item["modelDate"] = row["model_date"].as<std::string>();
+            item["windowDays"] = row["window_days"].as<int>();
+            item["avgBedtimeMinute"] = row["avg_bedtime_minute"].isNull() ? Json::Value() : Json::Value(static_cast<Json::Int64>(row["avg_bedtime_minute"].as<int64_t>()));
+            item["avgWakeMinute"] = row["avg_wake_minute"].isNull() ? Json::Value() : Json::Value(static_cast<Json::Int64>(row["avg_wake_minute"].as<int64_t>()));
+            item["sleepDurationAvgMinutes"] = row["sleep_duration_avg_minutes"].isNull() ? Json::Value() : Json::Value(row["sleep_duration_avg_minutes"].as<double>());
+            item["preferredLightBrightness"] = row["preferred_light_brightness"].isNull() ? Json::Value() : Json::Value(row["preferred_light_brightness"].as<double>());
+            item["sampleDays"] = row["sample_days"].as<int>();
+            item["computedAt"] = row["computed_at"].as<std::string>();
+            items.append(item);
+        }
+        return make_query_success(table, std::move(items));
+    }
+
+    if (table == "user_habit")
+    {
+        const auto user_id = filter_int(filter, "userId");
+        if (!user_id)
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+
+        std::ostringstream sql;
+        sql << "SELECT id, user_id, habit_type, title, description, evidence_json, confidence,"
+            << " window_days, valid_from, last_verified_at, last_used_at, status"
+            << " FROM user_habit WHERE user_id = ?";
+        std::vector<std::string> string_binds;
+        if (const auto id = filter_int(filter, "id"))
+            sql << " AND id = " << *id;
+        if (const auto status = filter_string(filter, "status"))
+        {
+            sql << " AND status = ?";
+            string_binds.push_back(*status);
+        }
+        if (const auto habit_type = filter_string(filter, "habitType"))
+        {
+            sql << " AND habit_type = ?";
+            string_binds.push_back(*habit_type);
+        }
+        if (const auto from = filter_string(filter, "from"))
+        {
+            sql << " AND valid_from >= ?";
+            string_binds.push_back(*from);
+        }
+        if (const auto to = filter_string(filter, "to"))
+        {
+            sql << " AND valid_from <= ?";
+            string_binds.push_back(*to);
+        }
+        sql << (desc ? " ORDER BY updated_at DESC, id DESC" : " ORDER BY updated_at ASC, id ASC");
+        sql << " LIMIT " << limit;
+
+        auto rows = bind_and_run(sql.str(), *user_id, string_binds);
+        Json::Value items(Json::arrayValue);
+        for (const auto& row : rows)
+        {
+            Json::Value item;
+            item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
+            item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
+            item["habitType"] = row["habit_type"].as<std::string>();
+            item["title"] = row["title"].as<std::string>();
+            item["description"] = row["description"].as<std::string>();
+            item["evidenceJson"] = row["evidence_json"].as<std::string>();
+            item["confidence"] = row["confidence"].as<double>();
+            item["windowDays"] = row["window_days"].as<int>();
+            item["validFrom"] = row["valid_from"].as<std::string>();
+            item["lastVerifiedAt"] = row["last_verified_at"].as<std::string>();
+            item["lastUsedAt"] = row["last_used_at"].isNull() ? Json::Value() : Json::Value(row["last_used_at"].as<std::string>());
+            item["status"] = row["status"].as<std::string>();
+            items.append(item);
+        }
+        return make_query_success(table, std::move(items));
+    }
+
+    if (table == "home_event")
+    {
+        const auto user_id = filter_int(filter, "userId");
+        if (!user_id)
+            return make_query_error(table, "INVALID_FILTER", "userId 는 필수입니다.", "userId");
+
+        std::ostringstream sql;
+        sql << "SELECT id, user_id, type, occurred_at, device_id, device_name, message, triggered_by, detail_json"
+            << " FROM home_event WHERE user_id = ?";
+        std::vector<std::string> string_binds;
+        if (const auto id = filter_int(filter, "id"))
+            sql << " AND id = " << *id;
+        if (const auto type = filter_string(filter, "type"))
+        {
+            sql << " AND type = ?";
+            string_binds.push_back(*type);
+        }
+        if (const auto device_id = filter_int(filter, "deviceId"))
+            sql << " AND device_id = " << *device_id;
+        if (const auto from = filter_string(filter, "from"))
+        {
+            sql << " AND occurred_at >= ?";
+            string_binds.push_back(*from);
+        }
+        if (const auto to = filter_string(filter, "to"))
+        {
+            sql << " AND occurred_at <= ?";
+            string_binds.push_back(*to);
+        }
+        sql << (desc ? " ORDER BY occurred_at DESC, id DESC" : " ORDER BY occurred_at ASC, id ASC");
+        sql << " LIMIT " << limit;
+
+        auto rows = bind_and_run(sql.str(), *user_id, string_binds);
+        Json::Value items(Json::arrayValue);
+        for (const auto& row : rows)
+        {
+            Json::Value item;
+            item["id"] = static_cast<Json::Int64>(row["id"].as<int64_t>());
+            item["userId"] = static_cast<Json::Int64>(row["user_id"].as<int64_t>());
+            item["type"] = row["type"].as<std::string>();
+            item["occurredAt"] = row["occurred_at"].as<std::string>();
+            item["deviceId"] = row["device_id"].isNull() ? Json::Value() : Json::Value(static_cast<Json::Int64>(row["device_id"].as<int64_t>()));
+            item["deviceName"] = row["device_name"].isNull() ? Json::Value() : Json::Value(row["device_name"].as<std::string>());
+            item["message"] = row["message"].as<std::string>();
+            item["triggeredBy"] = row["triggered_by"].isNull() ? Json::Value() : Json::Value(row["triggered_by"].as<std::string>());
+            item["detailJson"] = row["detail_json"].isNull() ? Json::Value() : Json::Value(row["detail_json"].as<std::string>());
             items.append(item);
         }
         return make_query_success(table, std::move(items));

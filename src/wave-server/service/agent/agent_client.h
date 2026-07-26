@@ -106,5 +106,37 @@ AgentClientResult runGoalCoachingJobSync(
     AgentGoalCoachingJobResult& out_result,
     std::string& out_error);
 
+struct AgentHabitJobResult
+{
+    json items = json::array();
+};
+
+/** POST /insight/v1/habits then poll /insight/v1/jobs/{id} until done (same
+ *  job-store/poll endpoint as insight generation — habit discovery reuses
+ *  it rather than standing up a separate job type on the agent side). Called
+ *  directly from UserModelManager's nightly rollover, not via AgentJobQueue —
+ *  a once-a-day batch that's already uniquely gated by its own day-rollover
+ *  guard has no dedup/priority need. */
+AgentClientResult runHabitJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentHabitJobResult& out_result,
+    std::string& out_error);
+
+struct AgentBannerJobResult
+{
+    std::string headline;
+    std::string body;
+};
+
+/** POST /insight/v1/habit-banner then poll /insight/v1/jobs/{id} until done.
+ *  Same direct-call-from-a-background-rollover shape as runHabitJobSync — no
+ *  AgentJobQueue involved. */
+AgentClientResult runBannerJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentBannerJobResult& out_result,
+    std::string& out_error);
+
 SERVICE_NAMESPACE_END
 WAVE_NAMESPACE_END

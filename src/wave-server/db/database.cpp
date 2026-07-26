@@ -640,12 +640,16 @@ namespace
         },
         {
             8,
-            "add voice_auto_send to user_ai_agent_settings",
-            {
-                R"SQL(
-    ALTER TABLE user_ai_agent_settings ADD COLUMN voice_auto_send INTEGER NOT NULL DEFAULT 0
-    )SQL",
-            },
+            // No-op on any DB that reaches this point: the v1 baseline's
+            // user_ai_agent_settings CREATE TABLE already includes
+            // voice_auto_send (it was folded in after this migration was
+            // originally written), so the ALTER TABLE this used to run
+            // fails with "duplicate column name" on a fresh database. Kept
+            // as an empty entry rather than deleted so the version number
+            // stays stable for any database that already recorded v8 the
+            // old way.
+            "add voice_auto_send to user_ai_agent_settings (superseded by v1 baseline)",
+            {},
         },
         {
             9,
@@ -672,6 +676,61 @@ namespace
                 R"SQL(ALTER TABLE power_energy_v9 RENAME TO power_energy)SQL",
                 R"SQL(
     CREATE UNIQUE INDEX IF NOT EXISTS uq_power_energy ON power_energy (COALESCE(device_id, -1), granularity, time_start)
+    )SQL",
+            },
+        },
+        {
+            10,
+            "daily_user_model: per-user rolling sleep/light behavior aggregate",
+            {
+                R"SQL(
+    CREATE TABLE IF NOT EXISTS daily_user_model (
+    id                          INTEGER      PRIMARY KEY,
+    user_id                     INTEGER      NOT NULL,
+    model_date                  VARCHAR(10)  NOT NULL,
+    window_days                 INTEGER      NOT NULL DEFAULT 14,
+    avg_bedtime_minute          INTEGER,
+    avg_wake_minute             INTEGER,
+    sleep_duration_avg_minutes  REAL,
+    preferred_light_brightness  REAL,
+    sample_days                 INTEGER      NOT NULL DEFAULT 0,
+    computed_at                 VARCHAR(50)  NOT NULL,
+    CHECK (window_days > 0),
+    CHECK (sample_days >= 0),
+    UNIQUE (user_id, model_date),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+    )
+    )SQL",
+            },
+        },
+        {
+            11,
+            "user_habit: long-term semantic habit memory with lifecycle",
+            {
+                R"SQL(
+    CREATE TABLE IF NOT EXISTS user_habit (
+    id                INTEGER      PRIMARY KEY,
+    user_id           INTEGER      NOT NULL,
+    habit_type        VARCHAR(10)  NOT NULL,
+    title             VARCHAR(100) NOT NULL,
+    description       VARCHAR(500) NOT NULL,
+    evidence_json     TEXT         NOT NULL,
+    confidence        REAL         NOT NULL DEFAULT 0,
+    window_days       INTEGER      NOT NULL DEFAULT 14,
+    valid_from        VARCHAR(10)  NOT NULL,
+    last_verified_at  VARCHAR(50)  NOT NULL,
+    last_used_at      VARCHAR(50),
+    status            VARCHAR(10)  NOT NULL DEFAULT 'active',
+    created_at        VARCHAR(50)  NOT NULL,
+    updated_at        VARCHAR(50)  NOT NULL,
+    CHECK (habit_type IN ('sleep', 'power', 'gesture', 'lifestyle')),
+    CHECK (status IN ('active', 'expired')),
+    CHECK (confidence >= 0 AND confidence <= 1),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+    )
+    )SQL",
+                R"SQL(
+    CREATE INDEX IF NOT EXISTS idx_user_habit_user_status ON user_habit (user_id, status)
     )SQL",
             },
         },

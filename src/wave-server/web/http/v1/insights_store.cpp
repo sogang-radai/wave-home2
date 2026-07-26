@@ -167,8 +167,66 @@ bool InsightsStore::markCanceled(int64_t user_id, int64_t insight_id) const
     return rows.affectedRows() > 0;
 }
 
+Json::Value InsightsStore::bestActiveHabitBanner(
+    const db::DbClientPtr& client,
+    int64_t user_id,
+    const std::string& habit_type)
+{
+    if (!tableExists(client, "user_habit"))
+        return Json::nullValue;
+
+    const auto rows = habit_type.empty()
+        ? client->execSqlSync(
+              "SELECT title, description FROM user_habit"
+              " WHERE user_id = ? AND status = 'active'"
+              " ORDER BY confidence DESC, updated_at DESC LIMIT 1",
+              user_id)
+        : client->execSqlSync(
+              "SELECT title, description FROM user_habit"
+              " WHERE user_id = ? AND status = 'active' AND habit_type = ?"
+              " ORDER BY confidence DESC, updated_at DESC LIMIT 1",
+              user_id,
+              habit_type);
+    if (rows.empty())
+        return Json::nullValue;
+
+    Json::Value out;
+    out["headline"] = rows[0]["title"].as<std::string>();
+    out["body"] = rows[0]["description"].as<std::string>();
+    return out;
+}
+
 Json::Value InsightsStore::dashboardDailyMessage(int64_t user_id) const
 {
+    // Primary: the nightly LLM-synthesized banner (banner_generator.cpp), which
+    // combines the user's top sleep/power/lifestyle habits into one sentence.
+    // This query previously omitted `kind = 'banner'`, so it could just as easily
+    // grab a same-surface action/tip/goal row that happened to be inserted last —
+    // filtering it explicitly is what actually makes "most recent" mean "today's
+    // banner" instead of "whatever was written last".
+    if (tableExists(m_client, "insight"))
+    {
+        const auto ref_date = reference_date(m_client);
+        const auto banner_rows = m_client->execSqlSync(
+            "SELECT title, text FROM insight"
+            " WHERE user_id = ? AND surface = 'dashboard_banner' AND kind = 'banner' AND date <= ?"
+            " ORDER BY date DESC, id DESC LIMIT 1",
+            user_id,
+            ref_date);
+        if (!banner_rows.empty())
+        {
+            Json::Value out;
+            out["headline"] = banner_rows[0]["title"].as<std::string>();
+            out["body"] = banner_rows[0]["text"].as<std::string>();
+            return out;
+        }
+    }
+
+    // Fallback: synthesis hasn't run yet today (or the agent was unreachable) —
+    // show the single best active habit directly rather than nothing.
+    if (const auto habit_banner = bestActiveHabitBanner(m_client, user_id); !habit_banner.isNull())
+        return habit_banner;
+
     if (!tableExists(m_client, "insight"))
         return Json::nullValue;
 
