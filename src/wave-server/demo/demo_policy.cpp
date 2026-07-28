@@ -130,6 +130,22 @@ namespace
         if (path == "/api/v1/insights/generate")
             return true;
 
+        // The insight card's "실행" button (SleepPage.js/PosturePage.js/
+        // WeeklyPlanPage.js) PATCHes the per-user `approved` bookkeeping flag on
+        // an existing insight row.
+        if (path.starts_with("/api/v1/insights/") && method == drogon::Patch)
+            return true;
+
+        // "실행" on a weekly_plan recommendation additionally calls
+        // POST .../apply, which does create a real schedule_task or
+        // automation_rule (InsightsController::applyInsight) — a deliberate,
+        // narrower exception to this guard's usual "no device/schedule
+        // mutations in demo" rule, needed so applying an AI-recommended action
+        // actually shows up in the routine planner calendar / rule settings
+        // instead of only being simulated client-side.
+        if (path.starts_with("/api/v1/insights/") && path.ends_with("/apply") && method == drogon::Post)
+            return true;
+
         return false;
     }
 }

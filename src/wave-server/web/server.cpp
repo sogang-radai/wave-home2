@@ -339,7 +339,16 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
         app.addDbClient(db_config);
 
         const bool skip_db = skip_migrations;
-        app.registerBeginningAdvice([skip_db, read_only]()
+        // In demo mode, demo_policy.cpp's registerSyncAdvice already gates every
+        // /api/v1|internal/v1 mutation with a fine-grained allowlist (e.g. the
+        // insight-apply "실행" button), running before any handler touches the
+        // DB. A connection-wide PRAGMA query_only=ON can't see that allowlist —
+        // it blocks writes unconditionally — so it would silently break those
+        // deliberately-allowed mutations. Skip the pragma for demo_mode and let
+        // demo_policy be the sole write gate there; keep it for a genuinely
+        // read-only (non-demo) deployment.
+        const bool apply_read_only_pragma = read_only && !demo_mode;
+        app.registerBeginningAdvice([skip_db, apply_read_only_pragma]()
         {
             auto client = drogon::app().getDbClient();
             try
@@ -353,7 +362,7 @@ bool Server::init(const json& config, bool test_mode, bool demo_mode)
             {
                 WLOG_WARN("sqlite-vec probe failed (RAG will use text fallback): {}", e.what());
             }
-            if (read_only)
+            if (apply_read_only_pragma)
             {
                 try
                 {

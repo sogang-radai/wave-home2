@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 #include <sstream>
 
 #include "../../../app/app_state.h"
@@ -23,6 +24,26 @@ namespace
         if (hhmm.size() >= 5)
             return hhmm.substr(0, 5);
         return hhmm;
+    }
+
+    // "YYYY-MM-DD HH:MM:SS" -> minutes since that clock day's midnight (0-1439).
+    // Used to place a sleep-session block on the weekly calendar — the caller
+    // decides how to handle onset/wake landing on different night_date columns
+    // (e.g. 23:40 onset -> 07:15 wake wraps past midnight into the next column).
+    std::optional<int> minute_of_day(const std::string& timestamp)
+    {
+        if (timestamp.size() < 16)
+            return std::nullopt;
+        try
+        {
+            const int hour = std::stoi(timestamp.substr(11, 2));
+            const int minute = std::stoi(timestamp.substr(14, 2));
+            return hour * 60 + minute;
+        }
+        catch (const std::exception&)
+        {
+            return std::nullopt;
+        }
     }
 
     int64_t parse_session_id(const std::string& session_id, int64_t fallback)
@@ -573,6 +594,24 @@ Json::Value SleepStore::getWeeklyReport(int64_t user_id, const std::string& week
     out["weekStart"] = week_start;
     out["weekEnd"] = week_end_inclusive;
 
+    // 캘린더 오버레이 보정: night_date 가 week_start 바로 전날(주 시작 전)인 세션이
+    // 자정을 넘겨 week_start 새벽까지 이어지는 경우, trend 의 7일 범위 밖이라 위
+    // session_rows 쿼리에 아예 잡히지 않는다 - 그 결과 "월요일 새벽" 구간이
+    // 캘린더에서 통째로 비어 보인다. 그 전날 하루만 별도로 확인해서, 자정을
+    // 넘긴 경우에만 wakeMinute 을 노출한다(trend 는 정확히 7일이어야 하는 기존
+    // 소비처가 있어 배열 길이를 바꾸지 않고 별도 필드로 둔다).
+    auto prev_night_rows = m_client->execSqlSync(
+        "SELECT onset, final_wake FROM sleep_session WHERE user_id = ? AND night_date = date(?, '-1 day')",
+        user_id,
+        week_start);
+    if (!prev_night_rows.empty() && !prev_night_rows[0]["onset"].isNull() && !prev_night_rows[0]["final_wake"].isNull())
+    {
+        const auto onset_minute = minute_of_day(prev_night_rows[0]["onset"].as<std::string>());
+        const auto wake_minute = minute_of_day(prev_night_rows[0]["final_wake"].as<std::string>());
+        if (onset_minute && wake_minute && *wake_minute < *onset_minute)
+            out["previousNightWakeMinute"] = *wake_minute;
+    }
+
     Json::Value trend(Json::arrayValue);
     int score_sum = 0;
     int score_count = 0;
@@ -611,6 +650,22 @@ Json::Value SleepStore::getWeeklyReport(int64_t user_id, const std::string& week
                 point["score"] = compute_score(efficiency);
                 score_sum += point["score"].asInt();
                 ++score_count;
+
+                // Calendar overlay: actual bedtime/wake clock times for this
+                // night, so the frontend can draw a real sleep-time block
+                // instead of only showing the aggregate hours/score. Minutes
+                // are each relative to their own clock day (0-1439) — the
+                // frontend infers an overnight wrap when wakeMinute < onsetMinute.
+                if (!session_rows[j]["onset"].isNull())
+                {
+                    if (const auto onset_minute = minute_of_day(session_rows[j]["onset"].as<std::string>()))
+                        point["onsetMinute"] = *onset_minute;
+                }
+                if (!session_rows[j]["final_wake"].isNull())
+                {
+                    if (const auto wake_minute = minute_of_day(session_rows[j]["final_wake"].as<std::string>()))
+                        point["wakeMinute"] = *wake_minute;
+                }
                 break;
             }
         }

@@ -65,10 +65,22 @@ void WeeklyPlanController::recommendations(const HttpRequestPtr& req, HttpRespon
         return;
     }
 
+    // "자동화 규칙 적용" 은 별도로 새 콘텐츠를 생성하지 않는다 - 오늘의 sleep_report/
+    // power 인사이트에서 이미 만들어진 실행 제안(kind=action, 각 surface 당 정확히
+    // automation_rule 1개 + schedule_task 1개)을 그대로 모아서 보여주는 뷰(view)일
+    // 뿐이다. 예전엔 별도 weekly_plan surface 를 새로 생성해서 보여줬으나, 그건
+    // 실제로 있는 액션과 다른 내용을 지어내는 셈이라 요구사항에 맞지 않는다.
     const auto ref_date = InsightsStore::reference_date(client);
     InsightsStore store(client);
-    callback(drogon::HttpResponse::newHttpJsonResponse(
-        store.list(*user_id, std::string("weekly_plan"), ref_date, std::nullopt, std::nullopt, std::nullopt)));
+    Json::Value items(Json::arrayValue);
+    for (const auto& surface : {"sleep_report", "power"})
+    {
+        const auto surface_items = store.list(
+            *user_id, std::string(surface), ref_date, std::string("action"), std::nullopt, std::nullopt);
+        for (const auto& item : surface_items)
+            items.append(item);
+    }
+    callback(drogon::HttpResponse::newHttpJsonResponse(items));
 }
 
 } // namespace v1
