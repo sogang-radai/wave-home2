@@ -51,6 +51,12 @@ public:
     /** Enqueue (or wait for) whole-house 1h report. Does not trigger insights. */
     static bool ensure_hourly_report(const db::DbClientPtr& client, const std::string& hour_start);
 
+    /** Enqueue (or wait for) whole-house 1w report — unlike 24h/1h, weekly reports are
+     *  never auto-created on a query_report() cache miss (see query_report's comment);
+     *  this is the debug/admin path (POST /internal/v1/power/reports/weekly) used to
+     *  force one for testing. */
+    static bool ensure_weekly_report(const db::DbClientPtr& client, const std::string& period_start_date);
+
     /** Fire-and-forget schedule helpers (no wait). */
     static void enqueue_hourly_report(const std::string& hour_start);
     static void enqueue_daily_report(const std::string& date);

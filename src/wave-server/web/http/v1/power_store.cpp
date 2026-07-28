@@ -512,6 +512,72 @@ WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_star
             metrics["avgDailyWh"] = std::round((energy_wh / static_cast<double>(days)) * 100.0) / 100.0;
     }
 
+    if (period == "1w")
+    {
+        // 평일/주말 하루 평균 사용량 비교 — 사용자가 예시로 준 "평일과 주말의 하루
+        // 평균 사용량은 비슷한 수준이었어요" 같은 문장의 근거가 되는 수치.
+        const auto weekday_rows = client->execSqlSync(
+            R"SQL(
+SELECT
+    CASE WHEN CAST(strftime('%w', time_start) AS INTEGER) IN (0, 6) THEN 'weekend' ELSE 'weekday' END AS bucket,
+    SUM(energy_wh) AS energy_wh,
+    COUNT(DISTINCT date(time_start)) AS days
+FROM power_energy
+WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_start < ?
+GROUP BY bucket
+)SQL",
+            window_start,
+            window_end);
+        for (const auto& row : weekday_rows)
+        {
+            const auto bucket_days = row["days"].as<int64_t>();
+            if (bucket_days <= 0)
+                continue;
+            const double avg_wh = row["energy_wh"].as<double>() / static_cast<double>(bucket_days);
+            const std::string key = row["bucket"].as<std::string>() == "weekend" ? "weekendAvgWh" : "weekdayAvgWh";
+            metrics[key] = std::round(avg_wh * 100.0) / 100.0;
+        }
+
+        // 최다 사용 요일 — "사용량이 가장 많았던 요일은 목요일로 1.9kWh" 같은 문장의 근거.
+        const auto peak_day_rows = client->execSqlSync(
+            R"SQL(
+SELECT date(time_start) AS day, SUM(energy_wh) AS energy_wh
+FROM power_energy
+WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_start < ?
+GROUP BY day
+ORDER BY energy_wh DESC LIMIT 1
+)SQL",
+            window_start,
+            window_end);
+        if (!peak_day_rows.empty())
+        {
+            metrics["peakDayDate"] = peak_day_rows[0]["day"].as<std::string>();
+            metrics["peakDayWh"] = std::round(peak_day_rows[0]["energy_wh"].as<double>() * 100.0) / 100.0;
+        }
+
+        // 이번 주 페이스가 이어질 경우의 한 달 예상 전기요금 — 프런트
+        // powerReportUtils.js 의 TIER2_WON_PER_KWH(한국전력 주택용 저압 누진제 2단계
+        // 근사 단가) 계산식을 그대로 서버에도 옮겨서, 배너 문장과 프런트 스탯카드가
+        // 같은 단가 기준을 쓰게 한다(단, 이 필드는 "선택 기간 요금"이 아니라 "이번
+        // 주 페이스 기준 월간 예상 요금"이라 프런트의 기존 예상 요금 카드와는 별개
+        // 필드로 노출된다).
+        constexpr double kTier2WonPerKwh = 214.6;
+        const auto day_count_rows = client->execSqlSync(
+            R"SQL(
+SELECT COUNT(DISTINCT date(time_start)) AS days
+FROM power_energy
+WHERE device_id IS NULL AND granularity = '5m' AND time_start >= ? AND time_start < ?
+)SQL",
+            window_start,
+            window_end);
+        const int64_t cost_days = day_count_rows.empty() ? 0 : day_count_rows[0]["days"].as<int64_t>();
+        if (cost_days > 0)
+        {
+            const double avg_daily_kwh = (energy_wh / 1000.0) / static_cast<double>(cost_days);
+            metrics["estimatedMonthlyCostWon"] = std::round(avg_daily_kwh * 30.0 * kTier2WonPerKwh);
+        }
+    }
+
     const auto by_device = build_by_device(client, window_start, window_end);
     if (!by_device.empty())
         metrics["byDevice"] = by_device;
@@ -810,6 +876,22 @@ void PowerStore::enqueue_weekly_report(const std::string& period_start_date)
     const std::string window_end =
         (end_rows.empty() ? period_start_date : end_rows[0]["d"].as<std::string>()) + " 00:00:00";
     enqueue_report_job("1w", period_start_date, window_start, window_end, 288.0 * 7.0, false);
+}
+
+bool PowerStore::ensure_weekly_report(const db::DbClientPtr& client, const std::string& period_start_date)
+{
+    if (!client)
+        return false;
+    const auto existing = client->execSqlSync(
+        "SELECT id FROM power_report WHERE period = '1w' AND device_id IS NULL AND period_start = ?",
+        period_start_date);
+    if (!existing.empty())
+        return true;
+    const std::string window_start = period_start_date + " 00:00:00";
+    const auto end_rows = client->execSqlSync("SELECT date(?, '+7 day') AS d", period_start_date);
+    const std::string window_end =
+        (end_rows.empty() ? period_start_date : end_rows[0]["d"].as<std::string>()) + " 00:00:00";
+    return enqueue_report_job("1w", period_start_date, window_start, window_end, 288.0 * 7.0, true);
 }
 
 void PowerStore::enqueue_monthly_report(const std::string& period_start_date)

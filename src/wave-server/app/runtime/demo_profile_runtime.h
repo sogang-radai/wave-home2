@@ -40,6 +40,7 @@ public:
 private:
     bool m_startedDemoAutomation = false;
     bool m_startedSleepManager = false;
+    bool m_startedAgentJobQueue = false;
 
     DemoSessionRegistry m_sessions;
     DemoPowerMeter m_powerMeter;

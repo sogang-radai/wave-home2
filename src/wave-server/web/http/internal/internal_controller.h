@@ -59,6 +59,10 @@ public:
     // rollover on its own background thread; this lets it be fired on demand for testing
     // instead of waiting for real midnight.
     ADD_METHOD_TO(InternalController::runUserModelRollover, "/internal/v1/user-model/rollover", drogon::Post);
+    // Debug/manual trigger — weekly power reports are never auto-created on a
+    // query_report() cache miss (unlike 24h/1h), and the nightly PowerManager job
+    // that normally seeds them doesn't run in demo mode; this forces one for testing.
+    ADD_METHOD_TO(InternalController::runWeeklyPowerReport, "/internal/v1/power/reports/weekly", drogon::Post);
     METHOD_LIST_END
 
     void queryDb(const HttpRequestPtr& req, HttpResponseCallback&& callback);
@@ -98,6 +102,7 @@ public:
 
     void listEvents(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void runUserModelRollover(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void runWeeklyPowerReport(const HttpRequestPtr& req, HttpResponseCallback&& callback);
 
     void toolListDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void toolControlDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback);

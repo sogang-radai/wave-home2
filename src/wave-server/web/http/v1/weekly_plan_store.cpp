@@ -26,9 +26,9 @@ WeeklyPlanStore::WeeklyPlanStore(db::DbClientPtr client) :
 Json::Value WeeklyPlanStore::weeklyReport(int64_t user_id, const std::string& period_start) const
 {
     // Primary: the nightly LLM-synthesized weekly banner (banner_generator.cpp),
-    // scoped to lifestyle/routine habits only — it never sees sleep-score or
-    // power-kWh numbers, so it structurally can't produce the old verbose
-    // stat-dump text this used to show.
+    // combining the user's top active sleep/power/lifestyle habits into one
+    // narrative — this is the same all-types habit banner the dashboard used
+    // to show before it moved to a deterministic weekly-stats summary.
     if (tableExists(m_client, "weekly_plan_report"))
     {
         const auto ref_date = period_start.empty() ? InsightsStore::reference_date(m_client) : period_start;
@@ -49,8 +49,8 @@ Json::Value WeeklyPlanStore::weeklyReport(int64_t user_id, const std::string& pe
     }
 
     // Fallback: synthesis hasn't run yet (or the agent was unreachable) — show
-    // the single best active lifestyle habit directly rather than nothing.
-    return InsightsStore::bestActiveHabitBanner(m_client, user_id, "lifestyle");
+    // the single best active habit of any type directly rather than nothing.
+    return InsightsStore::bestActiveHabitBanner(m_client, user_id);
 }
 
 } // namespace v1

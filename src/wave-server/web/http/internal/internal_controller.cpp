@@ -16,6 +16,7 @@
 #include "../../../service/alarm_manager.h"
 #include "../../../service/user_model_manager.h"
 #include "../v1/iot_store.h"
+#include "../v1/power_store.h"
 #include "../v1/session_store.h"
 #include "alarms_internal_store.h"
 #include "db_query_store.h"
@@ -1020,6 +1021,42 @@ void InternalController::runUserModelRollover(const HttpRequestPtr& req, HttpRes
         habits.append(h);
     }
     result["userHabit"] = habits;
+
+    callback(drogon::HttpResponse::newHttpJsonResponse(result));
+}
+
+void InternalController::runWeeklyPowerReport(const HttpRequestPtr& req, HttpResponseCallback&& callback)
+{
+    const auto client = require_db(callback);
+    if (!client)
+        return;
+
+    std::string period_start;
+    if (const auto json = req->getJsonObject())
+    {
+        if (json->isMember("periodStart") && (*json)["periodStart"].isString())
+            period_start = (*json)["periodStart"].asString();
+    }
+    if (period_start.empty())
+    {
+        v1::respondError(callback, 400, "INVALID_BODY", "periodStart 가 필요합니다.");
+        return;
+    }
+
+    const bool ok = v1::PowerStore::ensure_weekly_report(client, period_start);
+
+    Json::Value result;
+    result["periodStart"] = period_start;
+    result["ok"] = ok;
+
+    const auto rows = client->execSqlSync(
+        "SELECT metrics, report_text FROM power_report WHERE period = '1w' AND device_id IS NULL AND period_start = ?",
+        period_start);
+    if (!rows.empty())
+    {
+        result["metrics"] = rows[0]["metrics"].as<std::string>();
+        result["reportText"] = rows[0]["report_text"].as<std::string>();
+    }
 
     callback(drogon::HttpResponse::newHttpJsonResponse(result));
 }

@@ -198,8 +198,10 @@ Json::Value InsightsStore::bestActiveHabitBanner(
 
 Json::Value InsightsStore::dashboardDailyMessage(int64_t user_id) const
 {
-    // Primary: the nightly LLM-synthesized banner (banner_generator.cpp), which
-    // combines the user's top sleep/power/lifestyle habits into one sentence.
+    // Primary: the nightly deterministic weekly sleep+power+appliance-control
+    // summary (banner_generator.cpp's generateAndPersistDashboardBanner) — not
+    // habit-based; the habit-based narrative now lives on the weekly-plan/
+    // routine-planner page instead (see WeeklyPlanStore::weeklyReport).
     // This query previously omitted `kind = 'banner'`, so it could just as easily
     // grab a same-surface action/tip/goal row that happened to be inserted last —
     // filtering it explicitly is what actually makes "most recent" mean "today's
@@ -223,10 +225,8 @@ Json::Value InsightsStore::dashboardDailyMessage(int64_t user_id) const
     }
 
     // Fallback: synthesis hasn't run yet today (or the agent was unreachable) —
-    // show the single best active habit directly rather than nothing.
-    if (const auto habit_banner = bestActiveHabitBanner(m_client, user_id); !habit_banner.isNull())
-        return habit_banner;
-
+    // last resort is the old generic any-kind insight query below (no habit
+    // fallback here: habit content is the weekly-plan page's job now).
     if (!tableExists(m_client, "insight"))
         return Json::nullValue;
 

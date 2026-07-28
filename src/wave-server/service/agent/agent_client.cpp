@@ -1440,6 +1440,96 @@ AgentClientResult runBannerJobSync(
     }
 }
 
+AgentClientResult runDashboardSummaryJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentBannerJobResult& out_result,
+    std::string& out_error)
+{
+    out_result = {};
+    ParsedEndpoint endpoint;
+    if (!parse_base_url(base_url, endpoint, out_error))
+        return AgentClientResult::parse_error;
+
+    const std::string path = endpoint.path_prefix + "/insight/v1/dashboard-summary";
+    std::string response_body;
+    const auto post_result = send_http_request(
+        base_url,
+        "POST",
+        path,
+        body.dump(),
+        false,
+        [&](const std::string& data, bool) -> bool {
+            response_body = data;
+            return true;
+        },
+        out_error);
+
+    if (post_result != AgentClientResult::success)
+        return post_result;
+
+    try
+    {
+        const json payload = json::parse(response_body);
+        if (!payload.contains("jobId") || !payload["jobId"].is_string())
+        {
+            out_error = "dashboard summary job response missing jobId";
+            return AgentClientResult::parse_error;
+        }
+        return poll_banner_job(base_url, payload["jobId"].get<std::string>(), out_result, out_error);
+    }
+    catch (const json::exception& e)
+    {
+        out_error = std::string("dashboard summary job response parse error: ") + e.what();
+        return AgentClientResult::parse_error;
+    }
+}
+
+AgentClientResult runApplianceBannerJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentBannerJobResult& out_result,
+    std::string& out_error)
+{
+    out_result = {};
+    ParsedEndpoint endpoint;
+    if (!parse_base_url(base_url, endpoint, out_error))
+        return AgentClientResult::parse_error;
+
+    const std::string path = endpoint.path_prefix + "/insight/v1/appliance-banner";
+    std::string response_body;
+    const auto post_result = send_http_request(
+        base_url,
+        "POST",
+        path,
+        body.dump(),
+        false,
+        [&](const std::string& data, bool) -> bool {
+            response_body = data;
+            return true;
+        },
+        out_error);
+
+    if (post_result != AgentClientResult::success)
+        return post_result;
+
+    try
+    {
+        const json payload = json::parse(response_body);
+        if (!payload.contains("jobId") || !payload["jobId"].is_string())
+        {
+            out_error = "appliance banner job response missing jobId";
+            return AgentClientResult::parse_error;
+        }
+        return poll_banner_job(base_url, payload["jobId"].get<std::string>(), out_result, out_error);
+    }
+    catch (const json::exception& e)
+    {
+        out_error = std::string("appliance banner job response parse error: ") + e.what();
+        return AgentClientResult::parse_error;
+    }
+}
+
 AgentClientResult runGoalCoachingJobSync(
     const std::string& base_url,
     const json& body,

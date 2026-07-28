@@ -1,5 +1,8 @@
 #include "banner_generator.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <vector>
 
 #include "../../core/json.h"
@@ -38,6 +41,106 @@ namespace
         }
         return habits;
     }
+
+    // Deterministic weekly sleep + power + appliance-control stats, gathered
+    // over the 7 real days ending `for_date` (inclusive) — explicitly a 7-day
+    // window, not daily_user_model's 14-day rolling window, so this matches
+    // "1주일 데이터" literally. Empty object (not partial) only when there's
+    // truly nothing in any of the three domains for this user this week.
+    json fetch_weekly_dashboard_metrics(const db::DbClientPtr& client, int64_t user_id, const std::string& for_date)
+    {
+        json metrics = json::object();
+
+        // Sleep: avg bedtime/wake/duration over the trailing 7 days, same
+        // midnight-wrap-safe shift UserModelManager's rollup query uses.
+        const auto sleep_rows = client->execSqlSync(
+            R"SQL(
+WITH shifted AS (
+    SELECT
+        asleep_total_s,
+        CASE WHEN (CAST(strftime('%H', onset) AS INTEGER) * 60 + CAST(strftime('%M', onset) AS INTEGER)) < 720
+             THEN (CAST(strftime('%H', onset) AS INTEGER) * 60 + CAST(strftime('%M', onset) AS INTEGER)) + 1440
+             ELSE (CAST(strftime('%H', onset) AS INTEGER) * 60 + CAST(strftime('%M', onset) AS INTEGER))
+        END AS onset_shifted,
+        CASE WHEN (CAST(strftime('%H', final_wake) AS INTEGER) * 60 + CAST(strftime('%M', final_wake) AS INTEGER)) < 720
+             THEN (CAST(strftime('%H', final_wake) AS INTEGER) * 60 + CAST(strftime('%M', final_wake) AS INTEGER)) + 1440
+             ELSE (CAST(strftime('%H', final_wake) AS INTEGER) * 60 + CAST(strftime('%M', final_wake) AS INTEGER))
+        END AS wake_shifted
+    FROM sleep_session
+    WHERE user_id = ?
+      AND onset IS NOT NULL AND final_wake IS NOT NULL
+      AND night_date >= date(?, '-6 day')
+      AND night_date <= ?
+)
+SELECT
+    COUNT(*) AS sample_days,
+    CAST(ROUND(AVG(onset_shifted)) AS INTEGER) % 1440 AS avg_bedtime_minute,
+    CAST(ROUND(AVG(wake_shifted)) AS INTEGER) % 1440 AS avg_wake_minute,
+    AVG(asleep_total_s) / 60.0 AS sleep_duration_avg_minutes
+FROM shifted
+)SQL",
+            user_id, for_date, for_date);
+
+        if (!sleep_rows.empty() && sleep_rows[0]["sample_days"].as<int>() > 0
+            && !sleep_rows[0]["avg_bedtime_minute"].isNull())
+        {
+            const auto bedtime_minute = sleep_rows[0]["avg_bedtime_minute"].as<int64_t>();
+            const auto wake_minute = sleep_rows[0]["avg_wake_minute"].as<int64_t>();
+            const auto format_hhmm = [](int64_t minute_of_day) {
+                char buf[6];
+                std::snprintf(buf, sizeof(buf), "%02lld:%02lld",
+                    static_cast<long long>(minute_of_day / 60), static_cast<long long>(minute_of_day % 60));
+                return std::string(buf);
+            };
+
+            json sleep;
+            sleep["sampleDays"] = sleep_rows[0]["sample_days"].as<int>();
+            sleep["avgBedtime"] = format_hhmm(bedtime_minute);
+            sleep["avgWake"] = format_hhmm(wake_minute);
+            sleep["avgDurationMinutes"] =
+                std::round(sleep_rows[0]["sleep_duration_avg_minutes"].as<double>() * 10.0) / 10.0;
+            metrics["sleep"] = std::move(sleep);
+        }
+
+        // Power: total kWh over the trailing 7 days (same 5m-bucket aggregation
+        // shape power_store.cpp's 1w report branch uses).
+        const auto power_rows = client->execSqlSync(
+            R"SQL(
+SELECT COALESCE(SUM(energy_wh), 0) AS energy_wh, COUNT(*) AS buckets
+FROM power_energy
+WHERE device_id IS NULL AND granularity = '5m'
+  AND time_start >= datetime(?, '-6 day') AND time_start < datetime(?, '+1 day')
+)SQL",
+            for_date, for_date);
+
+        if (!power_rows.empty() && power_rows[0]["buckets"].as<int64_t>() > 0)
+        {
+            json power;
+            power["totalKwh"] = std::round(power_rows[0]["energy_wh"].as<double>() / 100.0) / 10.0;
+            metrics["power"] = std::move(power);
+        }
+
+        // Appliance control: how many device-execution events happened this
+        // week, grounding the "가전 제어" clause of the summary.
+        const auto appliance_rows = client->execSqlSync(
+            R"SQL(
+SELECT COUNT(*) AS execution_count
+FROM home_event
+WHERE user_id = ? AND type = 'execution'
+  AND substr(occurred_at, 1, 10) >= date(?, '-6 day')
+  AND substr(occurred_at, 1, 10) <= ?
+)SQL",
+            user_id, for_date, for_date);
+
+        if (!appliance_rows.empty() && appliance_rows[0]["execution_count"].as<int64_t>() > 0)
+        {
+            json appliance;
+            appliance["executionCount"] = appliance_rows[0]["execution_count"].as<int64_t>();
+            metrics["appliance"] = std::move(appliance);
+        }
+
+        return metrics;
+    }
 }
 
 bool generateAndPersistDashboardBanner(
@@ -53,20 +156,19 @@ bool generateAndPersistDashboardBanner(
         return false;
     }
 
-    const auto habits = fetch_active_habits(client, user_id, {"sleep", "power", "lifestyle"});
-    if (habits.empty())
-        return true; // nothing active yet — dashboardDailyMessage's existing fallbacks cover this
+    const auto metrics = fetch_weekly_dashboard_metrics(client, user_id, for_date);
+    if (metrics.empty())
+        return true; // nothing to summarize yet — dashboardDailyMessage's existing fallback covers this
 
     json body;
     body["userId"] = user_id;
     body["date"] = for_date;
-    body["surface"] = "dashboard";
-    body["habits"] = habits;
+    body["metrics"] = metrics;
 
     AgentBannerJobResult result;
-    if (runBannerJobSync(agent_base_url, body, result, out_error) != AgentClientResult::success)
+    if (runDashboardSummaryJobSync(agent_base_url, body, result, out_error) != AgentClientResult::success)
     {
-        WLOG_WARN("dashboard banner job failed (user {}, date {}): {}", user_id, for_date, out_error);
+        WLOG_WARN("dashboard summary job failed (user {}, date {}): {}", user_id, for_date, out_error);
         return false;
     }
     if (result.headline.empty() || result.body.empty())
@@ -116,10 +218,11 @@ bool generateAndPersistWeeklyPlanBanner(
         return false;
     }
 
-    // Deliberately lifestyle-only: this call never sees sleep-score or power-kWh
-    // numbers, so the LLM structurally cannot mix them into the weekly-plan banner
-    // the way the old (removed) weekly_plan_graph-sourced text used to.
-    const auto habits = fetch_active_habits(client, user_id, {"lifestyle"});
+    // All habit types combined (sleep+power+lifestyle) — this is the same
+    // all-types combination the dashboard banner used to show before it moved
+    // to a deterministic weekly-stats summary; the routine planner is now
+    // where that habit-based narrative lives.
+    const auto habits = fetch_active_habits(client, user_id, {"sleep", "power", "lifestyle"});
     if (habits.empty())
         return true; // weeklyReport's existing fallbacks cover this
 

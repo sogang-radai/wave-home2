@@ -12,10 +12,13 @@
 #include <chrono>
 #include <cstring>
 #include <json/writer.h>
+#include <map>
+#include <mutex>
 #include <thread>
 #include <vector>
 
 #include "../../../app/app_state.h"
+#include "../../../core/json.h"
 #include "../../../core/logger.h"
 #include "../../../demo/demo_device_backend.h"
 #include "../../../demo/demo_runtime_id.h"
@@ -24,6 +27,7 @@
 #include "../../../facade/iot_facade.h"
 #include "../../../device/platform/droid_cam.h"
 #include "../../../device/platform/radai_ws.h"
+#include "../../../service/agent/agent_client.h"
 #include "../../../service/go2rtc_service.h"
 #include "iot_store.h"
 #include "session_store.h"
@@ -53,6 +57,110 @@ namespace
         attachDemoRuntimeCookieIfNeeded(req, resp, runtime_id);
         callback(resp);
     }
+
+    // Per-room light on/off counts, computed fresh from the already-fetched
+    // listDevices() item array (works identically against demo's
+    // DemoDeviceBackend and the real IotStore since both emit the same
+    // panel/room/stateSummary shape). This is the deterministic *input* sent to
+    // the agent for wording — not the final banner text itself.
+    Json::Value buildApplianceRoomMetrics(const Json::Value& devices)
+    {
+        struct RoomLights
+        {
+            int on = 0;
+            int total = 0;
+        };
+        std::vector<std::string> room_order;
+        std::map<std::string, RoomLights> by_room;
+
+        if (devices.isArray())
+        {
+            for (const auto& device : devices)
+            {
+                if (device.get("panel", "").asString() != "light" || !device.get("connected", false).asBool())
+                    continue;
+                std::string room_name = "기타";
+                if (device.isMember("room") && device["room"].isObject() && device["room"].isMember("name"))
+                    room_name = device["room"]["name"].asString();
+
+                auto [it, inserted] = by_room.try_emplace(room_name);
+                if (inserted)
+                    room_order.push_back(room_name);
+                it->second.total += 1;
+                if (device.get("stateSummary", "").asString().rfind("켜짐", 0) == 0)
+                    it->second.on += 1;
+            }
+        }
+
+        Json::Value rooms(Json::arrayValue);
+        for (const auto& room_name : room_order)
+        {
+            const auto& lights = by_room.at(room_name);
+            Json::Value r;
+            r["room"] = room_name;
+            r["on"] = lights.on;
+            r["total"] = lights.total;
+            rooms.append(std::move(r));
+        }
+        return rooms;
+    }
+
+    // Deterministic fallback text, same clause-building the old frontend
+    // buildLightStatusMessage()/the agent's _rule_based_banner() use — only
+    // reached when the agent itself is unreachable, so the endpoint still
+    // returns something correct instead of an error.
+    Json::Value buildApplianceBannerFallbackJson(const Json::Value& rooms)
+    {
+        Json::Value result;
+        if (!rooms.isArray() || rooms.empty())
+        {
+            result["text"] = Json::Value(Json::nullValue);
+            return result;
+        }
+
+        std::vector<std::string> clauses;
+        clauses.reserve(rooms.size());
+        for (const auto& r : rooms)
+        {
+            const auto room_name = r["room"].asString();
+            const auto on = r["on"].asInt();
+            const auto total = r["total"].asInt();
+            if (on == 0)
+                clauses.push_back(room_name + " 조명 꺼짐");
+            else if (on == total)
+                clauses.push_back(room_name + " 조명 " + std::to_string(total) + "개 켜짐");
+            else
+                clauses.push_back(room_name + " 조명 " + std::to_string(on) + "/" + std::to_string(total) + "개 켜짐");
+        }
+
+        std::string text = "현재 ";
+        for (size_t i = 0; i < clauses.size(); ++i)
+        {
+            if (i > 0)
+                text += " · ";
+            text += clauses[i];
+        }
+        result["text"] = text;
+        return result;
+    }
+
+    // Appliance-control banner is agent-generated (like the other banners), but
+    // unlike the nightly habit/dashboard/weekly-plan banners it's requested on
+    // the live page-poll path (every 3s from the frontend) — calling the LLM on
+    // every single request would be slow and wasteful. This short-TTL cache,
+    // keyed by demo runtime_id (each demo visitor has their own virtual device
+    // state, so their banners must not cross-contaminate; real/non-demo mode
+    // just uses the empty-string key), means only one request per TTL window
+    // actually pays the LLM round-trip — the rest get the last generated text.
+    struct ApplianceBannerCacheEntry
+    {
+        std::string text;
+        bool isNull = false;
+        std::chrono::steady_clock::time_point cachedAt;
+    };
+    std::mutex g_applianceBannerMutex;
+    std::map<std::string, ApplianceBannerCacheEntry> g_applianceBannerCache;
+    constexpr auto kApplianceBannerTtl = std::chrono::seconds(20);
 
     class PhoneMjpegStream
     {
@@ -235,6 +343,91 @@ void IotController::listDevices(const HttpRequestPtr& req, HttpResponseCallback&
         else
             callback(drogon::HttpResponse::newHttpJsonResponse(items));
     }
+}
+
+void IotController::getApplianceBanner(const HttpRequestPtr& req, HttpResponseCallback&& callback)
+{
+    if (!require_devices(callback))
+        return;
+    const auto runtime_id = demoVirtualDevicesEnabled()
+        ? resolveDemoRuntimeId(req, nullptr)
+        : std::string();
+    std::string code;
+    const auto body = AppState::get().runtime().iot().listDevices(runtime_id, code);
+    if (!code.empty())
+    {
+        respondError(callback, 503, code, "가전 제어 배너를 조회할 수 없습니다.");
+        return;
+    }
+
+    const Json::Value& items =
+        (body.isObject() && body.isMember("items")) ? body["items"] : body;
+    const auto rooms = buildApplianceRoomMetrics(items);
+
+    const std::string cache_key = runtime_id;
+    {
+        std::lock_guard lock(g_applianceBannerMutex);
+        auto it = g_applianceBannerCache.find(cache_key);
+        if (it != g_applianceBannerCache.end()
+            && std::chrono::steady_clock::now() - it->second.cachedAt < kApplianceBannerTtl)
+        {
+            Json::Value cached;
+            cached["text"] = it->second.isNull ? Json::Value(Json::nullValue) : Json::Value(it->second.text);
+            if (!runtime_id.empty())
+                respond_demo_json(req, callback, cached, runtime_id);
+            else
+                callback(drogon::HttpResponse::newHttpJsonResponse(cached));
+            return;
+        }
+    }
+
+    Json::Value banner;
+    if (rooms.empty())
+    {
+        banner["text"] = Json::Value(Json::nullValue);
+    }
+    else
+    {
+        json agent_rooms = json::array();
+        for (const auto& r : rooms)
+        {
+            agent_rooms.push_back(json{
+                {"room", r["room"].asString()},
+                {"on", r["on"].asInt()},
+                {"total", r["total"].asInt()},
+            });
+        }
+        json agent_body;
+        agent_body["rooms"] = agent_rooms;
+
+        service::AgentBannerJobResult result;
+        std::string agent_error;
+        const auto agent_status = service::runApplianceBannerJobSync(
+            AppState::get().config.agent.base_url, agent_body, result, agent_error);
+        if (agent_status == service::AgentClientResult::success && !result.body.empty())
+        {
+            banner["text"] = result.body;
+        }
+        else
+        {
+            WLOG_WARN("appliance banner agent call failed, using deterministic fallback: {}", agent_error);
+            banner = buildApplianceBannerFallbackJson(rooms);
+        }
+    }
+
+    {
+        std::lock_guard lock(g_applianceBannerMutex);
+        ApplianceBannerCacheEntry entry;
+        entry.isNull = banner["text"].isNull();
+        entry.text = entry.isNull ? std::string() : banner["text"].asString();
+        entry.cachedAt = std::chrono::steady_clock::now();
+        g_applianceBannerCache[cache_key] = std::move(entry);
+    }
+
+    if (!runtime_id.empty())
+        respond_demo_json(req, callback, banner, runtime_id);
+    else
+        callback(drogon::HttpResponse::newHttpJsonResponse(banner));
 }
 
 void IotController::getDeviceState(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId)

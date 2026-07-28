@@ -3,6 +3,7 @@
 #include "../../core/json.h"
 #include "../../core/logger.h"
 #include "../../demo/demo_policy.h"
+#include "../../service/agent/agent_job_queue.h"
 #include "../../service/sleep/sleep_manager.h"
 #include "../app_config.h"
 #include "../app_state.h"
@@ -61,6 +62,14 @@ void DemoProfileRuntime::onDatabaseReady(AppState& app, const db::DbClientPtr& c
     WLOG_INFO("SleepManager started (demo profile)");
     m_startedSleepManager = true;
 
+    // 같은 이유로 AgentJobQueue 도 데모 모드에서 띄워야 한다 - PowerStore::query_report()
+    // 의 캐시 미스 폴백(리포트 준비 중 응답 + enqueue_weekly_report 등)이 데모 모드에서도
+    // 이 큐에 작업을 넣는데, 지금까지는 production 프로필에서만 start() 했었다(worker
+    // 스레드가 없어 큐에 쌓인 채로 영원히 처리되지 않음 - 실측으로 확인됨).
+    service::AgentJobQueue::get().start();
+    WLOG_INFO("AgentJobQueue started (demo profile)");
+    m_startedAgentJobQueue = true;
+
     app.markDatabaseReady();
 }
 
@@ -68,6 +77,9 @@ void DemoProfileRuntime::shutdown(AppState& app)
 {
     if (m_startedSleepManager)
         service::SleepManager::get().stop();
+
+    if (m_startedAgentJobQueue)
+        service::AgentJobQueue::get().stop();
 
     if (m_startedDemoAutomation)
         m_automation.stop();

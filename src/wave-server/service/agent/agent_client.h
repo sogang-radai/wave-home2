@@ -138,5 +138,28 @@ AgentClientResult runBannerJobSync(
     AgentBannerJobResult& out_result,
     std::string& out_error);
 
+/** POST /insight/v1/dashboard-summary then poll /insight/v1/jobs/{id} until
+ *  done. Same {headline, body} result shape as runBannerJobSync (reuses
+ *  AgentBannerJobResult/poll_banner_job) — only the POST path differs, since
+ *  the dashboard summary is a deterministic-metrics-in, wording-out job, not
+ *  a habit-list-in job. */
+AgentClientResult runDashboardSummaryJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentBannerJobResult& out_result,
+    std::string& out_error);
+
+/** POST /insight/v1/appliance-banner then poll /insight/v1/jobs/{id} until
+ *  done. Same {headline, body} result shape again — the appliance-control
+ *  banner is per-room light on/off counts in, one wording sentence out. Called
+ *  synchronously from the IoT controller's request path (not a nightly
+ *  rollover), so the caller is expected to cache the result briefly rather
+ *  than call this on every single poll. */
+AgentClientResult runApplianceBannerJobSync(
+    const std::string& base_url,
+    const json& body,
+    AgentBannerJobResult& out_result,
+    std::string& out_error);
+
 SERVICE_NAMESPACE_END
 WAVE_NAMESPACE_END

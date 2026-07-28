@@ -17,6 +17,7 @@ public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(IotController::getSummary, "/api/v1/iot/summary", drogon::Get);
     ADD_METHOD_TO(IotController::listDevices, "/api/v1/iot/devices", drogon::Get);
+    ADD_METHOD_TO(IotController::getApplianceBanner, "/api/v1/iot/appliance-banner", drogon::Get);
     ADD_METHOD_TO(IotController::getDeviceState, "/api/v1/iot/devices/{deviceId}/state", drogon::Get);
     ADD_METHOD_TO(IotController::queryDevice, "/api/v1/iot/devices/{deviceId}/query/{queryName}", drogon::Get);
     ADD_METHOD_TO(IotController::invokeDevice, "/api/v1/iot/devices/{deviceId}/actions/{actionName}", drogon::Post);
@@ -47,6 +48,7 @@ public:
 
     void getSummary(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void listDevices(const HttpRequestPtr& req, HttpResponseCallback&& callback);
+    void getApplianceBanner(const HttpRequestPtr& req, HttpResponseCallback&& callback);
     void getDeviceState(const HttpRequestPtr& req, HttpResponseCallback&& callback, std::string deviceId);
     void queryDevice(const HttpRequestPtr& req, HttpResponseCallback&& callback,
         std::string deviceId,

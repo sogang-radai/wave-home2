@@ -109,6 +109,27 @@ namespace
         if (is_demo_virtual_write_path(path, method))
             return true;
 
+        // Loopback-only debug/admin endpoint (agent-api listener, not exposed to
+        // demo visitors on the public client-api port) that forces the nightly
+        // UserModelManager rollover for testing — this guard exists to protect
+        // shared multi-user demo state from end-user actions, which doesn't apply
+        // to an operator-triggered internal recompute.
+        if (path == "/internal/v1/user-model/rollover")
+            return true;
+
+        // Same rationale as the rollover endpoint above — loopback-only debug/admin
+        // path that forces a weekly power report to generate for testing.
+        if (path == "/internal/v1/power/reports/weekly")
+            return true;
+
+        // Insight regeneration is admin/debug-triggered only — the frontend never
+        // calls this (generation normally happens server-side via AgentJobQueue),
+        // so allowing it doesn't expose any new capability through the demo UI
+        // visitors actually use, just an operator/testing path for forcing a
+        // regenerate against the shared demo dataset.
+        if (path == "/api/v1/insights/generate")
+            return true;
+
         return false;
     }
 }
