@@ -2,6 +2,13 @@
 
 ## 변경 내역
 
+- **2026-07-26** — 장기 습관 메모리 (`daily_user_model`, `user_habit`)
+  - 마이그레이션 10–11. 롤링 수면·조명 집계 + 시맨틱 습관 행(신뢰도·수명주기)
+  - 야간 `UserModelManager` 가 집계·재검증, 배너/인사이트가 `user_habit` 를 소비
+- **2026-07-20** — `goal_recommendation.kind` 를 `'action' | 'tip'` 만 허용 (`'goal'` 제거)
+- **2026-07-11~20** — 인사이트 적용 이력·수면 계획 캐시
+  - `user_action_log` (+ 이후 `category` 컬럼) — insight 적용/취소, schedule_task 완료 이력
+  - `sleep_plan` — 당일 취침/기상 추천 캐시(에이전트 생성, GET 은 캐시만 읽음)
 - **2026-07-17** — 목표 기반 습관 코칭 (`goal`, `goal_coaching_report`, `goal_recommendation`)
   - 사용자당 활성 목표 1개. 코칭 리포트·추천은 목표에 종속
   - 추천 적용 시 `schedule_task` 또는 `automation_rule` 파생 (기존 테이블 재사용)
@@ -32,6 +39,7 @@
 - 사용자 설정
 - 통계
   - 수면
+  - 수면 계획 (sleep_plan)
   - 전력
   - 자세 (초안)
 - 리포트
@@ -42,6 +50,8 @@
 - 제스처
 - 홈 자동화
 - 루틴/일정 (schedule_task)
+- 사용자 행동 로그 (user_action_log)
+- 사용자 습관 메모리 (daily_user_model, user_habit)
 - 목표 코칭 (goal)
 - 알람
 - 알림
@@ -382,7 +392,31 @@ CREATE VIRTUAL TABLE vec_sleep_report USING vec0 (
 );
 ```
 
+### 수면 계획 (sleep_plan)
 
+- `GET /api/v1/sleep/today/plan` 의 캐시. 에이전트(`POST /sleep/v1/plans`)가 생성하고, GET 은 캐시만 읽는다(미스 시 백그라운드 생성 + 안전한 정적 기본값 1회 반환).
+- `(user_id, plan_date)` UNIQUE. 세션 종료·캐시 미스 시 생성 큐에 넣는다.
+
+```sql
+CREATE TABLE sleep_plan (
+    id                      INTEGER      PRIMARY KEY,
+    user_id                 INTEGER      NOT NULL,
+    plan_date               VARCHAR(10)  NOT NULL,   -- 'YYYY-MM-DD'
+    bedtime_minute          INTEGER      NOT NULL,   -- 0~1439
+    wake_minute             INTEGER      NOT NULL,   -- 0~1439
+    prep_minute             INTEGER,
+    recommended_temp_c      REAL,
+    target_duration_minutes INTEGER      NOT NULL,
+    rationale_text          VARCHAR(300) NOT NULL,
+    created_at              VARCHAR(50)  NOT NULL,
+
+    CHECK (bedtime_minute >= 0 AND bedtime_minute <= 1439),
+    CHECK (wake_minute >= 0 AND wake_minute <= 1439),
+    UNIQUE (user_id, plan_date),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_sleep_plan_user_date ON sleep_plan (user_id, plan_date);
+```
 
 ### 전력
 
@@ -736,6 +770,87 @@ CREATE INDEX idx_schedule_task_insight ON schedule_task (source_insight_id);
 
 ---
 
+## 사용자 행동 로그 (user_action_log)
+
+- `insight.approved` / `schedule_task.done` 은 현재 상태만 담으므로, 적용·취소·완료 이력을 이 테이블에 남긴다.
+- 인사이트 apply/cancel, 일정 완료/해제/생성 시 기록. 목표 코칭 필터용 `category` 컬럼이 있다.
+
+```sql
+CREATE TABLE user_action_log (
+    id            INTEGER      PRIMARY KEY,
+    user_id       INTEGER      NOT NULL,
+    action_type   VARCHAR(30)  NOT NULL,
+    ref_type      VARCHAR(20)  NOT NULL,
+    ref_id        INTEGER      NOT NULL,
+    occurred_at   VARCHAR(50)  NOT NULL,
+    metadata_json TEXT,
+    category      VARCHAR(10),            -- 목표 코칭 필터용 (마이그레이션 7)
+
+    CHECK (action_type IN (
+        'insight_applied', 'insight_canceled',
+        'schedule_task_completed', 'schedule_task_uncompleted', 'schedule_task_created'
+    )),
+    CHECK (ref_type IN ('insight', 'schedule_task')),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_action_log_user_time ON user_action_log (user_id, occurred_at);
+CREATE INDEX idx_action_log_ref ON user_action_log (ref_type, ref_id);
+CREATE INDEX idx_action_log_user_category_time ON user_action_log (user_id, category, occurred_at);
+```
+
+---
+
+## 사용자 습관 메모리 (daily_user_model, user_habit)
+
+- Understand/Predict 층. 야간 `UserModelManager` 가 (1) 수면·조명 롤링 집계 → `daily_user_model`, (2) `home_event`·`user_action_log` 기반 시맨틱 습관 발견·재검증 → `user_habit`.
+- `user_habit.confidence` 는 서버가 evidence 로 재계산한다(LLM 주장값을 믿지 않음).
+- 대시보드/주간계획 배너·인사이트 생성이 active 습관을 소비한다.
+
+```sql
+CREATE TABLE daily_user_model (
+    id                          INTEGER      PRIMARY KEY,
+    user_id                     INTEGER      NOT NULL,
+    model_date                  VARCHAR(10)  NOT NULL,   -- 'YYYY-MM-DD'
+    window_days                 INTEGER      NOT NULL DEFAULT 14,
+    avg_bedtime_minute          INTEGER,
+    avg_wake_minute             INTEGER,
+    sleep_duration_avg_minutes  REAL,
+    preferred_light_brightness  REAL,
+    sample_days                 INTEGER      NOT NULL DEFAULT 0,
+    computed_at                 VARCHAR(50)  NOT NULL,
+
+    CHECK (window_days > 0),
+    CHECK (sample_days >= 0),
+    UNIQUE (user_id, model_date),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE TABLE user_habit (
+    id                INTEGER      PRIMARY KEY,
+    user_id           INTEGER      NOT NULL,
+    habit_type        VARCHAR(10)  NOT NULL,   -- 'sleep' | 'power' | 'gesture' | 'lifestyle'
+    title             VARCHAR(100) NOT NULL,
+    description       VARCHAR(500) NOT NULL,
+    evidence_json     TEXT         NOT NULL,
+    confidence        REAL         NOT NULL DEFAULT 0,  -- 0~1, 서버 재계산
+    window_days       INTEGER      NOT NULL DEFAULT 14,
+    valid_from        VARCHAR(10)  NOT NULL,
+    last_verified_at  VARCHAR(50)  NOT NULL,
+    last_used_at      VARCHAR(50),
+    status            VARCHAR(10)  NOT NULL DEFAULT 'active',  -- 'active' | 'expired'
+    created_at        VARCHAR(50)  NOT NULL,
+    updated_at        VARCHAR(50)  NOT NULL,
+
+    CHECK (habit_type IN ('sleep', 'power', 'gesture', 'lifestyle')),
+    CHECK (status IN ('active', 'expired')),
+    CHECK (confidence >= 0 AND confidence <= 1),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+);
+CREATE INDEX idx_user_habit_user_status ON user_habit (user_id, status);
+```
+
+---
+
 ## 목표 코칭 (goal)
 
 - 주간 계획 "목표 설정"의 단일 소스. 사용자당 `status='active'` 목표는 1개(새로 만들면 기존 active 는 archived).
@@ -778,7 +893,7 @@ CREATE TABLE goal_recommendation (
     goal_id            INTEGER      NOT NULL,
     user_id            INTEGER      NOT NULL,
     date               VARCHAR(10)  NOT NULL,   -- 'YYYY-MM-DD'
-    kind               VARCHAR(10)  NOT NULL,   -- 'action' | 'goal' | 'tip'
+    kind               VARCHAR(10)  NOT NULL,   -- 'action' | 'tip'
     title              VARCHAR(100) NOT NULL,
     text               VARCHAR(500) NOT NULL,
     actionable         INTEGER      NOT NULL DEFAULT 0,  -- 0 | 1
@@ -788,7 +903,7 @@ CREATE TABLE goal_recommendation (
     schedule_task_json TEXT,
     created_at         VARCHAR(50)  NOT NULL,
 
-    CHECK (kind IN ('action', 'goal', 'tip')),
+    CHECK (kind IN ('action', 'tip')),
     CHECK (actionable IN (0, 1)),
     CHECK (approved IN (0, 1)),
     CHECK (actionable = 0 OR action_type IS NOT NULL),
@@ -979,7 +1094,7 @@ CREATE VIRTUAL TABLE vec_insight_power USING vec0 (
 | surface | 용도 |
 |---------|------|
 | `dashboard_banner` | 대시보드 히어로 배너 |
-| `weekly_plan` | 주간 계획 우측 AI 추천 |
+| `weekly_plan` | 주간 계획 배너·리포트 표면 (추천 패널은 당일 `sleep_report`/`power` action 을 모아 표시) |
 | `sleep_report` | 수면 리포트 내 권장 카드 |
 | `posture_report` | 자세 리포트 내 권장 카드 |
 | `power` | 전력 권장 |
