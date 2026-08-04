@@ -28,7 +28,6 @@ public:
 
 private:
     static std::string to_iso_kst(const std::string& timestamp);
-    static int compute_score(double efficiency);
     Json::Value buildHypnogram(const drogon::orm::Result& stats, const std::string& start, const std::string& end) const;
 
     db::DbClientPtr m_client;

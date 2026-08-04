@@ -235,6 +235,210 @@ namespace
         }
         return episodes;
     }
+
+    double clamp_score(double value)
+    {
+        return std::max(0.0, std::min(100.0, value));
+    }
+
+    void factor_tag_tone(double subscore, const char* low_tag, std::string& tag, std::string& tone)
+    {
+        if (subscore >= 90.0)
+        {
+            tag = "최고";
+            tone = "excellent";
+        }
+        else if (subscore >= 75.0)
+        {
+            tag = "좋음";
+            tone = "good";
+        }
+        else if (subscore >= 50.0)
+        {
+            tag = "주의";
+            tone = "attention";
+        }
+        else
+        {
+            tag = low_tag;
+            tone = "danger";
+        }
+    }
+
+    double score_duration_minutes(int minutes)
+    {
+        if (minutes < 420)
+            return 100.0 * static_cast<double>(minutes) / 420.0;
+        if (minutes <= 540)
+            return 100.0;
+        return clamp_score(100.0 - 25.0 * (minutes - 540) / 120.0);
+    }
+
+    double score_efficiency_value(double efficiency)
+    {
+        return clamp_score(100.0 * (efficiency - 0.70) / 0.25);
+    }
+
+    double score_deep_percent(double pct)
+    {
+        return clamp_score(100.0 * (pct - 5.0) / 13.0);
+    }
+
+    double score_rem_percent(double pct)
+    {
+        return clamp_score(100.0 * (pct - 8.0) / 14.0);
+    }
+
+    double score_awake_percent(double pct)
+    {
+        return clamp_score(100.0 * (15.0 - pct) / 12.0);
+    }
+
+    Json::Value make_score_factor(
+        const char* key,
+        const char* label,
+        const std::string& value,
+        double subscore,
+        const char* low_tag)
+    {
+        std::string tag;
+        std::string tone;
+        factor_tag_tone(subscore, low_tag, tag, tone);
+
+        Json::Value factor;
+        factor["key"] = key;
+        factor["label"] = label;
+        factor["value"] = value;
+        factor["tag"] = tag;
+        factor["tone"] = tone;
+        factor["subscore"] = static_cast<int>(std::round(subscore));
+        return factor;
+    }
+
+    // Weighted sleep score from duration / efficiency / stage totals.
+    // Missing stage totals drop those weights and renormalize the rest.
+    struct SleepScoreResult
+    {
+        int score = 0;
+        Json::Value factors = Json::Value(Json::arrayValue);
+    };
+
+    SleepScoreResult evaluate_sleep_score(
+        int asleep_s,
+        int time_in_bed_s,
+        double efficiency,
+        const drogon::orm::Field& stage_totals_field)
+    {
+        SleepScoreResult result;
+        const int asleep_minutes = static_cast<int>(std::round(asleep_s / 60.0));
+        double eff = efficiency;
+        if ((eff <= 0.0 || eff > 1.0) && time_in_bed_s > 0)
+            eff = static_cast<double>(asleep_s) / static_cast<double>(time_in_bed_s);
+        eff = std::max(0.0, std::min(1.0, eff));
+
+        struct WeightedPart
+        {
+            double weight = 0.0;
+            double subscore = 0.0;
+            bool present = false;
+        };
+
+        WeightedPart duration_part;
+        duration_part.weight = 0.30;
+        duration_part.subscore = score_duration_minutes(asleep_minutes);
+        duration_part.present = true;
+        result.factors.append(make_score_factor(
+            "duration",
+            "실제 수면 시간",
+            format_duration_text(asleep_s),
+            duration_part.subscore,
+            "부족"));
+
+        WeightedPart efficiency_part;
+        efficiency_part.weight = 0.25;
+        efficiency_part.subscore = score_efficiency_value(eff);
+        efficiency_part.present = time_in_bed_s > 0 || efficiency > 0.0;
+        if (efficiency_part.present)
+        {
+            result.factors.append(make_score_factor(
+                "efficiency",
+                "수면 효율",
+                std::to_string(static_cast<int>(std::round(eff * 100.0))) + "%",
+                efficiency_part.subscore,
+                "주의"));
+        }
+
+        WeightedPart deep_part;
+        deep_part.weight = 0.15;
+        WeightedPart rem_part;
+        rem_part.weight = 0.15;
+        WeightedPart awake_part;
+        awake_part.weight = 0.15;
+
+        Json::Value totals;
+        if (parse_json_field(stage_totals_field, totals) && asleep_s > 0)
+        {
+            const int deep_s = totals.get("deep", 0).asInt();
+            const int rem_s = totals.get("rem", 0).asInt();
+            const int awake_s = totals.get("awake", 0).asInt();
+            const double deep_pct = 100.0 * deep_s / static_cast<double>(asleep_s);
+            const double rem_pct = 100.0 * rem_s / static_cast<double>(asleep_s);
+            const double awake_pct = time_in_bed_s > 0
+                ? 100.0 * awake_s / static_cast<double>(time_in_bed_s)
+                : 0.0;
+
+            deep_part.subscore = score_deep_percent(deep_pct);
+            deep_part.present = true;
+            result.factors.append(make_score_factor(
+                "deepSleep",
+                "깊은 수면",
+                format_duration_text(deep_s),
+                deep_part.subscore,
+                "부족"));
+
+            rem_part.subscore = score_rem_percent(rem_pct);
+            rem_part.present = true;
+            result.factors.append(make_score_factor(
+                "remSleep",
+                "REM 수면",
+                format_duration_text(rem_s),
+                rem_part.subscore,
+                "부족"));
+
+            awake_part.subscore = score_awake_percent(awake_pct);
+            awake_part.present = true;
+            result.factors.append(make_score_factor(
+                "awake",
+                "각성",
+                format_duration_text(awake_s),
+                awake_part.subscore,
+                "주의"));
+        }
+
+        const WeightedPart* parts[] = {
+            &duration_part, &efficiency_part, &deep_part, &rem_part, &awake_part};
+        double weight_sum = 0.0;
+        double weighted = 0.0;
+        for (const WeightedPart* part : parts)
+        {
+            if (!part->present)
+                continue;
+            weight_sum += part->weight;
+            weighted += part->weight * part->subscore;
+        }
+
+        if (weight_sum > 0.0)
+            result.score = static_cast<int>(std::round(weighted / weight_sum));
+        return result;
+    }
+
+    SleepScoreResult evaluate_sleep_score_row(const drogon::orm::Row& row)
+    {
+        const int asleep_s = row["asleep_total_s"].isNull() ? 0 : row["asleep_total_s"].as<int>();
+        const int time_in_bed_s = row["time_in_bed_s"].isNull() ? 0 : row["time_in_bed_s"].as<int>();
+        const double efficiency = row["efficiency"].isNull() ? 0.0 : row["efficiency"].as<double>();
+        return evaluate_sleep_score(asleep_s, time_in_bed_s, efficiency, row["stage_totals"]);
+    }
 }
 
 SleepStore::SleepStore(db::DbClientPtr client) :
@@ -247,13 +451,6 @@ std::string SleepStore::to_iso_kst(const std::string& timestamp)
     if (timestamp.size() >= 19)
         return timestamp.substr(0, 10) + "T" + timestamp.substr(11, 8) + "+09:00";
     return timestamp;
-}
-
-int SleepStore::compute_score(double efficiency)
-{
-    if (efficiency <= 0.0)
-        return 0;
-    return static_cast<int>(std::round(std::min(1.0, efficiency) * 100.0));
 }
 
 Json::Value SleepStore::getTodaySummary(int64_t user_id) const
@@ -282,13 +479,12 @@ Json::Value SleepStore::getTodaySummary(int64_t user_id) const
     }
 
     const auto& row = rows[0];
-    const double efficiency = row["efficiency"].isNull() ? 0.0 : row["efficiency"].as<double>();
     const int asleep_s = row["asleep_total_s"].isNull() ? 0 : row["asleep_total_s"].as<int>();
     const std::string onset = row["onset"].isNull() ? "" : row["onset"].as<std::string>();
     const std::string final_wake = row["final_wake"].isNull() ? "" : row["final_wake"].as<std::string>();
 
     out["date"] = row["night_date"].as<std::string>();
-    out["score"] = compute_score(efficiency);
+    out["score"] = evaluate_sleep_score_row(row).score;
     out["achievedHours"] = std::round((asleep_s / 3600.0) * 10.0) / 10.0;
     out["goalHours"] = 7.5;
     out["bedTime"] = onset.size() >= 16 ? onset.substr(11, 5) : "--:--";
@@ -414,8 +610,7 @@ Json::Value SleepStore::getDailySessions(int64_t user_id, const std::string& dat
         Json::Value session;
         session["sessionId"] = std::to_string(row["id"].as<int64_t>());
         session["label"] = rows.size() > 1 && i > 0 ? "추가 수면" : "주 수면";
-        const double efficiency = row["efficiency"].isNull() ? 0.0 : row["efficiency"].as<double>();
-        session["score"] = compute_score(efficiency);
+        session["score"] = evaluate_sleep_score_row(row).score;
         Json::Value window;
         window["start"] = row["onset"].isNull() ? "" : to_iso_kst(row["onset"].as<std::string>());
         window["end"] = row["final_wake"].isNull() ? "" : to_iso_kst(row["final_wake"].as<std::string>());
@@ -503,84 +698,21 @@ ORDER BY time_start ASC
     const double efficiency = session_row["efficiency"].isNull()
         ? 0.0
         : session_row["efficiency"].as<double>();
+    const auto scored = evaluate_sleep_score(
+        asleep_s, time_in_bed_s, efficiency, session_row["stage_totals"]);
 
     Json::Value out;
     out["sessionId"] = std::to_string(session_row["id"].as<int64_t>());
     out["label"] = "주 수면";
     out["date"] = date;
-    out["score"] = compute_score(efficiency);
+    out["score"] = scored.score;
     out["sleepWindow"] = Json::Value(Json::objectValue);
     out["sleepWindow"]["start"] = to_iso_kst(onset);
     out["sleepWindow"]["end"] = to_iso_kst(final_wake);
     out["timeInBedMinutes"] = static_cast<int>(std::round(time_in_bed_s / 60.0));
     out["actualSleepMinutes"] = static_cast<int>(std::round(asleep_s / 60.0));
-
-    Json::Value factors(Json::arrayValue);
-    {
-        Json::Value factor;
-        factor["key"] = "duration";
-        factor["label"] = "수면 시간";
-        factor["value"] = std::to_string(out["actualSleepMinutes"].asInt()) + "분";
-        factor["tag"] = out["actualSleepMinutes"].asInt() >= 420 ? "양호" : "부족";
-        factor["tone"] = out["actualSleepMinutes"].asInt() >= 420 ? "good" : "attention";
-        factors.append(factor);
-    }
-    {
-        Json::Value factor;
-        factor["key"] = "efficiency";
-        factor["label"] = "수면 효율";
-        factor["value"] = std::to_string(static_cast<int>(efficiency * 100)) + "%";
-        factor["tag"] = efficiency >= 0.85 ? "양호" : "주의";
-        factor["tone"] = efficiency >= 0.85 ? "good" : "attention";
-        factors.append(factor);
-    }
-    {
-        Json::Value totals;
-        if (parse_json_field(session_row["stage_totals"], totals))
-        {
-            static const struct
-            {
-                const char* totals_key;
-                const char* key;
-                const char* label;
-                int typical_start;
-                int typical_end;
-            } kStageFactors[] = {
-                {"deep", "deep", "깊은 수면", 15, 25},
-                {"rem", "rem", "REM 수면", 20, 25},
-                {"awake", "awake", "각성", 5, 10},
-            };
-
-            static const char* const kStageKeys[] = {"deep", "light", "rem", "awake"};
-            int stage_total_s = 0;
-            for (const char* key : kStageKeys)
-                stage_total_s += totals.get(key, 0).asInt();
-
-            if (stage_total_s > 0)
-            {
-                for (const auto& stage : kStageFactors)
-                {
-                    const int seconds = totals.get(stage.totals_key, 0).asInt();
-                    if (seconds <= 0)
-                        continue;
-
-                    const int percent = static_cast<int>(std::round((seconds * 100.0) / stage_total_s));
-                    const bool in_range = percent >= stage.typical_start && percent <= stage.typical_end;
-
-                    Json::Value factor;
-                    factor["key"] = stage.key;
-                    factor["label"] = stage.label;
-                    factor["value"] = format_duration_text(seconds);
-                    factor["tag"] = in_range ? "양호" : "주의";
-                    factor["tone"] = in_range ? "good" : "attention";
-                    factors.append(factor);
-                }
-            }
-        }
-    }
-    out["scoreFactors"] = factors;
+    out["scoreFactors"] = scored.factors;
     out["stageBreakdown"] = build_stage_breakdown(session_row["stage_totals"]);
-
     out["hypnogram"] = buildHypnogram(stat_rows, onset, final_wake);
 
     auto stat_30m_rows = m_client->execSqlSync(
@@ -684,14 +816,11 @@ Json::Value SleepStore::getWeeklyReport(int64_t user_id, const std::string& week
         {
             if (session_rows[j]["night_date"].as<std::string>() == night_date)
             {
-                const double efficiency = session_rows[j]["efficiency"].isNull()
-                    ? 0.0
-                    : session_rows[j]["efficiency"].as<double>();
                 const int asleep_s = session_rows[j]["asleep_total_s"].isNull()
                     ? 0
                     : session_rows[j]["asleep_total_s"].as<int>();
                 point["hours"] = std::round((asleep_s / 3600.0) * 10.0) / 10.0;
-                point["score"] = compute_score(efficiency);
+                point["score"] = evaluate_sleep_score_row(session_rows[j]).score;
                 score_sum += point["score"].asInt();
                 ++score_count;
 
