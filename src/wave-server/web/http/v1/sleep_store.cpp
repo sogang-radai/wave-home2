@@ -522,7 +522,7 @@ ORDER BY time_start ASC
         factor["label"] = "수면 시간";
         factor["value"] = std::to_string(out["actualSleepMinutes"].asInt()) + "분";
         factor["tag"] = out["actualSleepMinutes"].asInt() >= 420 ? "양호" : "부족";
-        factor["tone"] = out["actualSleepMinutes"].asInt() >= 420 ? "good" : "warn";
+        factor["tone"] = out["actualSleepMinutes"].asInt() >= 420 ? "good" : "attention";
         factors.append(factor);
     }
     {
@@ -531,8 +531,52 @@ ORDER BY time_start ASC
         factor["label"] = "수면 효율";
         factor["value"] = std::to_string(static_cast<int>(efficiency * 100)) + "%";
         factor["tag"] = efficiency >= 0.85 ? "양호" : "주의";
-        factor["tone"] = efficiency >= 0.85 ? "good" : "warn";
+        factor["tone"] = efficiency >= 0.85 ? "good" : "attention";
         factors.append(factor);
+    }
+    {
+        Json::Value totals;
+        if (parse_json_field(session_row["stage_totals"], totals))
+        {
+            static const struct
+            {
+                const char* totals_key;
+                const char* key;
+                const char* label;
+                int typical_start;
+                int typical_end;
+            } kStageFactors[] = {
+                {"deep", "deep", "깊은 수면", 15, 25},
+                {"rem", "rem", "REM 수면", 20, 25},
+                {"awake", "awake", "각성", 5, 10},
+            };
+
+            static const char* const kStageKeys[] = {"deep", "light", "rem", "awake"};
+            int stage_total_s = 0;
+            for (const char* key : kStageKeys)
+                stage_total_s += totals.get(key, 0).asInt();
+
+            if (stage_total_s > 0)
+            {
+                for (const auto& stage : kStageFactors)
+                {
+                    const int seconds = totals.get(stage.totals_key, 0).asInt();
+                    if (seconds <= 0)
+                        continue;
+
+                    const int percent = static_cast<int>(std::round((seconds * 100.0) / stage_total_s));
+                    const bool in_range = percent >= stage.typical_start && percent <= stage.typical_end;
+
+                    Json::Value factor;
+                    factor["key"] = stage.key;
+                    factor["label"] = stage.label;
+                    factor["value"] = format_duration_text(seconds);
+                    factor["tag"] = in_range ? "양호" : "주의";
+                    factor["tone"] = in_range ? "good" : "attention";
+                    factors.append(factor);
+                }
+            }
+        }
     }
     out["scoreFactors"] = factors;
     out["stageBreakdown"] = build_stage_breakdown(session_row["stage_totals"]);
